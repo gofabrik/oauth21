@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"go.uber.org/goleak"
+	"pgregory.net/rapid"
 
 	"github.com/gofabrik/oauth21"
 	"github.com/gofabrik/oauth21/memstore"
@@ -142,7 +143,7 @@ func accessToken(t testing.TB, w *httptest.ResponseRecorder) string {
 }
 
 // requestID sends an authorization request and returns the identifier of the pending Authorization Request.
-func requestID(t testing.TB, srv *oauth21.Server) string {
+func requestID(t rapid.TB, srv *oauth21.Server) string {
 	t.Helper()
 	loc, err := url.Parse(do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/authorize?"+authorizeQuery, nil)).Header().Get("Location"))
 	if err != nil {
@@ -280,6 +281,7 @@ func TestNewRequiresConfig(t *testing.T) {
 		"relative issuer":             func(c *oauth21.Config) { c.Issuer = "as.example" },
 		"issuer with query":           func(c *oauth21.Config) { c.Issuer = "https://as.example?tenant=a" },
 		"issuer with fragment":        func(c *oauth21.Config) { c.Issuer = "https://as.example#a" },
+		"short request lifetime":      func(c *oauth21.Config) { c.AuthorizationRequestLifetime = time.Millisecond },
 		"negative code lifetime":      func(c *oauth21.Config) { c.CodeLifetime = -time.Second },
 		"long code lifetime":          func(c *oauth21.Config) { c.CodeLifetime = 11 * time.Minute },
 		"negative token lifetime":     func(c *oauth21.Config) { c.AccessTokenLifetime = -time.Second },
@@ -342,8 +344,8 @@ func FuzzAuthorizationHandler(f *testing.F) {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 		w := do(h, r)
-		if w.Code >= 500 {
-			t.Fatalf("got status %d", w.Code)
+		if w.Code >= 500 || w.Code != http.StatusFound && w.Header().Get("Location") != "" {
+			t.Fatalf("got status %d and Location %q", w.Code, w.Header().Get("Location"))
 		}
 		loc, err := url.Parse(w.Header().Get("Location"))
 		if err != nil {
@@ -379,4 +381,217 @@ func FuzzTokenHandler(f *testing.F) {
 			t.Fatalf("got status %d and body %+v", w.Code, resp)
 		}
 	})
+}
+
+// failingStores fails the Client and Authorization Request Stores when set.
+type failingStores struct {
+	*memstore.Store
+	clients, requests bool
+}
+
+func (f *failingStores) Client(ctx context.Context, id string) (store.Client, error) {
+	if f.clients {
+		return store.Client{}, errors.New("client Store down")
+	}
+	return f.Store.Client(ctx, id)
+}
+
+func (f *failingStores) CreateAuthorizationRequest(ctx context.Context, r store.AuthorizationRequest) error {
+	if f.requests {
+		return errors.New("Authorization Request Store down")
+	}
+	return f.Store.CreateAuthorizationRequest(ctx, r)
+}
+
+func TestUntrustedErrorsAreRendered(t *testing.T) {
+	tests := map[string]struct {
+		query  string
+		stores failingStores
+		status int
+		code   string
+	}{
+		"unknown client":       {strings.Replace(authorizeQuery, "client_id=client", "client_id=other", 1), failingStores{}, http.StatusBadRequest, "invalid_request"},
+		"repeated parameter":   {authorizeQuery + "&client_id=client", failingStores{}, http.StatusBadRequest, "invalid_request"},
+		"client Store failure": {authorizeQuery, failingStores{clients: true}, http.StatusInternalServerError, "server_error"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := tt.stores
+			f.Store = memstore.New()
+			f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+			var got oauth21.AuthorizationError
+			srv, err := oauth21.New(oauth21.Config{
+				Issuer:                issuer,
+				LoginURL:              "/login",
+				Clients:               &f,
+				AuthorizationRequests: &f,
+				Codes:                 f.Store,
+				Tokens:                f.Store,
+				RenderError: func(w http.ResponseWriter, _ *http.Request, e oauth21.AuthorizationError) {
+					got = e
+					w.WriteHeader(http.StatusTeapot)
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+tt.query, nil))
+			if w.Code != http.StatusTeapot || got.Status != tt.status || got.Code != tt.code {
+				t.Fatalf("got status %d and rendered error %+v, want the renderer called with %d and %q", w.Code, got, tt.status, tt.code)
+			}
+		})
+	}
+}
+
+func TestStoreFailureAfterTrustIsRedirected(t *testing.T) {
+	f := &failingStores{Store: memstore.New(), requests: true}
+	f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, LoginURL: "/login", Clients: f, AuthorizationRequests: f, Codes: f, Tokens: f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+authorizeQuery, nil))
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := loc.Query()
+	if w.Code != http.StatusFound || loc.Host != "client.example" || q.Get("error") != "server_error" || q.Get("state") != "xyz" || q.Get("iss") != issuer || q.Has("error_description") {
+		t.Fatalf("got status %d and Location %s, want a server_error redirect to the Client with state and iss only", w.Code, loc)
+	}
+}
+
+func TestConcurrentCompletionAndDenialSucceedOnce(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	id := requestID(t, srv)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 8)
+	for i := range errs {
+		wg.Go(func() {
+			if i%2 == 0 {
+				_, errs[i] = srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice"})
+			} else {
+				_, errs[i] = srv.Deny(t.Context(), id)
+			}
+		})
+	}
+	wg.Wait()
+	succeeded := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case !errors.Is(err, oauth21.ErrRequestNotPending):
+			t.Fatalf("got error %v, want ErrRequestNotPending", err)
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("got %d successful completions and denials, want 1", succeeded)
+	}
+}
+
+func TestAuthorizationRequestExpires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m := memstore.New()
+		srv := newServer(t, m, m, m)
+		expired := requestID(t, srv)
+		time.Sleep(10*time.Minute - time.Second)
+		live := requestID(t, srv)
+		time.Sleep(time.Second)
+		if _, err := srv.Complete(t.Context(), expired, oauth21.Completion{Subject: "alice"}); !errors.Is(err, oauth21.ErrRequestNotPending) {
+			t.Fatalf("got error %v completing an expired request, want ErrRequestNotPending", err)
+		}
+		if _, err := srv.Deny(t.Context(), expired); !errors.Is(err, oauth21.ErrRequestNotPending) {
+			t.Fatalf("got error %v denying an expired request, want ErrRequestNotPending", err)
+		}
+		if _, err := srv.Deny(t.Context(), live); err != nil {
+			t.Fatalf("got error %v denying a pending request", err)
+		}
+	})
+}
+
+// TestAuthorizationRequestLifecycle checks Authorization Requests against a model of pending requests and their expiry.
+func TestAuthorizationRequestLifecycle(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		now := time.Unix(1_000_000, 0)
+		m := memstore.New()
+		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+		srv, err := oauth21.New(oauth21.Config{
+			Issuer:                       issuer,
+			LoginURL:                     "/login",
+			Clients:                      m,
+			AuthorizationRequests:        m,
+			Codes:                        m,
+			Tokens:                       m,
+			AuthorizationRequestLifetime: time.Minute,
+			Clock:                        func() time.Time { return now },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pending := map[string]time.Time{}
+		ids := []string{"unknown"}
+		draw := func(t *rapid.T) (string, bool) {
+			id := rapid.SampledFrom(ids).Draw(t, "id")
+			expiresAt, ok := pending[id]
+			return id, ok && now.Before(expiresAt)
+		}
+		wantPending := func(t *rapid.T, err error, want bool) {
+			if want && err != nil || !want && !errors.Is(err, oauth21.ErrRequestNotPending) {
+				t.Fatalf("got error %v, want pending %v", err, want)
+			}
+		}
+		t.Repeat(map[string]func(*rapid.T){
+			"authorize": func(t *rapid.T) {
+				id := requestID(t, srv)
+				pending[id] = now.Add(time.Minute)
+				ids = append(ids, id)
+			},
+			"advance": func(t *rapid.T) {
+				now = now.Add(time.Duration(rapid.Int64Range(0, int64(time.Minute)).Draw(t, "advance")))
+			},
+			"read": func(t *rapid.T) {
+				id, want := draw(t)
+				_, err := srv.AuthorizationRequest(context.Background(), id)
+				wantPending(t, err, want)
+			},
+			"complete without subject": func(t *rapid.T) {
+				id, want := draw(t)
+				_, err := srv.Complete(context.Background(), id, oauth21.Completion{})
+				if want && !errors.Is(err, oauth21.ErrInvalidCompletion) || !want && !errors.Is(err, oauth21.ErrRequestNotPending) {
+					t.Fatalf("got error %v for a Completion without subject, want pending %v", err, want)
+				}
+			},
+			"complete": func(t *rapid.T) {
+				id, want := draw(t)
+				redirect, err := srv.Complete(context.Background(), id, oauth21.Completion{Subject: "alice"})
+				wantPending(t, err, want)
+				if want && !strings.Contains(redirect, "code=") {
+					t.Fatalf("got redirect %q, want a code", redirect)
+				}
+				delete(pending, id)
+			},
+			"deny": func(t *rapid.T) {
+				id, want := draw(t)
+				redirect, err := srv.Deny(context.Background(), id)
+				wantPending(t, err, want)
+				if want && !strings.Contains(redirect, "error=access_denied") {
+					t.Fatalf("got redirect %q, want access_denied", redirect)
+				}
+				delete(pending, id)
+			},
+		})
+	})
+}
+
+func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{""}})
+	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+authorizeQuery, nil))
+	if w.Code != http.StatusBadRequest || w.Header().Get("Location") != "" {
+		t.Fatalf("got status %d and Location %q, want 400 without redirect", w.Code, w.Header().Get("Location"))
+	}
 }

@@ -127,6 +127,7 @@ func TestRedeemIssuedCode(t *testing.T) {
 func TestAuthorize(t *testing.T) {
 	client := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}}
 	two := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb", "https://c.example/other"}}
+	empty := &Client{ID: "client", Public: true, RedirectURIs: []string{""}}
 	valid := AuthorizationParams{
 		ResponseType:        "code",
 		ClientID:            "client",
@@ -140,28 +141,33 @@ func TestAuthorize(t *testing.T) {
 		code       string
 		redirectTo string
 	}{
-		"valid":                     {client, func(*AuthorizationParams) {}, "", "https://c.example/cb"},
-		"unknown client":            {nil, func(*AuthorizationParams) {}, "invalid_request", ""},
-		"unregistered redirect_uri": {client, func(r *AuthorizationParams) { r.RedirectURI = "https://evil.example/cb" }, "invalid_request", ""},
-		"redirect_uri required":     {two, func(*AuthorizationParams) {}, "invalid_request", ""},
-		"chosen redirect_uri":       {two, func(r *AuthorizationParams) { r.RedirectURI = "https://c.example/other" }, "", "https://c.example/other"},
-		"missing response_type":     {client, func(r *AuthorizationParams) { r.ResponseType = "" }, "invalid_request", "https://c.example/cb"},
-		"token response_type":       {client, func(r *AuthorizationParams) { r.ResponseType = "token" }, "unsupported_response_type", "https://c.example/cb"},
-		"missing code_challenge":    {client, func(r *AuthorizationParams) { r.CodeChallenge = "" }, "invalid_request", "https://c.example/cb"},
-		"plain":                     {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "plain" }, "invalid_request", "https://c.example/cb"},
-		"missing method":            {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "" }, "invalid_request", "https://c.example/cb"},
-		"short code_challenge":      {client, func(r *AuthorizationParams) { r.CodeChallenge = "abc" }, "invalid_request", "https://c.example/cb"},
-		"long code_challenge":       {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("a", 44) }, "invalid_request", "https://c.example/cb"},
-		"non-base64url challenge":   {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("~", 43) }, "invalid_request", "https://c.example/cb"},
-		"not a SHA-256 hash":        {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("A", 42) + "B" }, "invalid_request", "https://c.example/cb"},
+		"valid":                         {client, func(*AuthorizationParams) {}, "", "https://c.example/cb"},
+		"unknown client":                {nil, func(*AuthorizationParams) {}, "invalid_request", ""},
+		"unregistered redirect_uri":     {client, func(r *AuthorizationParams) { r.RedirectURI = "https://evil.example/cb" }, "invalid_request", ""},
+		"redirect_uri required":         {two, func(*AuthorizationParams) {}, "invalid_request", ""},
+		"empty registered redirect_uri": {empty, func(*AuthorizationParams) {}, "invalid_request", ""},
+		"chosen redirect_uri":           {two, func(r *AuthorizationParams) { r.RedirectURI = "https://c.example/other" }, "", "https://c.example/other"},
+		"missing response_type":         {client, func(r *AuthorizationParams) { r.ResponseType = "" }, "invalid_request", "https://c.example/cb"},
+		"token response_type":           {client, func(r *AuthorizationParams) { r.ResponseType = "token" }, "unsupported_response_type", "https://c.example/cb"},
+		"missing code_challenge":        {client, func(r *AuthorizationParams) { r.CodeChallenge = "" }, "invalid_request", "https://c.example/cb"},
+		"plain":                         {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "plain" }, "invalid_request", "https://c.example/cb"},
+		"missing method":                {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "" }, "invalid_request", "https://c.example/cb"},
+		"short code_challenge":          {client, func(r *AuthorizationParams) { r.CodeChallenge = "abc" }, "invalid_request", "https://c.example/cb"},
+		"long code_challenge":           {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("a", 44) }, "invalid_request", "https://c.example/cb"},
+		"non-base64url challenge":       {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("~", 43) }, "invalid_request", "https://c.example/cb"},
+		"not a SHA-256 hash":            {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("A", 42) + "B" }, "invalid_request", "https://c.example/cb"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			r := valid
 			tt.change(&r)
-			a, err := Authorize(tt.client, r)
+			expiresAt := time.Unix(1_000_000, 0)
+			a, err := Authorize(tt.client, r, expiresAt)
 			if code := errorCode(err); code != tt.code || a.RedirectURI != tt.redirectTo {
 				t.Fatalf("got error %q and redirect URI %q, want %q and %q", code, a.RedirectURI, tt.code, tt.redirectTo)
+			}
+			if err == nil && !a.ExpiresAt.Equal(expiresAt) {
+				t.Fatalf("got ExpiresAt %v, want %v", a.ExpiresAt, expiresAt)
 			}
 		})
 	}
@@ -247,4 +253,32 @@ func errorCode(err *Error) string {
 		return ""
 	}
 	return err.Code
+}
+
+func TestPending(t *testing.T) {
+	expiresAt := time.Unix(1_000_000, 0)
+	tests := map[string]struct {
+		request *AuthorizationRequest
+		now     time.Time
+		pending bool
+	}{
+		"pending":     {&AuthorizationRequest{ExpiresAt: expiresAt}, expiresAt.Add(-time.Nanosecond), true},
+		"at expiry":   {&AuthorizationRequest{ExpiresAt: expiresAt}, expiresAt, false},
+		"expired":     {&AuthorizationRequest{ExpiresAt: expiresAt}, expiresAt.Add(time.Hour), false},
+		"unknown":     {nil, expiresAt.Add(-time.Hour), false},
+		"zero expiry": {&AuthorizationRequest{}, expiresAt, false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := Pending(tt.request, tt.now); (err == nil) != tt.pending {
+				t.Fatalf("got error %v, want pending %v", err, tt.pending)
+			}
+		})
+	}
+}
+
+func TestDenied(t *testing.T) {
+	if code := errorCode(Denied()); code != "access_denied" {
+		t.Fatalf("got error %q, want access_denied", code)
+	}
 }

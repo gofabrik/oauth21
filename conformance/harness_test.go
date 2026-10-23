@@ -245,3 +245,32 @@ func (a *authorizationServer) wantAuthorizationError(loc *url.URL, code, descrip
 func endpoint(u *url.URL) string {
 	return u.Scheme + "://" + u.Host + u.Path
 }
+
+// deny denies the Authorization Request id and returns the redirect to the Client.
+func (a *authorizationServer) deny(id string) *url.URL {
+	a.t.Helper()
+	redirect, err := a.srv.Deny(a.t.Context(), id)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	u, err := url.Parse(redirect)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	return u
+}
+
+// wantNotPending checks that the Authorization Request id can be neither read, completed nor denied.
+func (a *authorizationServer) wantNotPending(id string) {
+	t := a.t
+	t.Helper()
+	if _, err := a.srv.AuthorizationRequest(t.Context(), id); !errors.Is(err, oauth21.ErrRequestNotPending) {
+		t.Fatalf("got error %v reading the request, want ErrRequestNotPending", err)
+	}
+	if _, err := a.srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice"}); !errors.Is(err, oauth21.ErrRequestNotPending) {
+		t.Fatalf("got error %v completing the request, want ErrRequestNotPending", err)
+	}
+	if _, err := a.srv.Deny(t.Context(), id); !errors.Is(err, oauth21.ErrRequestNotPending) {
+		t.Fatalf("got error %v denying the request, want ErrRequestNotPending", err)
+	}
+}

@@ -13,6 +13,7 @@ import (
 // OAuth error codes.
 const (
 	invalidRequest          = "invalid_request"
+	accessDenied            = "access_denied"
 	invalidClient           = "invalid_client"
 	invalidGrant            = "invalid_grant"
 	unsupportedGrantType    = "unsupported_grant_type"
@@ -61,10 +62,11 @@ type AuthorizationRequest struct {
 	Scopes              []string
 	CodeChallenge       string
 	CodeChallengeMethod string
+	ExpiresAt           time.Time
 }
 
 // Authorize validates r for client (nil when unknown); on error, the returned request has a RedirectURI only when the error may be redirected.
-func Authorize(client *Client, r AuthorizationParams) (AuthorizationRequest, *Error) {
+func Authorize(client *Client, r AuthorizationParams, expiresAt time.Time) (AuthorizationRequest, *Error) {
 	if client == nil {
 		return AuthorizationRequest{}, &Error{invalidRequest, "unknown client"}
 	}
@@ -79,6 +81,7 @@ func Authorize(client *Client, r AuthorizationParams) (AuthorizationRequest, *Er
 		Scopes:              strings.Fields(r.Scope),
 		CodeChallenge:       r.CodeChallenge,
 		CodeChallengeMethod: r.CodeChallengeMethod,
+		ExpiresAt:           expiresAt,
 	}
 	switch {
 	case r.ResponseType == "":
@@ -98,7 +101,7 @@ func Authorize(client *Client, r AuthorizationParams) (AuthorizationRequest, *Er
 func resolveRedirectURI(registered []string, requested string) (string, bool) {
 	if requested == "" {
 		if len(registered) == 1 {
-			return registered[0], true
+			return registered[0], registered[0] != ""
 		}
 		return "", false
 	}
@@ -134,6 +137,22 @@ func withoutPort(uri string) (string, bool) {
 		host = "[" + host + "]"
 	}
 	return "http://" + host + uri[len("http://"+u.Host):], true
+}
+
+// Pending decides whether a is still pending at now; a is nil when unknown, completed or denied.
+func Pending(a *AuthorizationRequest, now time.Time) *Error {
+	switch {
+	case a == nil:
+		return &Error{invalidRequest, "unknown authorization request"}
+	case !now.Before(a.ExpiresAt):
+		return &Error{invalidRequest, "authorization request expired"}
+	}
+	return nil
+}
+
+// Denied returns the error response for a denied Authorization Request.
+func Denied() *Error {
+	return &Error{accessDenied, "the resource owner denied the request"}
 }
 
 // Code is what an authorization code is bound to.

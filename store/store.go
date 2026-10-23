@@ -37,6 +37,8 @@ type AuthorizationRequest struct {
 	Scopes              []string
 	CodeChallenge       string
 	CodeChallengeMethod string
+	// ExpiresAt must be stored; a zero value counts as expired.
+	ExpiresAt time.Time
 }
 
 // Grant is the authorization a Resource Owner gave a Client.
@@ -72,7 +74,7 @@ type Clients interface {
 	Client(ctx context.Context, id string) (Client, error)
 }
 
-// AuthorizationRequests holds the pending Authorization Requests.
+// AuthorizationRequests holds the Authorization Requests until they are consumed; it may remove expired ones.
 type AuthorizationRequests interface {
 	CreateAuthorizationRequest(ctx context.Context, r AuthorizationRequest) error
 	AuthorizationRequest(ctx context.Context, id string) (AuthorizationRequest, error)
