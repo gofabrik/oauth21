@@ -1,0 +1,16 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - unconvert
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -1,0 +1,58 @@
+version: '3'
+
+vars:
+  MODULES: . tools
+  GOLANGCI_LINT: github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+  GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+tasks:
+  check:
+    desc: Run everything CI runs on a pull request
+    cmds:
+      - task: build
+      - task: test
+      - task: lint
+      - task: vuln
+      - task: archlint
+      - task: specs:verify
+
+  build:
+    desc: Build and vet all modules
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && go build ./... && go vet ./...
+
+  test:
+    desc: Run tests with the race detector in all modules
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && go test -race ./...
+
+  lint:
+    desc: Run golangci-lint in all modules
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && go run {{.GOLANGCI_LINT}} run ./...
+
+  vuln:
+    desc: Run govulncheck in all modules
+    cmds:
+      - for: { var: MODULES }
+        cmd: cd {{.ITEM}} && go run {{.GOVULNCHECK}} ./...
+
+  archlint:
+    desc: Check the architecture rules of the core module
+    cmds:
+      - cd tools && go run ./archlint ..
+
+  specs:fetch:
+    desc: Download the spec texts listed in conformance/specs/SOURCES
+    dir: conformance/specs
+    cmds:
+      - while read -r file url; do curl -fsSL "$url" -o "$file"; done < SOURCES
+
+  specs:verify:
+    desc: Verify the spec texts against their pinned checksums
+    dir: conformance/specs
+    cmds:
+      - shasum -a 256 -c SHA256SUMS
