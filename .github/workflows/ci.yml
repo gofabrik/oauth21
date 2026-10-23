@@ -30,8 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27'
       - uses: go-task/setup-task@v2
-      - run: task fuzz lint vuln archlint specs:verify catalog
+      - run: task fuzz lint vuln archlint specs:verify catalog BASE="$BASE"
+        env:
+          BASE: origin/${{ github.base_ref || 'main' }}
