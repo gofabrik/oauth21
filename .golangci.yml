@@ -48,6 +48,12 @@ linters:
               desc: wire does not access Stores
             - pkg: github.com/gofabrik/oauth21/storetest
               desc: wire does not access Stores
+        conformance:
+          files:
+            - "**/conformance/**"
+          deny:
+            - pkg: github.com/gofabrik/oauth21/internal
+              desc: the Conformance Suite is black-box
     forbidigo:
       analyze-types: true
       forbid:
