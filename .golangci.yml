@@ -4,11 +4,63 @@ linters:
   default: standard
   enable:
     - bodyclose
+    - depguard
     - errorlint
+    - forbidigo
     - gosec
     - misspell
     - noctx
     - unconvert
+  settings:
+    depguard:
+      rules:
+        protocol:
+          files:
+            - "**/internal/protocol/**"
+          deny:
+            - pkg: net/http
+              desc: protocol does no I/O
+            - pkg: os
+              desc: protocol does no I/O
+            - pkg: crypto/rand
+              desc: server owns the randomness source
+            - pkg: math/rand
+              desc: server owns the randomness source
+            - pkg: github.com/gofabrik/oauth21/internal/wire
+              desc: protocol does not depend on wire
+            - pkg: github.com/gofabrik/oauth21$
+              desc: protocol does not depend on server
+            - pkg: github.com/gofabrik/oauth21/store
+              desc: protocol does not access Stores
+            - pkg: github.com/gofabrik/oauth21/memstore
+              desc: protocol does not access Stores
+            - pkg: github.com/gofabrik/oauth21/storetest
+              desc: protocol does not access Stores
+        wire:
+          files:
+            - "**/internal/wire/**"
+          deny:
+            - pkg: github.com/gofabrik/oauth21$
+              desc: wire does not depend on server
+            - pkg: github.com/gofabrik/oauth21/store
+              desc: wire does not access Stores
+            - pkg: github.com/gofabrik/oauth21/memstore
+              desc: wire does not access Stores
+            - pkg: github.com/gofabrik/oauth21/storetest
+              desc: wire does not access Stores
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.(Now|Since|Until|Sleep|After|AfterFunc|Tick|NewTimer|NewTicker)$
+          msg: server owns the clock
+        - pattern: ^rand\..*$
+          pkg: ^(crypto/rand|math/rand(/v2)?)$
+          msg: server owns the randomness source
+  exclusions:
+    rules:
+      - path-except: internal/protocol/
+        linters:
+          - forbidigo
 
 formatters:
   enable:
