@@ -26,6 +26,8 @@ type Client struct {
 	ID           string
 	Type         ClientType
 	RedirectURIs []string
+	// SecretHash is the SecretHasher hash of a confidential Client's secret.
+	SecretHash string
 }
 
 // AuthorizationRequest is a validated request waiting for the Host Application.

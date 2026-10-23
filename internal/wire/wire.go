@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -105,16 +106,19 @@ func (p *AuthorizationParams) fields() map[string]*string {
 
 // TokenRequest is the parameters of a token request.
 type TokenRequest struct {
-	GrantType     string
-	Code          string
-	RedirectURI   string
-	ClientID      string
-	CodeVerifier  string
-	ClientSecret  string
-	Authorization string
+	GrantType    string
+	Code         string
+	RedirectURI  string
+	ClientID     string
+	CodeVerifier string
+	ClientSecret string
+	// AuthScheme is the scheme of the Authorization header, or "" without one.
+	AuthScheme  string
+	BasicID     string
+	BasicSecret string
 }
 
-// ParseTokenRequest reads a token request from the form body of a POST.
+// ParseTokenRequest reads a token request from the form body of a POST and the Client credentials of its Authorization header.
 func ParseTokenRequest(r *http.Request) (TokenRequest, *Error) {
 	if r.Method != http.MethodPost {
 		return TokenRequest{}, &Error{invalidRequest, "method not allowed"}
@@ -123,9 +127,45 @@ func ParseTokenRequest(r *http.Request) (TokenRequest, *Error) {
 		return TokenRequest{}, &Error{invalidRequest, "malformed form body"}
 	}
 	var req TokenRequest
-	err := assignOnce(r.PostForm, req.fields())
-	req.Authorization = r.Header.Get("Authorization")
-	return req, err
+	if err := assignOnce(r.PostForm, req.fields()); err != nil {
+		return TokenRequest{}, err
+	}
+	authorizations := r.Header.Values("Authorization")
+	switch {
+	case len(authorizations) > 1:
+		return TokenRequest{}, &Error{invalidRequest, "repeated Authorization header"}
+	case len(authorizations) == 0 || authorizations[0] == "":
+		return req, nil
+	}
+	scheme, credentials, _ := strings.Cut(authorizations[0], " ")
+	if !strings.EqualFold(scheme, "Basic") {
+		req.AuthScheme = scheme
+		return req, nil
+	}
+	id, secret, ok := parseBasic(strings.TrimLeft(credentials, " "))
+	if !ok {
+		return TokenRequest{}, &Error{invalidClient, "malformed Basic credentials"}
+	}
+	req.AuthScheme, req.BasicID, req.BasicSecret = "Basic", id, secret
+	return req, nil
+}
+
+// parseBasic decodes the form-encoded Client identifier and secret of Basic credentials.
+func parseBasic(credentials string) (id, secret string, ok bool) {
+	decoded, err := base64.StdEncoding.DecodeString(credentials)
+	if err != nil {
+		return "", "", false
+	}
+	encodedID, encodedSecret, ok := strings.Cut(string(decoded), ":")
+	if !ok {
+		return "", "", false
+	}
+	id, err = url.QueryUnescape(encodedID)
+	if err != nil {
+		return "", "", false
+	}
+	secret, err = url.QueryUnescape(encodedSecret)
+	return id, secret, err == nil
 }
 
 func (r *TokenRequest) fields() map[string]*string {

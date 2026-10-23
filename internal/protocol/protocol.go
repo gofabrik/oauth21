@@ -41,6 +41,7 @@ type Client struct {
 	ID           string
 	Public       bool
 	RedirectURIs []string
+	SecretHash   string
 }
 
 // AuthorizationParams is the parameters of an authorization request.
@@ -188,17 +189,58 @@ func IssueCode(a AuthorizationRequest, subject string, scopes []string, expiresA
 
 // TokenRequest is the parameters of a token request.
 type TokenRequest struct {
-	GrantType     string
-	Code          string
-	RedirectURI   string
-	ClientID      string
-	CodeVerifier  string
-	ClientSecret  string
-	Authorization string
+	GrantType    string
+	Code         string
+	RedirectURI  string
+	ClientID     string
+	CodeVerifier string
+	ClientSecret string
+	// AuthScheme is the scheme of the Authorization header, or "" without one.
+	AuthScheme  string
+	BasicID     string
+	BasicSecret string
+}
+
+// Identify returns the identifier of the Client r comes from, rejecting more than one authentication method.
+func Identify(r TokenRequest) (string, *Error) {
+	switch {
+	case r.AuthScheme != "" && r.ClientSecret != "":
+		return "", &Error{invalidRequest, "more than one client authentication method"}
+	case r.AuthScheme != "Basic":
+		return r.ClientID, nil
+	case r.ClientID != "" && r.ClientID != r.BasicID:
+		return "", &Error{invalidClient, "client_id does not match the Authorization header"}
+	}
+	return r.BasicID, nil
+}
+
+// Authenticate decides whether r authenticates client, which is nil when unknown; verify reports whether a secret matches a secret hash.
+func Authenticate(client *Client, r TokenRequest, verify func(hash, secret string) bool) *Error {
+	secret, presented := r.ClientSecret, r.ClientSecret != ""
+	switch r.AuthScheme {
+	case "":
+	case "Basic":
+		secret, presented = r.BasicSecret, true
+	default:
+		return &Error{invalidClient, "unsupported client authentication method"}
+	}
+	switch {
+	case client == nil:
+		return &Error{invalidClient, "unknown client"}
+	case client.Public && presented:
+		return &Error{invalidClient, "public clients do not authenticate"}
+	case client.Public:
+		return nil
+	case !presented:
+		return &Error{invalidClient, "client authentication required"}
+	case client.SecretHash == "" || !verify(client.SecretHash, secret):
+		return &Error{invalidClient, "invalid client secret"}
+	}
+	return nil
 }
 
 // ValidateTokenRequest checks r for client, which is nil when unknown, before its code is consumed.
-func ValidateTokenRequest(client *Client, r TokenRequest) *Error {
+func ValidateTokenRequest(client *Client, r TokenRequest, verify func(hash, secret string) bool) *Error {
 	switch {
 	case r.GrantType == "":
 		return &Error{invalidRequest, "grant_type required"}
@@ -208,20 +250,16 @@ func ValidateTokenRequest(client *Client, r TokenRequest) *Error {
 		return &Error{invalidRequest, "code required"}
 	case r.CodeVerifier == "":
 		return &Error{invalidRequest, "code_verifier required"}
-	case client == nil || !client.Public:
-		return &Error{invalidClient, "unknown or confidential client"}
-	case r.Authorization != "" || r.ClientSecret != "":
-		return &Error{invalidClient, "public clients do not authenticate"}
 	}
-	return nil
+	return Authenticate(client, r, verify)
 }
 
-// Redeem decides whether r may redeem code (nil when unknown) at now, and whether to revoke its Grant.
-func Redeem(code *Code, r TokenRequest, now time.Time) (revokeGrant bool, err *Error) {
+// Redeem decides whether r from the Client clientID may redeem code (nil when unknown) at now, and whether to revoke its Grant.
+func Redeem(code *Code, clientID string, r TokenRequest, now time.Time) (revokeGrant bool, err *Error) {
 	if code == nil {
 		return false, &Error{invalidGrant, "invalid code"}
 	}
-	if err := bound(code, r); err != nil {
+	if err := bound(code, clientID, r); err != nil {
 		return false, err
 	}
 	switch {
@@ -241,10 +279,10 @@ func TokenCreated(grantRevoked bool) *Error {
 	return nil
 }
 
-// bound checks that r comes from the Client the code was issued to.
-func bound(code *Code, r TokenRequest) *Error {
+// bound checks that r from the Client clientID matches what the code is bound to.
+func bound(code *Code, clientID string, r TokenRequest) *Error {
 	switch {
-	case code.ClientID != r.ClientID:
+	case code.ClientID != clientID:
 		return &Error{invalidGrant, "code was issued to another client"}
 	case r.RedirectURI != "" && r.RedirectURI != code.RedirectURI:
 		return &Error{invalidGrant, "redirect_uri does not match"}

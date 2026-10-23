@@ -359,17 +359,28 @@ func FuzzAuthorizationHandler(f *testing.F) {
 
 // FuzzTokenHandler fuzzes token requests in which CODE stands for a freshly issued code.
 func FuzzTokenHandler(f *testing.F) {
-	f.Add(tokenBody("CODE"))
-	f.Add(tokenBody("CODE") + "&code=other")
-	f.Add(strings.Replace(tokenBody("CODE"), "dBjf", "xBjf", 1))
-	f.Add(tokenBody("CODE") + "&client_secret=s")
-	f.Add("grant_type=client_credentials")
-	f.Add("%zz")
-	f.Fuzz(func(t *testing.T, body string) {
+	f.Add(tokenBody("CODE"), "")
+	f.Add(tokenBody("CODE")+"&code=other", "")
+	f.Add(strings.Replace(tokenBody("CODE"), "dBjf", "xBjf", 1), "")
+	f.Add(tokenBody("CODE")+"&client_secret=s", "")
+	f.Add(strings.Replace(tokenBody("CODE"), "client_id=client", "client_id=confidential&client_secret=secret", 1), "")
+	f.Add(tokenBody("CODE"), "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
+	f.Add(tokenBody("CODE"), "Basic !")
+	f.Add(tokenBody("CODE"), "Bearer x")
+	f.Add("grant_type=client_credentials", "")
+	f.Add("%zz", "")
+	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Fuzz(func(t *testing.T, body, authorization string) {
 		m := memstore.New()
+		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, SecretHash: hash})
 		srv := newServer(t, m, m, m)
 		body = strings.ReplaceAll(body, "CODE", issueCode(t, srv))
-		w := do(srv.TokenHandler(), tokenRequest(body))
+		r := tokenRequest(body)
+		r.Header["Authorization"] = []string{authorization}
+		w := do(srv.TokenHandler(), r)
 		var resp struct {
 			Error       string
 			AccessToken string `json:"access_token"`
@@ -380,7 +391,40 @@ func FuzzTokenHandler(f *testing.F) {
 		if w.Code == http.StatusOK && resp.AccessToken == "" || w.Code != http.StatusOK && !tokenErrors[resp.Error] {
 			t.Fatalf("got status %d and body %+v", w.Code, resp)
 		}
+		if resp.Error == "invalid_client" && authorization != "" && (w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") == "") {
+			t.Fatalf("got status %d and WWW-Authenticate %q for a failed Authorization header, want 401 with a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+		}
 	})
+}
+
+// acceptSecret is a SecretHasher that accepts the secret "secret" for the hash "hash".
+type acceptSecret struct{}
+
+func (acceptSecret) Hash(string) (string, error) { return "hash", nil }
+
+func (acceptSecret) Verify(hash, secret string) bool { return hash == "hash" && secret == "secret" }
+
+func TestSecretHasherVerifiesSecrets(t *testing.T) {
+	m := memstore.New()
+	m.AddClient(store.Client{ID: "client", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, SecretHash: "hash"})
+	srv, err := oauth21.New(oauth21.Config{
+		Issuer:                issuer,
+		LoginURL:              "/login",
+		Clients:               m,
+		AuthorizationRequests: m,
+		Codes:                 m,
+		Tokens:                m,
+		SecretHasher:          acceptSecret{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for secret, want := range map[string]int{"wrong": http.StatusBadRequest, "secret": http.StatusOK} {
+		w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv))+"&client_secret="+secret))
+		if w.Code != want {
+			t.Fatalf("got status %d with secret %q, want %d", w.Code, secret, want)
+		}
+	}
 }
 
 // failingStores fails the Client and Authorization Request Stores when set.

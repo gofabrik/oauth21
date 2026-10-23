@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -87,11 +88,47 @@ func TestParseTreatsEmptyAsOmitted(t *testing.T) {
 }
 
 func TestParseTokenRequestCredentials(t *testing.T) {
-	r := post("client_secret=s")
-	r.Header.Set("Authorization", "Basic eDp5")
+	r := post("client_id=c&client_secret=s")
+	r.Header.Set("Authorization", "Basic YSUyMGIrYzpwJTNBJTI1Kw==")
 	got, err := ParseTokenRequest(r)
-	if err != nil || got.ClientSecret != "s" || got.Authorization != "Basic eDp5" {
-		t.Fatalf("got %+v and error %v, want both credentials", got, err)
+	want := TokenRequest{ClientID: "c", ClientSecret: "s", AuthScheme: "Basic", BasicID: "a b c", BasicSecret: "p:% "}
+	if err != nil || got != want {
+		t.Fatalf("got %+v and error %v, want %+v", got, err, want)
+	}
+}
+
+func TestParseTokenRequestAuthorization(t *testing.T) {
+	for header, want := range map[string]TokenRequest{
+		"basic eDp5":     {AuthScheme: "Basic", BasicID: "x", BasicSecret: "y"},
+		"Basic Og==":     {AuthScheme: "Basic"},
+		"Basic eDp5Onp6": {AuthScheme: "Basic", BasicID: "x", BasicSecret: "y:zz"},
+		"Bearer abc":     {AuthScheme: "Bearer"},
+		"Bearer":         {AuthScheme: "Bearer"},
+		"Foo: x":         {AuthScheme: "Foo:"},
+	} {
+		r := post("")
+		r.Header.Set("Authorization", header)
+		if got, err := ParseTokenRequest(r); err != nil || got != want {
+			t.Errorf("%q: got %+v and error %v, want %+v", header, got, err, want)
+		}
+	}
+}
+
+func TestParseTokenRequestRejectsRepeatedAuthorization(t *testing.T) {
+	r := post("")
+	r.Header["Authorization"] = []string{"Basic eDp5", "Bearer abc"}
+	if _, err := ParseTokenRequest(r); err == nil || err.Code != "invalid_request" {
+		t.Fatalf("got error %v, want invalid_request", err)
+	}
+}
+
+func TestParseTokenRequestRejectsMalformedBasic(t *testing.T) {
+	for _, header := range []string{"Basic", "Basic !!", "Basic eHk=", "Basic JXp6Onk=", "Basic eDolenk="} {
+		r := post("")
+		r.Header.Set("Authorization", header)
+		if _, err := ParseTokenRequest(r); err == nil || err.Code != "invalid_client" {
+			t.Errorf("%q: got error %v, want invalid_client", header, err)
+		}
 	}
 }
 
@@ -196,6 +233,41 @@ func FuzzParseTokenRequest(f *testing.F) {
 		again, err := ParseTokenRequest(post(encode(req.fields())))
 		if err != nil || again != req {
 			t.Fatalf("got %+v and error %v after a round trip, want %+v", again, err, req)
+		}
+	})
+}
+
+func FuzzParseTokenRequestBasic(f *testing.F) {
+	f.Add("client", "secret")
+	f.Add("a b+c", "p:%")
+	f.Add("", "")
+	f.Fuzz(func(t *testing.T, id, secret string) {
+		r := post("")
+		r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(id)+":"+url.QueryEscape(secret))))
+		got, err := ParseTokenRequest(r)
+		if want := (TokenRequest{AuthScheme: "Basic", BasicID: id, BasicSecret: secret}); err != nil || got != want {
+			t.Fatalf("got %+v and error %v, want %+v", got, err, want)
+		}
+	})
+}
+
+func FuzzParseTokenRequestAuthorization(f *testing.F) {
+	f.Add("Basic eDp5")
+	f.Add("Basic JXp6Onk=")
+	f.Add("Bearer abc")
+	f.Add("")
+	f.Fuzz(func(t *testing.T, header string) {
+		r := post("")
+		r.Header["Authorization"] = []string{header}
+		got, err := ParseTokenRequest(r)
+		if err != nil {
+			if err.Code != "invalid_client" {
+				t.Fatalf("got error %v, want invalid_client", err)
+			}
+			return
+		}
+		if got.AuthScheme != "Basic" && (got.BasicID != "" || got.BasicSecret != "") {
+			t.Fatalf("got %+v, want Basic credentials only with the Basic scheme", got)
 		}
 	})
 }

@@ -42,6 +42,8 @@ type Config struct {
 	CodeLifetime time.Duration
 	// AccessTokenLifetime defaults to one hour.
 	AccessTokenLifetime time.Duration
+	// SecretHasher verifies Client secrets. It defaults to PBKDF2.
+	SecretHasher SecretHasher
 	// RenderError writes an authorization endpoint error that cannot be redirected to the Client. It defaults to a plain text response.
 	RenderError func(w http.ResponseWriter, r *http.Request, e AuthorizationError)
 	// Clock defaults to time.Now.
@@ -77,6 +79,9 @@ func New(c Config) (*Server, error) {
 	}
 	if c.AccessTokenLifetime == 0 {
 		c.AccessTokenLifetime = time.Hour
+	}
+	if c.SecretHasher == nil {
+		c.SecretHasher = PBKDF2{}
 	}
 	if c.RenderError == nil {
 		c.RenderError = renderError
@@ -267,17 +272,21 @@ func (s *Server) redeem(r *http.Request) (wire.TokenResponse, error) {
 		return wire.TokenResponse{}, werr
 	}
 	req := protocol.TokenRequest(parsed)
-	client, err := s.client(r.Context(), req.ClientID)
+	clientID, perr := protocol.Identify(req)
+	if perr != nil {
+		return wire.TokenResponse{}, oauthError(perr)
+	}
+	client, err := s.client(r.Context(), clientID)
 	if err != nil {
 		return wire.TokenResponse{}, err
 	}
-	if perr := protocol.ValidateTokenRequest(client, req); perr != nil {
+	if perr := protocol.ValidateTokenRequest(client, req, s.config.SecretHasher.Verify); perr != nil {
 		return wire.TokenResponse{}, oauthError(perr)
 	}
-	if _, err := s.redeemCode(r.Context(), req, s.config.Codes.Code); err != nil {
+	if _, err := s.redeemCode(r.Context(), clientID, req, s.config.Codes.Code); err != nil {
 		return wire.TokenResponse{}, err
 	}
-	stored, err := s.redeemCode(r.Context(), req, s.config.Codes.ConsumeCode)
+	stored, err := s.redeemCode(r.Context(), clientID, req, s.config.Codes.ConsumeCode)
 	if err != nil {
 		return wire.TokenResponse{}, err
 	}
@@ -305,8 +314,8 @@ func (s *Server) redeem(r *http.Request) (wire.TokenResponse, error) {
 	}, nil
 }
 
-// redeemCode loads the code of req with load and applies protocol's redemption decision on it.
-func (s *Server) redeemCode(ctx context.Context, req protocol.TokenRequest, load func(context.Context, []byte) (store.Code, error)) (store.Code, error) {
+// redeemCode loads the code of req from the Client clientID with load and applies protocol's redemption decision on it.
+func (s *Server) redeemCode(ctx context.Context, clientID string, req protocol.TokenRequest, load func(context.Context, []byte) (store.Code, error)) (store.Code, error) {
 	stored, err := load(ctx, hash(req.Code))
 	var code *protocol.Code
 	switch {
@@ -316,7 +325,7 @@ func (s *Server) redeemCode(ctx context.Context, req protocol.TokenRequest, load
 	case !errors.Is(err, store.ErrNotFound):
 		return store.Code{}, err
 	}
-	revoke, perr := protocol.Redeem(code, req, s.config.Clock())
+	revoke, perr := protocol.Redeem(code, clientID, req, s.config.Clock())
 	if revoke {
 		if err := s.config.Tokens.RevokeGrant(ctx, stored.Grant.ID); err != nil {
 			return store.Code{}, err
@@ -379,7 +388,7 @@ func oauthError(e *protocol.Error) *wire.Error {
 }
 
 func protocolClient(c store.Client) protocol.Client {
-	return protocol.Client{ID: c.ID, Public: c.Type == store.Public, RedirectURIs: c.RedirectURIs}
+	return protocol.Client{ID: c.ID, Public: c.Type == store.Public, RedirectURIs: c.RedirectURIs, SecretHash: c.SecretHash}
 }
 
 func protocolRequest(r store.AuthorizationRequest) protocol.AuthorizationRequest {

@@ -103,22 +103,22 @@ func TestRedeemIssuedCode(t *testing.T) {
 			t.Fatal(err)
 		}
 		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
+		clientID := rapid.SampledFrom([]string{"client", "other"}).Draw(t, "client")
 		r := TokenRequest{
 			GrantType:    "authorization_code",
-			ClientID:     rapid.SampledFrom([]string{"client", "other"}).Draw(t, "client"),
 			RedirectURI:  rapid.SampledFrom([]string{"", "https://c.example/cb", "https://c.example/other"}).Draw(t, "redirect_uri"),
 			CodeVerifier: rapid.SampledFrom([]string{v, verifierGen.Draw(t, "other verifier")}).Draw(t, "code_verifier"),
 		}
 		code.Used = rapid.Bool().Draw(t, "used")
-		bound := r.ClientID == "client" && r.RedirectURI != "https://c.example/other" && r.CodeVerifier == v
-		revoke, err := Redeem(&code, r, now)
+		bound := clientID == "client" && r.RedirectURI != "https://c.example/other" && r.CodeVerifier == v
+		revoke, err := Redeem(&code, clientID, r, now)
 		if want := bound && !code.Used && now.Before(expiresAt); (err == nil) != want {
 			t.Fatalf("got redeemed %v, want %v", err == nil, want)
 		}
 		if revoke != (bound && code.Used) {
 			t.Fatalf("got Grant revocation %v, want it for every replay with the right client and verifier", revoke)
 		}
-		if revoke, err := Redeem(nil, r, now); err == nil || revoke {
+		if revoke, err := Redeem(nil, clientID, r, now); err == nil || revoke {
 			t.Fatal("an unknown code redeems or revokes")
 		}
 	})
@@ -173,6 +173,11 @@ func TestAuthorize(t *testing.T) {
 	}
 }
 
+// verify accepts the secret "secret" for the hash "hash".
+func verify(hash, secret string) bool {
+	return hash == "hash" && secret == "secret"
+}
+
 func TestValidateTokenRequest(t *testing.T) {
 	public := &Client{ID: "client", Public: true}
 	valid := TokenRequest{GrantType: "authorization_code", Code: "c", ClientID: "client", CodeVerifier: "v"}
@@ -186,17 +191,72 @@ func TestValidateTokenRequest(t *testing.T) {
 		"other grant_type":   {public, func(r *TokenRequest) { r.GrantType = "password" }, "unsupported_grant_type"},
 		"missing code":       {public, func(r *TokenRequest) { r.Code = "" }, "invalid_request"},
 		"missing verifier":   {public, func(r *TokenRequest) { r.CodeVerifier = "" }, "invalid_request"},
-		"unknown client":     {nil, func(*TokenRequest) {}, "invalid_client"},
-		"confidential":       {&Client{ID: "client"}, func(*TokenRequest) {}, "invalid_client"},
-		"client_secret":      {public, func(r *TokenRequest) { r.ClientSecret = "s" }, "invalid_client"},
-		"authorization":      {public, func(r *TokenRequest) { r.Authorization = "Basic eDp5" }, "invalid_client"},
+		"unauthenticated":    {nil, func(*TokenRequest) {}, "invalid_client"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			r := valid
 			tt.change(&r)
-			if code := errorCode(ValidateTokenRequest(tt.client, r)); code != tt.code {
+			if code := errorCode(ValidateTokenRequest(tt.client, r, verify)); code != tt.code {
 				t.Fatalf("got error %q, want %q", code, tt.code)
+			}
+		})
+	}
+}
+
+func TestIdentify(t *testing.T) {
+	tests := map[string]struct {
+		r    TokenRequest
+		id   string
+		code string
+	}{
+		"client_id":                  {TokenRequest{ClientID: "c"}, "c", ""},
+		"client_secret_post":         {TokenRequest{ClientID: "c", ClientSecret: "s"}, "c", ""},
+		"client_secret_basic":        {TokenRequest{AuthScheme: "Basic", BasicID: "c"}, "c", ""},
+		"Basic with client_id":       {TokenRequest{ClientID: "c", AuthScheme: "Basic", BasicID: "c"}, "c", ""},
+		"other scheme":               {TokenRequest{ClientID: "c", AuthScheme: "Bearer"}, "c", ""},
+		"none":                       {TokenRequest{}, "", ""},
+		"Basic and client_secret":    {TokenRequest{ClientSecret: "s", AuthScheme: "Basic", BasicID: "c"}, "", "invalid_request"},
+		"scheme and client_secret":   {TokenRequest{ClientID: "c", ClientSecret: "s", AuthScheme: "Bearer"}, "", "invalid_request"},
+		"Basic with other client_id": {TokenRequest{ClientID: "d", AuthScheme: "Basic", BasicID: "c"}, "", "invalid_client"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			id, err := Identify(tt.r)
+			if id != tt.id || errorCode(err) != tt.code {
+				t.Fatalf("got %q and error %v, want %q and %q", id, err, tt.id, tt.code)
+			}
+		})
+	}
+}
+
+func TestAuthenticate(t *testing.T) {
+	public := &Client{ID: "client", Public: true}
+	confidential := &Client{ID: "client", SecretHash: "hash"}
+	tests := map[string]struct {
+		client *Client
+		r      TokenRequest
+		ok     bool
+	}{
+		"public":                        {public, TokenRequest{ClientID: "client"}, true},
+		"client_secret_basic":           {confidential, TokenRequest{AuthScheme: "Basic", BasicID: "client", BasicSecret: "secret"}, true},
+		"client_secret_post":            {confidential, TokenRequest{ClientID: "client", ClientSecret: "secret"}, true},
+		"unknown client":                {nil, TokenRequest{ClientID: "client"}, false},
+		"public with client_secret":     {public, TokenRequest{ClientID: "client", ClientSecret: "secret"}, false},
+		"public with Basic":             {public, TokenRequest{AuthScheme: "Basic", BasicID: "client"}, false},
+		"public with other scheme":      {public, TokenRequest{ClientID: "client", AuthScheme: "Bearer"}, false},
+		"confidential without a secret": {confidential, TokenRequest{ClientID: "client"}, false},
+		"wrong Basic secret":            {confidential, TokenRequest{AuthScheme: "Basic", BasicID: "client", BasicSecret: "wrong"}, false},
+		"wrong client_secret":           {confidential, TokenRequest{ClientID: "client", ClientSecret: "wrong"}, false},
+		"empty Basic secret":            {confidential, TokenRequest{AuthScheme: "Basic", BasicID: "client"}, false},
+		"other scheme":                  {confidential, TokenRequest{ClientID: "client", AuthScheme: "Bearer"}, false},
+		"no secret hash":                {&Client{ID: "client"}, TokenRequest{ClientID: "client", ClientSecret: "secret"}, false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := Authenticate(tt.client, tt.r, verify)
+			if (err == nil) != tt.ok || err != nil && err.Code != "invalid_client" {
+				t.Fatalf("got error %v, want authenticated %v or invalid_client", err, tt.ok)
 			}
 		})
 	}
