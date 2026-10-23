@@ -155,6 +155,11 @@ func TestLoadInvalid(t *testing.T) {
 			want:  "INV-0001: superseded_by must be set",
 		},
 		{
+			name:  "shared text without statement",
+			files: map[string]string{"a.yaml": invariants + "  - id: INV-0002\n    keyword: MUST\n    text: An authorization code issues tokens at most once.\n    statement: Tokens are issued once.\n    status: applicable\n"},
+			want:  "INV-0001: shares its text with another requirement and has no statement",
+		},
+		{
 			name:  "dangling successor",
 			files: map[string]string{"a.yaml": rfc6749},
 			want:  `superseded_by "OAUTH21D16-4.1-01" is not another requirement`,

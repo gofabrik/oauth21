@@ -4,20 +4,29 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
+var errUsage = errors.New("usage: catalog validate DIR | catalog extract FILE.yaml")
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "catalog:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
-	if len(args) != 2 || args[0] != "validate" {
-		return errors.New("usage: catalog validate DIR")
+func run(args []string, stdout io.Writer) error {
+	if len(args) != 2 {
+		return errUsage
 	}
-	_, err := Load(os.DirFS(args[1]))
-	return err
+	switch args[0] {
+	case "validate":
+		_, err := Load(os.DirFS(args[1]))
+		return err
+	case "extract":
+		return extractFile(args[1], stdout)
+	}
+	return errUsage
 }

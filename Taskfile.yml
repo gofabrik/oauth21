@@ -4,6 +4,7 @@ vars:
   MODULES: . tools
   GOLANGCI_LINT: github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
   GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+  FUZZTIME: 10s
 
 tasks:
   check:
@@ -11,10 +12,12 @@ tasks:
     cmds:
       - task: build
       - task: test
+      - task: fuzz
       - task: lint
       - task: vuln
       - task: archlint
       - task: specs:verify
+      - task: catalog
 
   build:
     desc: Build and vet all modules
@@ -27,6 +30,17 @@ tasks:
     cmds:
       - for: { var: MODULES }
         cmd: cd {{.ITEM}} && go test -race ./...
+
+  fuzz:
+    desc: Run every fuzz target briefly in all modules
+    cmds:
+      - for: { var: MODULES }
+        cmd: |
+          cd {{.ITEM}} && for pkg in $(go list ./...); do
+            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz'); do
+              go test "$pkg" -run '^$' -fuzz "^$target\$" -fuzztime {{.FUZZTIME}}
+            done
+          done
 
   lint:
     desc: Run golangci-lint in all modules
@@ -44,6 +58,11 @@ tasks:
     desc: Check the architecture rules of the core module
     cmds:
       - cd tools && go run ./archlint ..
+
+  catalog:
+    desc: Validate the requirement catalog
+    cmds:
+      - cd tools && go run ./catalog validate ../conformance/catalog
 
   specs:fetch:
     desc: Download the spec texts listed in conformance/specs/SOURCES

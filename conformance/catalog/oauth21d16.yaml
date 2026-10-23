@@ -1,0 +1,29 @@
+document: OAUTH21D16
+title: The OAuth 2.1 Authorization Framework
+source: ../specs/draft-ietf-oauth-v2-1-16.txt
+requirements:
+  - id: OAUTH21D16-4.1.1-06
+    section: 4.1.1
+    keyword: REQUIRED
+    text: '"code_challenge_method": REQUIRED, the value S256 or a value defined by a future extension'
+    status: applicable
+  - id: OAUTH21D16-4.1.1-11
+    section: 4.1.1
+    keyword: MUST
+    text: Clients MUST use code challenge methods that do not expose the code_verifier in the authorization request.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.1-15
+    section: 4.1.1
+    keyword: MUST
+    text: Clients MUST use code_challenge and code_verifier and authorization servers MUST enforce their use except under the conditions described in Section 7.5.1.
+    statement: Clients MUST use code_challenge and code_verifier except under the conditions described in Section 7.5.1.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.1-16
+    section: 4.1.1
+    keyword: MUST
+    text: Clients MUST use code_challenge and code_verifier and authorization servers MUST enforce their use except under the conditions described in Section 7.5.1.
+    statement: Authorization servers MUST enforce the use of code_challenge and code_verifier except under the conditions described in Section 7.5.1.
+    status: applicable
+    note: The server requires PKCE from every Client.

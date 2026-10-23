@@ -72,6 +72,7 @@ type Requirement struct {
 	Section      string   `yaml:"section,omitempty"`
 	Keyword      Keyword  `yaml:"keyword"`
 	Text         string   `yaml:"text"`
+	Statement    string   `yaml:"statement,omitempty"`
 	Status       Status   `yaml:"status"`
 	SupersededBy []string `yaml:"superseded_by,omitempty"`
 	Note         string   `yaml:"note,omitempty"`
@@ -155,7 +156,14 @@ func (c *Catalog) Validate() error {
 	}
 
 	for _, d := range c.Documents {
+		texts := map[string]int{}
 		for _, r := range d.Requirements {
+			texts[r.Section+"\n"+r.Text]++
+		}
+		for _, r := range d.Requirements {
+			if texts[r.Section+"\n"+r.Text] > 1 && r.Statement == "" {
+				fail("%s: shares its text with another requirement and has no statement", r.ID)
+			}
 			for _, s := range r.SupersededBy {
 				if s == r.ID || !reqs[s] {
 					fail("%s: superseded_by %q is not another requirement in the catalog", r.ID, s)
@@ -173,9 +181,13 @@ func decode(fsys fs.FS, name string) (Document, error) {
 		return Document{}, err
 	}
 	defer func() { _ = f.Close() }()
+	return parse(f)
+}
 
+// parse reads exactly one YAML document from r.
+func parse(r io.Reader) (Document, error) {
 	var d Document
-	dec := yaml.NewDecoder(f)
+	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true)
 	if err := dec.Decode(&d); errors.Is(err, io.EOF) {
 		return Document{}, errors.New("empty file")

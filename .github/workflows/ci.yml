@@ -34,4 +34,4 @@ jobs:
         with:
           go-version: '1.27'
       - uses: go-task/setup-task@v2
-      - run: task lint vuln archlint specs:verify
+      - run: task fuzz lint vuln archlint specs:verify catalog

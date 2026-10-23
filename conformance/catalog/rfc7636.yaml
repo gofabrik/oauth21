@@ -1,0 +1,160 @@
+document: RFC7636
+title: Proof Key for Code Exchange by OAuth Public Clients
+source: ../specs/rfc7636.txt
+requirements:
+  - id: RFC7636-4.1-01
+    section: "4.1"
+    keyword: SHOULD
+    text: 'NOTE: The code verifier SHOULD have enough entropy to make it impractical to guess the value.'
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-4.1-02
+    section: "4.1"
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED that the output of a suitable random number generator be used to create a 32-octet sequence.
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-4.2-01
+    section: "4.2"
+    keyword: MUST
+    text: If the client is capable of using "S256", it MUST use "S256", as "S256" is Mandatory To Implement (MTI) on the server.
+    statement: A client capable of using S256 MUST use S256.
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-4.2-02
+    section: "4.2"
+    keyword: MUST
+    text: If the client is capable of using "S256", it MUST use "S256", as "S256" is Mandatory To Implement (MTI) on the server.
+    statement: The server MUST implement S256.
+    status: applicable
+  - id: RFC7636-4.3-01
+    section: "4.3"
+    keyword: REQUIRED
+    text: code_challenge REQUIRED.
+    status: applicable
+  - id: RFC7636-4.3-02
+    section: "4.3"
+    keyword: OPTIONAL
+    text: code_challenge_method OPTIONAL, defaults to "plain" if not present in the request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-06
+  - id: RFC7636-4.4-01
+    section: "4.4"
+    keyword: MUST
+    text: When the server issues the authorization code in the authorization response, it MUST associate the "code_challenge" and "code_challenge_method" values with the authorization code so it can be verified later.
+    status: applicable
+  - id: RFC7636-4.4-02
+    section: "4.4"
+    keyword: MUST NOT
+    text: The server MUST NOT include the "code_challenge" value in client requests in a form that other entities can extract.
+    status: applicable
+    note: Met by opaque codes that do not carry the code challenge.
+  - id: RFC7636-4.4.1-01
+    section: 4.4.1
+    keyword: MUST
+    text: If the server requires Proof Key for Code Exchange (PKCE) by OAuth public clients and the client does not send the "code_challenge" in the request, the authorization endpoint MUST return the authorization error response with the "error" value set to "invalid_request".
+    status: applicable
+    note: The server requires PKCE from every Client.
+  - id: RFC7636-4.4.1-02
+    section: 4.4.1
+    keyword: SHOULD
+    text: The "error_description" or the response of "error_uri" SHOULD explain the nature of error, e.g., code challenge required.
+    status: applicable
+  - id: RFC7636-4.4.1-03
+    section: 4.4.1
+    keyword: MUST
+    text: If the server supporting PKCE does not support the requested transformation, the authorization endpoint MUST return the authorization error response with "error" value set to "invalid_request".
+    status: applicable
+    note: Applies to plain and any method other than S256.
+  - id: RFC7636-4.4.1-04
+    section: 4.4.1
+    keyword: SHOULD
+    text: The "error_description" or the response of "error_uri" SHOULD explain the nature of error, e.g., transform algorithm not supported.
+    status: applicable
+  - id: RFC7636-4.5-01
+    section: "4.5"
+    keyword: REQUIRED
+    text: code_verifier REQUIRED.
+    status: applicable
+  - id: RFC7636-4.5-02
+    section: "4.5"
+    keyword: MUST
+    text: That is the method that the token endpoint MUST use to verify the "code_verifier".
+    statement: The token endpoint MUST verify the code_verifier with the code_challenge_method bound to the authorization code.
+    status: applicable
+  - id: RFC7636-4.6-01
+    section: "4.6"
+    keyword: MUST
+    text: If the values are equal, the token endpoint MUST continue processing as normal (as defined by OAuth 2.0 [RFC6749]).
+    status: applicable
+  - id: RFC7636-4.6-02
+    section: "4.6"
+    keyword: MUST
+    text: If the values are not equal, an error response indicating "invalid_grant" as described in Section 5.2 of [RFC6749] MUST be returned.
+    status: applicable
+  - id: RFC7636-5-01
+    section: "5"
+    keyword: MAY
+    text: Server implementations of this specification MAY accept OAuth2.0 clients that do not implement this extension.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-16
+  - id: RFC7636-5-02
+    section: "5"
+    keyword: SHOULD
+    text: As the OAuth 2.0 [RFC6749] server responses are unchanged by this specification, client implementations of this specification do not need to know if the server has implemented this specification or not and SHOULD send the additional parameters as defined in Section 4 to all servers.
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-6.2.1-01
+    section: 6.2.1
+    keyword: RECOMMENDED
+    text: Because a core goal of this specification is for the resulting representations to be compact, it is RECOMMENDED that the name be short -- not to exceed 8 characters without a compelling reason to do so.
+    status: informative
+    note: IANA registration guidance.
+  - id: RFC7636-7.1-01
+    section: "7.1"
+    keyword: SHOULD
+    text: The client SHOULD create a "code_verifier" with a minimum of 256 bits of entropy.
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-7.2-01
+    section: "7.2"
+    keyword: MUST NOT
+    text: Clients MUST NOT downgrade to "plain" after trying the "S256" method.
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-7.2-02
+    section: "7.2"
+    keyword: SHOULD NOT
+    text: Because of this, "plain" SHOULD NOT be used and exists only for compatibility with deployed implementations where the request path is already protected.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-06
+      - OAUTH21D16-4.1.1-11
+  - id: RFC7636-7.2-03
+    section: "7.2"
+    keyword: SHOULD NOT
+    text: The "plain" method SHOULD NOT be used in new implementations, unless they cannot support "S256" for some technical reason.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-06
+      - OAUTH21D16-4.1.1-11
+  - id: RFC7636-7.2-04
+    section: "7.2"
+    keyword: SHOULD
+    text: The "S256" code challenge method or other cryptographically secure code challenge method extension SHOULD be used.
+    status: out-of-scope
+    note: Client requirement.
+  - id: RFC7636-7.2-05
+    section: "7.2"
+    keyword: MUST
+    text: If the code challenge method is "plain" and the code challenge is to be returned inside authorization "code" to achieve a stateless server, it MUST be encrypted in such a manner that only the server can decrypt and extract it.
+    status: out-of-scope
+    note: The plain method is not supported, and codes are opaque values that do not carry the code challenge.
+  - id: RFC7636-7.4-01
+    section: "7.4"
+    keyword: SHOULD
+    text: All the OAuth security analysis presented in [RFC6819] applies, so readers SHOULD carefully follow it.
+    status: informative
+    note: Advice to readers.
