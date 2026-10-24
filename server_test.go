@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -158,6 +159,52 @@ func TestCodeReplayRevokesGrant(t *testing.T) {
 	}
 }
 
+func TestCodeReplayRevokesTokenWithoutRefreshToken(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, GrantTypes: []string{"authorization_code"}})
+	code := issueCode(t, srv)
+
+	w := do(srv.TokenHandler(), tokenRequest(tokenBody(code)))
+	var body tokenPair
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.AccessToken == "" || body.RefreshToken != "" {
+		t.Fatalf("got status %d and body %s, want only an access token", w.Code, w.Body)
+	}
+	if w := do(srv.TokenHandler(), tokenRequest(tokenBody(code))); w.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d for a replay, want 400", w.Code)
+	}
+	if _, err := m.Token(t.Context(), sum(body.AccessToken)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("got error %v for the access token, want it revoked", err)
+	}
+}
+
+func TestClientCredentialsCreatesGrantPerToken(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.AddClient(store.Client{ID: "service", Type: store.Confidential, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash, GrantTypes: []string{"client_credentials"}})
+	body := "grant_type=client_credentials&client_id=service&client_secret=secret"
+	var grants []store.Grant
+	for range 2 {
+		token, err := m.Token(t.Context(), sum(accessToken(t, do(srv.TokenHandler(), tokenRequest(body)))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		grants = append(grants, token.Grant)
+	}
+	for _, g := range grants {
+		if g.ID == "" || g.ClientID != "service" || g.Subject != "" || !slices.Equal(g.Scopes, readScope) {
+			t.Fatalf("got Grant %+v, want one of the service Client with scope read and no Subject", g)
+		}
+	}
+	if grants[0].ID == grants[1].ID {
+		t.Fatalf("got Grant %q for both tokens, want one Grant per token", grants[0].ID)
+	}
+}
+
 func TestConcurrentRedemptionLeavesNoToken(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
@@ -277,9 +324,15 @@ func TestCodeExpiringDuringConsumeIsRejected(t *testing.T) {
 }
 
 func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
+	for name, grantTypes := range map[string][]string{"with refresh token": nil, "without refresh token": {"authorization_code"}} {
+		t.Run(name, func(t *testing.T) { testTokenNeverOutlivesCodeRetention(t, grantTypes) })
+	}
+}
+
+func testTokenNeverOutlivesCodeRetention(t *testing.T, grantTypes []string) {
 	synctest.Test(t, func(t *testing.T) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, GrantTypes: grantTypes})
 		withLifetime := func(lifetime time.Duration) *oauth21.Server {
 			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime, RefreshTokenLifetime: lifetime})
 			if err != nil {
@@ -429,6 +482,10 @@ func FuzzTokenHandler(f *testing.F) {
 	f.Add("grant_type=refresh_token&refresh_token=REFRESH&client_id=client&scope=admin", "")
 	f.Add("grant_type=refresh_token&refresh_token=REFRESH", "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
 	f.Add("grant_type=client_credentials", "")
+	f.Add("grant_type=client_credentials", "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
+	f.Add("grant_type=client_credentials&scope=read", "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
+	f.Add("grant_type=client_credentials&scope=admin&client_id=confidential&client_secret=secret", "")
+	f.Add("grant_type=client_credentials&client_id=client", "")
 	f.Add("%zz", "")
 	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
 	if err != nil {
@@ -436,7 +493,7 @@ func FuzzTokenHandler(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, body, authorization string) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash})
+		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash, GrantTypes: []string{"authorization_code", "refresh_token", "client_credentials"}})
 		srv := newServer(t, m, m, m)
 		body = strings.ReplaceAll(body, "CODE", issueCode(t, srv))
 		if strings.Contains(body, "REFRESH") {

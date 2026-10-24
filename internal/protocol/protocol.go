@@ -18,6 +18,7 @@ const (
 	invalidClient           = "invalid_client"
 	invalidGrant            = "invalid_grant"
 	invalidScope            = "invalid_scope"
+	unauthorizedClient      = "unauthorized_client"
 	unsupportedGrantType    = "unsupported_grant_type"
 	unsupportedResponseType = "unsupported_response_type"
 )
@@ -29,6 +30,7 @@ const methodS256 = "S256"
 const (
 	AuthorizationCodeGrant = "authorization_code"
 	RefreshTokenGrant      = "refresh_token"
+	ClientCredentialsGrant = "client_credentials"
 )
 
 // Error is an OAuth error response.
@@ -54,6 +56,16 @@ type Client struct {
 	AllowedScopes []string
 	// DefaultScopes are requested for the Client when it omits scope.
 	DefaultScopes []string
+	// GrantTypes are the grant types the Client may use, authorization_code and refresh_token when empty.
+	GrantTypes []string
+}
+
+// Allows reports whether c may use grantType.
+func (c Client) Allows(grantType string) bool {
+	if len(c.GrantTypes) == 0 {
+		return grantType == AuthorizationCodeGrant || grantType == RefreshTokenGrant
+	}
+	return slices.Contains(c.GrantTypes, grantType)
 }
 
 // AuthorizationParams is the parameters of an authorization request.
@@ -100,6 +112,8 @@ func Authorize(client *Client, r AuthorizationParams, supported []string, expire
 		return a, &Error{invalidRequest, "response_type required"}
 	case r.ResponseType != "code":
 		return a, &Error{unsupportedResponseType, "response_type must be code"}
+	case !client.Allows(AuthorizationCodeGrant):
+		return a, grantTypeNotAllowed()
 	case r.CodeChallenge == "":
 		return a, &Error{invalidRequest, "code challenge required"}
 	case r.CodeChallengeMethod != methodS256:
@@ -253,6 +267,11 @@ func TokenExpiry(now time.Time, lifetime time.Duration, limit time.Time) time.Ti
 	return limit
 }
 
+// grantTypeNotAllowed is the error for a Client using a grant type it may not use.
+func grantTypeNotAllowed() *Error {
+	return &Error{unauthorizedClient, "grant type not allowed for the client"}
+}
+
 // TokenRequest is the parameters of a token request.
 type TokenRequest struct {
 	GrantType    string
@@ -323,10 +342,17 @@ func ValidateTokenRequest(client *Client, r TokenRequest, verify func(hash, secr
 		if r.RefreshToken == "" {
 			return &Error{invalidRequest, "refresh_token required"}
 		}
+	case ClientCredentialsGrant:
 	default:
-		return &Error{unsupportedGrantType, "grant_type must be authorization_code or refresh_token"}
+		return &Error{unsupportedGrantType, "grant_type must be authorization_code, refresh_token or client_credentials"}
 	}
-	return Authenticate(client, r, verify)
+	if err := Authenticate(client, r, verify); err != nil {
+		return err
+	}
+	if !client.Allows(r.GrantType) {
+		return grantTypeNotAllowed()
+	}
+	return nil
 }
 
 // Effect is a Store operation protocol asks the server to apply.
@@ -378,9 +404,12 @@ type RefreshToken struct {
 	Rotated   bool
 }
 
-// IssueRefreshToken is the first refresh token of the Refresh Token Family of code redeemed at now.
-func IssueRefreshToken(code Code, now time.Time, lifetime time.Duration) RefreshToken {
-	return RefreshToken{ClientID: code.ClientID, Scopes: code.Scopes, ExpiresAt: TokenExpiry(now, lifetime, code.RetainUntil)}
+// IssueRefreshToken is the first refresh token of the Refresh Token Family of code redeemed at now by client, nil when client may not use refresh tokens.
+func IssueRefreshToken(client Client, code Code, now time.Time, lifetime time.Duration) *RefreshToken {
+	if !client.Allows(RefreshTokenGrant) {
+		return nil
+	}
+	return &RefreshToken{ClientID: code.ClientID, Scopes: code.Scopes, ExpiresAt: TokenExpiry(now, lifetime, code.RetainUntil)}
 }
 
 // Successor is the refresh token that replaces token in its Refresh Token Family.
@@ -424,6 +453,14 @@ func Rotated(token *RefreshToken, now time.Time) (Effect, *Error) {
 		return NoEffect, &Error{invalidGrant, "refresh token expired"}
 	}
 	return NoEffect, nil
+}
+
+// ClientCredentials decides whether r from client may obtain an access token for itself, and returns its scopes.
+func ClientCredentials(client Client, r TokenRequest, supported []string) ([]string, *Error) {
+	if client.Public {
+		return nil, &Error{unauthorizedClient, "public clients cannot use client credentials"}
+	}
+	return resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes)
 }
 
 // TokenCreated decides on the result of creating a token, which fails when its Grant was revoked.

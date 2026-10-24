@@ -32,6 +32,8 @@ type Client struct {
 	AllowedScopes []string
 	// DefaultScopes are requested for the Client when it omits scope.
 	DefaultScopes []string
+	// GrantTypes are the grant types the Client may use, authorization_code and refresh_token when empty.
+	GrantTypes []string
 }
 
 // AuthorizationRequest is a validated request waiting for the Host Application.
@@ -47,7 +49,7 @@ type AuthorizationRequest struct {
 	ExpiresAt time.Time
 }
 
-// Grant is the authorization a Resource Owner gave a Client.
+// Grant is the authorization a Client holds, given by a Resource Owner or obtained for itself with client credentials.
 type Grant struct {
 	ID       string
 	ClientID string

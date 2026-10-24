@@ -241,3 +241,13 @@ func TestRedeemedAccessTokenExpiresWithRefreshToken(t *testing.T) {
 		t.Fatalf("got status %d and body %v, want an access token expiring with the refresh token", status, body)
 	}
 }
+
+// TestCodeRedemptionWithoutRefreshGrant checks that a Client not allowed the refresh_token grant type gets no refresh token for its code.
+func TestCodeRedemptionWithoutRefreshGrant(t *testing.T) {
+	client := confidentialClient(t)
+	client.GrantTypes = []string{"authorization_code"}
+	a := newAuthorizationServer(t, client)
+	if _, refresh := a.tokens(a.confidentialCode(), basic(confidentialID, secret)); refresh != "" {
+		t.Fatal("got a refresh token, want none")
+	}
+}

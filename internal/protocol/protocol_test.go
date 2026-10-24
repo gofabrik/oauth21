@@ -192,6 +192,7 @@ func TestAuthorize(t *testing.T) {
 	two := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb", "https://c.example/other"}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
 	empty := &Client{ID: "client", Public: true, RedirectURIs: []string{""}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
 	noDefaults := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: scopes}
+	noCode := &Client{ID: "client", RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: scopes, DefaultScopes: scopes[:1], GrantTypes: []string{"client_credentials"}}
 	valid := AuthorizationParams{
 		ResponseType:        "code",
 		ClientID:            "client",
@@ -205,26 +206,27 @@ func TestAuthorize(t *testing.T) {
 		code       string
 		redirectTo string
 	}{
-		"valid":                         {client, func(*AuthorizationParams) {}, "", "https://c.example/cb"},
-		"unknown client":                {nil, func(*AuthorizationParams) {}, "invalid_request", ""},
-		"unregistered redirect_uri":     {client, func(r *AuthorizationParams) { r.RedirectURI = "https://evil.example/cb" }, "invalid_request", ""},
-		"redirect_uri required":         {two, func(*AuthorizationParams) {}, "invalid_request", ""},
-		"empty registered redirect_uri": {empty, func(*AuthorizationParams) {}, "invalid_request", ""},
-		"chosen redirect_uri":           {two, func(r *AuthorizationParams) { r.RedirectURI = "https://c.example/other" }, "", "https://c.example/other"},
-		"missing response_type":         {client, func(r *AuthorizationParams) { r.ResponseType = "" }, "invalid_request", "https://c.example/cb"},
-		"token response_type":           {client, func(r *AuthorizationParams) { r.ResponseType = "token" }, "unsupported_response_type", "https://c.example/cb"},
-		"missing code_challenge":        {client, func(r *AuthorizationParams) { r.CodeChallenge = "" }, "invalid_request", "https://c.example/cb"},
-		"plain":                         {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "plain" }, "invalid_request", "https://c.example/cb"},
-		"missing method":                {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "" }, "invalid_request", "https://c.example/cb"},
-		"short code_challenge":          {client, func(r *AuthorizationParams) { r.CodeChallenge = "abc" }, "invalid_request", "https://c.example/cb"},
-		"long code_challenge":           {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("a", 44) }, "invalid_request", "https://c.example/cb"},
-		"non-base64url challenge":       {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("~", 43) }, "invalid_request", "https://c.example/cb"},
-		"not a SHA-256 hash":            {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("A", 42) + "B" }, "invalid_request", "https://c.example/cb"},
-		"allowed scope":                 {client, func(r *AuthorizationParams) { r.Scope = "write read" }, "", "https://c.example/cb"},
-		"no default scopes":             {noDefaults, func(*AuthorizationParams) {}, "invalid_scope", "https://c.example/cb"},
-		"unsupported scope":             {client, func(r *AuthorizationParams) { r.Scope = "read delete" }, "invalid_scope", "https://c.example/cb"},
-		"scope not allowed":             {client, func(r *AuthorizationParams) { r.Scope = "read admin" }, "invalid_scope", "https://c.example/cb"},
-		"tab-separated scopes":          {client, func(r *AuthorizationParams) { r.Scope = "read\twrite" }, "invalid_scope", "https://c.example/cb"},
+		"valid":                          {client, func(*AuthorizationParams) {}, "", "https://c.example/cb"},
+		"unknown client":                 {nil, func(*AuthorizationParams) {}, "invalid_request", ""},
+		"unregistered redirect_uri":      {client, func(r *AuthorizationParams) { r.RedirectURI = "https://evil.example/cb" }, "invalid_request", ""},
+		"redirect_uri required":          {two, func(*AuthorizationParams) {}, "invalid_request", ""},
+		"empty registered redirect_uri":  {empty, func(*AuthorizationParams) {}, "invalid_request", ""},
+		"chosen redirect_uri":            {two, func(r *AuthorizationParams) { r.RedirectURI = "https://c.example/other" }, "", "https://c.example/other"},
+		"missing response_type":          {client, func(r *AuthorizationParams) { r.ResponseType = "" }, "invalid_request", "https://c.example/cb"},
+		"token response_type":            {client, func(r *AuthorizationParams) { r.ResponseType = "token" }, "unsupported_response_type", "https://c.example/cb"},
+		"missing code_challenge":         {client, func(r *AuthorizationParams) { r.CodeChallenge = "" }, "invalid_request", "https://c.example/cb"},
+		"plain":                          {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "plain" }, "invalid_request", "https://c.example/cb"},
+		"missing method":                 {client, func(r *AuthorizationParams) { r.CodeChallengeMethod = "" }, "invalid_request", "https://c.example/cb"},
+		"short code_challenge":           {client, func(r *AuthorizationParams) { r.CodeChallenge = "abc" }, "invalid_request", "https://c.example/cb"},
+		"long code_challenge":            {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("a", 44) }, "invalid_request", "https://c.example/cb"},
+		"non-base64url challenge":        {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("~", 43) }, "invalid_request", "https://c.example/cb"},
+		"not a SHA-256 hash":             {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("A", 42) + "B" }, "invalid_request", "https://c.example/cb"},
+		"allowed scope":                  {client, func(r *AuthorizationParams) { r.Scope = "write read" }, "", "https://c.example/cb"},
+		"no default scopes":              {noDefaults, func(*AuthorizationParams) {}, "invalid_scope", "https://c.example/cb"},
+		"unsupported scope":              {client, func(r *AuthorizationParams) { r.Scope = "read delete" }, "invalid_scope", "https://c.example/cb"},
+		"scope not allowed":              {client, func(r *AuthorizationParams) { r.Scope = "read admin" }, "invalid_scope", "https://c.example/cb"},
+		"tab-separated scopes":           {client, func(r *AuthorizationParams) { r.Scope = "read\twrite" }, "invalid_scope", "https://c.example/cb"},
+		"authorization_code not allowed": {noCode, func(*AuthorizationParams) {}, "unauthorized_client", "https://c.example/cb"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -249,7 +251,10 @@ func verify(hash, secret string) bool {
 
 func TestValidateTokenRequest(t *testing.T) {
 	public := &Client{ID: "client", Public: true}
+	serviceOnly := &Client{ID: "client", SecretHash: "hash", GrantTypes: []string{"client_credentials"}}
+	noRefresh := &Client{ID: "client", Public: true, GrantTypes: []string{"authorization_code"}}
 	valid := TokenRequest{GrantType: "authorization_code", Code: "c", ClientID: "client", CodeVerifier: "v"}
+	clientCredentials := TokenRequest{GrantType: "client_credentials", ClientID: "client", ClientSecret: "secret"}
 	tests := map[string]struct {
 		client *Client
 		change func(*TokenRequest)
@@ -266,6 +271,14 @@ func TestValidateTokenRequest(t *testing.T) {
 		"missing refresh":         {public, func(r *TokenRequest) { *r = TokenRequest{GrantType: "refresh_token", ClientID: "client"} }, "invalid_request"},
 		"refresh unauthenticated": {nil, func(r *TokenRequest) { *r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r"} }, "invalid_client"},
 		"unauthenticated":         {nil, func(*TokenRequest) {}, "invalid_client"},
+		"refresh not allowed": {noRefresh, func(r *TokenRequest) {
+			*r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r", ClientID: "client"}
+		}, "unauthorized_client"},
+		"code not allowed":                      {serviceOnly, func(r *TokenRequest) { r.ClientSecret = "secret" }, "unauthorized_client"},
+		"client_credentials":                    {serviceOnly, func(r *TokenRequest) { *r = clientCredentials }, ""},
+		"client_credentials not allowed":        {&Client{ID: "client", SecretHash: "hash"}, func(r *TokenRequest) { *r = clientCredentials }, "unauthorized_client"},
+		"client_credentials unauthenticated":    {serviceOnly, func(r *TokenRequest) { *r = clientCredentials; r.ClientSecret = "wrong" }, "invalid_client"},
+		"client_credentials for unknown client": {nil, func(r *TokenRequest) { *r = clientCredentials }, "invalid_client"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -652,7 +665,7 @@ func TestRefreshTokenFamily(t *testing.T) {
 		reuseConfidential := rapid.Bool().Draw(t, "reuse confidential")
 		rotates := client.Public || !reuseConfidential
 		code := Code{ClientID: "client", Scopes: []string{"read"}, RetainUntil: expiresAt.Add(time.Hour)}
-		stored := []RefreshToken{IssueRefreshToken(code, now, time.Hour)}
+		stored := []RefreshToken{*IssueRefreshToken(Client{ID: code.ClientID}, code, now, time.Hour)}
 		revoked, current, issued := false, 0, map[int]int{}
 		load := func(i int) *RefreshToken {
 			if revoked {
@@ -735,11 +748,16 @@ func TestRotatedRejectsRefreshTokenAtExpiry(t *testing.T) {
 func TestIssueRefreshToken(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	code := Code{ClientID: "client", Scopes: []string{"read"}, RetainUntil: now.Add(time.Hour)}
+	client := Client{ID: "client"}
 	for lifetime, want := range map[time.Duration]time.Time{time.Minute: now.Add(time.Minute), 2 * time.Hour: code.RetainUntil} {
-		got := IssueRefreshToken(code, now, lifetime)
-		if got.ClientID != "client" || !slices.Equal(got.Scopes, code.Scopes) || !got.ExpiresAt.Equal(want) || got.Rotated {
+		got := IssueRefreshToken(client, code, now, lifetime)
+		if got == nil || got.ClientID != "client" || !slices.Equal(got.Scopes, code.Scopes) || !got.ExpiresAt.Equal(want) || got.Rotated {
 			t.Errorf("got %+v for lifetime %v, want it bound to the code and expiring at %v", got, lifetime, want)
 		}
+	}
+	client.GrantTypes = []string{"authorization_code"}
+	if got := IssueRefreshToken(client, code, now, time.Minute); got != nil {
+		t.Errorf("got %+v for a Client that may not use refresh tokens, want none", got)
 	}
 }
 
@@ -749,5 +767,61 @@ func TestSuccessorKeepsScopesAndExpiry(t *testing.T) {
 	want.Rotated = false
 	if got := Successor(token); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestClientCredentials(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		client := Client{
+			ID:            "client",
+			Public:        rapid.Bool().Draw(t, "public"),
+			AllowedScopes: rapid.SliceOfDistinct(rapid.SampledFrom([]string{"read", "write", "admin"}), rapid.ID).Draw(t, "allowed"),
+			DefaultScopes: rapid.SliceOf(rapid.SampledFrom([]string{"read", "write", "admin"})).Draw(t, "defaults"),
+		}
+		requested := rapid.SampledFrom([]string{"", "read", "write read", "admin", "read admin"}).Draw(t, "scope")
+		scopes, err := ClientCredentials(client, TokenRequest{Scope: requested}, supportedScopes)
+		if client.Public {
+			if err == nil || err.Code != "unauthorized_client" {
+				t.Fatalf("got error %v for a public Client, want unauthorized_client", err)
+			}
+			return
+		}
+		if err != nil && err.Code != "invalid_scope" {
+			t.Fatalf("got error %v, want invalid_scope or none", err)
+		}
+		if err == nil && len(scopes) == 0 {
+			t.Fatal("got no scopes")
+		}
+		asked := client.DefaultScopes
+		if requested != "" {
+			asked = strings.Split(requested, " ")
+		}
+		for _, s := range scopes {
+			if !slices.Contains(supportedScopes, s) || !slices.Contains(client.AllowedScopes, s) || !slices.Contains(asked, s) {
+				t.Fatalf("got scopes %q for %q, allowed %q and defaults %q", scopes, requested, client.AllowedScopes, client.DefaultScopes)
+			}
+		}
+	})
+}
+
+func TestClientCredentialsResolvesScopes(t *testing.T) {
+	client := Client{ID: "client", AllowedScopes: []string{"read", "write"}, DefaultScopes: []string{"read"}}
+	tests := map[string]struct {
+		requested string
+		want      []string
+		code      string
+	}{
+		"default":     {"", []string{"read"}, ""},
+		"requested":   {"write read", []string{"write", "read"}, ""},
+		"not allowed": {"read admin", nil, "invalid_scope"},
+		"unsupported": {"delete", nil, "invalid_scope"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			scopes, err := ClientCredentials(client, TokenRequest{Scope: tt.requested}, supportedScopes)
+			if code := errorCode(err); code != tt.code || !slices.Equal(scopes, tt.want) {
+				t.Fatalf("got scopes %q and error %q, want %q and %q", scopes, code, tt.want, tt.code)
+			}
+		})
 	}
 }

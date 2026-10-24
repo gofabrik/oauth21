@@ -201,3 +201,13 @@ func TestFailedRedemptionKeepsCode(t *testing.T) {
 		t.Fatalf("got status %d and body %v after a failed attempt, want 200", status, body)
 	}
 }
+
+// TestClientWithoutCodeGrantCannotAuthorize checks that a Client not allowed the authorization_code grant type gets unauthorized_client at the authorization endpoint.
+func TestClientWithoutCodeGrantCannotAuthorize(t *testing.T) {
+	client := confidentialClient(t)
+	client.GrantTypes = []string{"client_credentials"}
+	a := newAuthorizationServer(t, client)
+	params := authorizeParams()
+	params.Set("client_id", confidentialID)
+	a.wantAuthorizationError(a.authorize(params), "unauthorized_client", "grant type")
+}

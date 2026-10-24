@@ -297,23 +297,30 @@ func (s *Server) tokenResponse(r *http.Request) (wire.TokenResponse, error) {
 	if perr := protocol.ValidateTokenRequest(client, req, s.config.SecretHasher.Verify); perr != nil {
 		return wire.TokenResponse{}, oauthError(perr)
 	}
-	if req.GrantType == protocol.RefreshTokenGrant {
+	switch req.GrantType {
+	case protocol.RefreshTokenGrant:
 		return s.refresh(r.Context(), *client, req)
+	case protocol.ClientCredentialsGrant:
+		return s.clientCredentials(r.Context(), *client, req)
 	}
-	return s.redeem(r.Context(), clientID, req)
+	return s.redeem(r.Context(), *client, req)
 }
 
-// redeem redeems the code of req from the Client clientID for an access token and a refresh token.
-func (s *Server) redeem(ctx context.Context, clientID string, req protocol.TokenRequest) (wire.TokenResponse, error) {
-	stored, now, err := s.redeemCode(ctx, clientID, req)
+// redeem redeems the code of req from client for an access token, and a refresh token when protocol issues one.
+func (s *Server) redeem(ctx context.Context, client protocol.Client, req protocol.TokenRequest) (wire.TokenResponse, error) {
+	stored, now, err := s.redeemCode(ctx, client.ID, req)
 	if err != nil {
 		return wire.TokenResponse{}, err
+	}
+	token := protocol.IssueRefreshToken(client, protocolCode(stored), now, s.config.RefreshTokenLifetime)
+	if token == nil {
+		return s.issueToken(ctx, stored.Grant, stored.Grant.Scopes, now, stored.RetainUntil)
 	}
 	value, valueHash, err := s.secret()
 	if err != nil {
 		return wire.TokenResponse{}, err
 	}
-	refresh := storeRefreshToken(valueHash, stored.Grant, protocol.IssueRefreshToken(protocolCode(stored), now, s.config.RefreshTokenLifetime))
+	refresh := storeRefreshToken(valueHash, stored.Grant, *token)
 	if err := creationError(s.config.Tokens.CreateRefreshToken(ctx, refresh)); err != nil {
 		return wire.TokenResponse{}, err
 	}
@@ -380,6 +387,20 @@ func (s *Server) refresh(ctx context.Context, client protocol.Client, req protoc
 	}
 	resp.RefreshToken = next
 	return resp, nil
+}
+
+// clientCredentials issues an access token of a new Grant to client for itself.
+func (s *Server) clientCredentials(ctx context.Context, client protocol.Client, req protocol.TokenRequest) (wire.TokenResponse, error) {
+	scopes, perr := protocol.ClientCredentials(client, req, s.config.Scopes)
+	if perr != nil {
+		return wire.TokenResponse{}, oauthError(perr)
+	}
+	grantID, err := s.random()
+	if err != nil {
+		return wire.TokenResponse{}, err
+	}
+	now := s.config.Clock()
+	return s.issueToken(ctx, store.Grant{ID: grantID, ClientID: client.ID, Scopes: scopes}, scopes, now, now.Add(s.config.AccessTokenLifetime))
 }
 
 // apply applies effect to the Grant grantID and returns perr, protocol's decision with it, as an error response.
@@ -505,6 +526,7 @@ func protocolClient(c store.Client) protocol.Client {
 		SecretHash:    c.SecretHash,
 		AllowedScopes: c.AllowedScopes,
 		DefaultScopes: c.DefaultScopes,
+		GrantTypes:    c.GrantTypes,
 	}
 }
 

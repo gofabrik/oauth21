@@ -11,7 +11,7 @@ requirements:
     status: applicable
   - id: INV-0003
     keyword: MUST
-    text: A Client obtains only scopes that are supported, allowed for it, requested or default for it, and granted by the Host Application.
+    text: A Client obtains only scopes that are supported, allowed for it, requested or default for it, and, for a Grant from a Resource Owner, granted by the Host Application.
     status: applicable
   - id: INV-0004
     keyword: MUST

@@ -19,15 +19,15 @@ func TestMain(m *testing.M) {
 
 func TestEntitiesAreCopied(t *testing.T) {
 	m := memstore.New()
-	c := store.Client{ID: "client", RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: []string{"read"}, DefaultScopes: []string{"read"}}
+	c := store.Client{ID: "client", RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: []string{"read"}, DefaultScopes: []string{"read"}, GrantTypes: []string{"authorization_code"}}
 	m.AddClient(c)
-	c.RedirectURIs[0], c.AllowedScopes[0], c.DefaultScopes[0] = "https://evil.example/cb", "admin", "admin"
+	c.RedirectURIs[0], c.AllowedScopes[0], c.DefaultScopes[0], c.GrantTypes[0] = "https://evil.example/cb", "admin", "admin", "client_credentials"
 	got, err := m.Client(t.Context(), "client")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.RedirectURIs[0], got.AllowedScopes[0], got.DefaultScopes[0] = "https://evil.example/cb", "admin", "admin"
-	if again, _ := m.Client(t.Context(), "client"); again.RedirectURIs[0] != "https://c.example/cb" || again.AllowedScopes[0] != "read" || again.DefaultScopes[0] != "read" {
+	got.RedirectURIs[0], got.AllowedScopes[0], got.DefaultScopes[0], got.GrantTypes[0] = "https://evil.example/cb", "admin", "admin", "client_credentials"
+	if again, _ := m.Client(t.Context(), "client"); again.RedirectURIs[0] != "https://c.example/cb" || again.AllowedScopes[0] != "read" || again.DefaultScopes[0] != "read" || again.GrantTypes[0] != "authorization_code" {
 		t.Fatalf("got Client %+v, want the registered one", again)
 	}
 }
