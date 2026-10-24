@@ -17,8 +17,10 @@ func TestDeniedRequestRedirectsAccessDenied(t *testing.T) {
 // TestAuthorizationRequestIsSingleUse checks that a completed or denied Authorization Request can be neither completed nor denied again.
 func TestAuthorizationRequestIsSingleUse(t *testing.T) {
 	for name, first := range map[string]func(*authorizationServer, string){
-		"completed": func(a *authorizationServer, id string) { a.complete(id, oauth21.Completion{Subject: "alice"}) },
-		"denied":    func(a *authorizationServer, id string) { a.deny(id) },
+		"completed": func(a *authorizationServer, id string) {
+			a.complete(id, oauth21.Completion{Subject: "alice", Scopes: readScope})
+		},
+		"denied": func(a *authorizationServer, id string) { a.deny(id) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t)
@@ -37,7 +39,7 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 	live := a.pending(a.authorize(authorizeParams()))
 	a.advance(time.Minute)
 	a.wantNotPending(expired.ID)
-	if u := a.complete(live.ID, oauth21.Completion{Subject: "alice"}); u.Query().Get("code") == "" {
+	if u := a.complete(live.ID, oauth21.Completion{Subject: "alice", Scopes: readScope}); u.Query().Get("code") == "" {
 		t.Fatalf("got redirect %s, want a code", u)
 	}
 }

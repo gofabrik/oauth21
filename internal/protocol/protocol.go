@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -16,6 +17,7 @@ const (
 	accessDenied            = "access_denied"
 	invalidClient           = "invalid_client"
 	invalidGrant            = "invalid_grant"
+	invalidScope            = "invalid_scope"
 	unsupportedGrantType    = "unsupported_grant_type"
 	unsupportedResponseType = "unsupported_response_type"
 )
@@ -42,6 +44,10 @@ type Client struct {
 	Public       bool
 	RedirectURIs []string
 	SecretHash   string
+	// AllowedScopes are the scopes the Client may request.
+	AllowedScopes []string
+	// DefaultScopes are requested for the Client when it omits scope.
+	DefaultScopes []string
 }
 
 // AuthorizationParams is the parameters of an authorization request.
@@ -66,8 +72,8 @@ type AuthorizationRequest struct {
 	ExpiresAt           time.Time
 }
 
-// Authorize validates r for client (nil when unknown); on error, the returned request has a RedirectURI only when the error may be redirected.
-func Authorize(client *Client, r AuthorizationParams, expiresAt time.Time) (AuthorizationRequest, *Error) {
+// Authorize validates r for client (nil when unknown) and the supported scopes; on error, the returned request has a RedirectURI only when the error may be redirected.
+func Authorize(client *Client, r AuthorizationParams, supported []string, expiresAt time.Time) (AuthorizationRequest, *Error) {
 	if client == nil {
 		return AuthorizationRequest{}, &Error{invalidRequest, "unknown client"}
 	}
@@ -79,7 +85,6 @@ func Authorize(client *Client, r AuthorizationParams, expiresAt time.Time) (Auth
 		ClientID:            client.ID,
 		RedirectURI:         redirectURI,
 		State:               r.State,
-		Scopes:              strings.Fields(r.Scope),
 		CodeChallenge:       r.CodeChallenge,
 		CodeChallengeMethod: r.CodeChallengeMethod,
 		ExpiresAt:           expiresAt,
@@ -96,7 +101,49 @@ func Authorize(client *Client, r AuthorizationParams, expiresAt time.Time) (Auth
 	case !s256Challenge(r.CodeChallenge):
 		return a, &Error{invalidRequest, "malformed code challenge"}
 	}
+	scopes, err := resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes)
+	if err != nil {
+		return a, err
+	}
+	a.Scopes = scopes
 	return a, nil
+}
+
+// resolveScopes returns the distinct scopes of the space-separated requested, or the defaults when it is empty, failing unless each is supported and allowed.
+func resolveScopes(requested string, supported, allowed, defaults []string) ([]string, *Error) {
+	scopes := defaults
+	if requested != "" {
+		scopes = strings.Split(requested, " ")
+	}
+	var resolved []string
+	for _, s := range scopes {
+		switch {
+		case s == "" || slices.Contains(resolved, s):
+		case !ScopeToken(s):
+			return nil, &Error{invalidScope, "malformed scope"}
+		case !slices.Contains(supported, s) || !slices.Contains(allowed, s):
+			return nil, &Error{invalidScope, "scope not available to the client"}
+		default:
+			resolved = append(resolved, s)
+		}
+	}
+	if len(resolved) == 0 {
+		return nil, &Error{invalidScope, "scope required"}
+	}
+	return resolved, nil
+}
+
+// ScopeToken reports whether s is a scope-token: one or more printable ASCII characters other than space, '"' and '\'.
+func ScopeToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range []byte(s) {
+		if c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return true
 }
 
 func resolveRedirectURI(registered []string, requested string) (string, bool) {
@@ -170,18 +217,20 @@ type Code struct {
 	Used        bool
 }
 
-// IssueCode binds a code for a to the Resource Owner subject and the granted scopes, retaining it for tokenLifetime after it expires.
-func IssueCode(a AuthorizationRequest, subject string, scopes []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
-	if subject == "" {
+// IssueCode binds a code for a to the Resource Owner subject and the granted scopes, a subset of the requested ones, retaining it for tokenLifetime after it expires.
+func IssueCode(a AuthorizationRequest, subject string, granted []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
+	switch {
+	case subject == "":
 		return Code{}, &Error{invalidRequest, "subject required"}
-	}
-	if len(a.Scopes) > 0 && len(scopes) == 0 {
+	case len(granted) == 0:
 		return Code{}, &Error{invalidRequest, "no scopes granted; deny the request instead"}
+	case slices.ContainsFunc(granted, func(s string) bool { return !slices.Contains(a.Scopes, s) }):
+		return Code{}, &Error{invalidRequest, "granted scope was not requested"}
 	}
 	return Code{
 		ClientID:            a.ClientID,
 		Subject:             subject,
-		Scopes:              scopes,
+		Scopes:              slices.DeleteFunc(slices.Clone(a.Scopes), func(s string) bool { return !slices.Contains(granted, s) }),
 		RedirectURI:         a.RedirectURI,
 		CodeChallenge:       a.CodeChallenge,
 		CodeChallengeMethod: a.CodeChallengeMethod,

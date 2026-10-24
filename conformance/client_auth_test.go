@@ -23,7 +23,7 @@ func newConfidentialServer(t *testing.T) *authorizationServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newAuthorizationServer(t, store.Client{ID: confidentialID, Type: store.Confidential, RedirectURIs: []string{redirectURI}, SecretHash: hash})
+	return newAuthorizationServer(t, store.Client{ID: confidentialID, Type: store.Confidential, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash})
 }
 
 // confidentialCode runs an authorization request of the confidential Client and returns its token request without credentials.

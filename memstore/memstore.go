@@ -162,6 +162,8 @@ func get[V any](m map[string]V, key string) (V, error) {
 
 func cloneClient(c store.Client) store.Client {
 	c.RedirectURIs = slices.Clone(c.RedirectURIs)
+	c.AllowedScopes = slices.Clone(c.AllowedScopes)
+	c.DefaultScopes = slices.Clone(c.DefaultScopes)
 	return c
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -96,9 +97,9 @@ func TestMatchRedirectURILoopbackIgnoresPort(t *testing.T) {
 func TestRedeemIssuedCode(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		v := verifierGen.Draw(t, "verifier")
-		a := AuthorizationRequest{ClientID: "client", RedirectURI: "https://c.example/cb", CodeChallenge: s256(v), CodeChallengeMethod: "S256"}
+		a := AuthorizationRequest{ClientID: "client", RedirectURI: "https://c.example/cb", Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}
 		expiresAt := time.Unix(1_000_000, 0)
-		code, err := IssueCode(a, "alice", nil, expiresAt, time.Hour)
+		code, err := IssueCode(a, "alice", a.Scopes, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +131,7 @@ func TestRedemption(t *testing.T) {
 		v := verifierGen.Draw(t, "verifier")
 		expiresAt := time.Unix(1_000_000, 0)
 		now := expiresAt.Add(-time.Minute)
-		stored, perr := IssueCode(AuthorizationRequest{ClientID: "client", CodeChallenge: s256(v), CodeChallengeMethod: "S256"}, "alice", nil, expiresAt, time.Hour)
+		stored, perr := IssueCode(AuthorizationRequest{ClientID: "client", Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}, "alice", []string{"read"}, expiresAt, time.Hour)
 		if perr != nil {
 			t.Fatal(perr)
 		}
@@ -183,10 +184,14 @@ func TestRedemption(t *testing.T) {
 	})
 }
 
+var supportedScopes = []string{"read", "write", "admin"}
+
 func TestAuthorize(t *testing.T) {
-	client := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}}
-	two := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb", "https://c.example/other"}}
-	empty := &Client{ID: "client", Public: true, RedirectURIs: []string{""}}
+	scopes := []string{"read", "write"}
+	client := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
+	two := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb", "https://c.example/other"}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
+	empty := &Client{ID: "client", Public: true, RedirectURIs: []string{""}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
+	noDefaults := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: scopes}
 	valid := AuthorizationParams{
 		ResponseType:        "code",
 		ClientID:            "client",
@@ -215,13 +220,18 @@ func TestAuthorize(t *testing.T) {
 		"long code_challenge":           {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("a", 44) }, "invalid_request", "https://c.example/cb"},
 		"non-base64url challenge":       {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("~", 43) }, "invalid_request", "https://c.example/cb"},
 		"not a SHA-256 hash":            {client, func(r *AuthorizationParams) { r.CodeChallenge = strings.Repeat("A", 42) + "B" }, "invalid_request", "https://c.example/cb"},
+		"allowed scope":                 {client, func(r *AuthorizationParams) { r.Scope = "write read" }, "", "https://c.example/cb"},
+		"no default scopes":             {noDefaults, func(*AuthorizationParams) {}, "invalid_scope", "https://c.example/cb"},
+		"unsupported scope":             {client, func(r *AuthorizationParams) { r.Scope = "read delete" }, "invalid_scope", "https://c.example/cb"},
+		"scope not allowed":             {client, func(r *AuthorizationParams) { r.Scope = "read admin" }, "invalid_scope", "https://c.example/cb"},
+		"tab-separated scopes":          {client, func(r *AuthorizationParams) { r.Scope = "read\twrite" }, "invalid_scope", "https://c.example/cb"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			r := valid
 			tt.change(&r)
 			expiresAt := time.Unix(1_000_000, 0)
-			a, err := Authorize(tt.client, r, expiresAt)
+			a, err := Authorize(tt.client, r, supportedScopes, expiresAt)
 			if code := errorCode(err); code != tt.code || a.RedirectURI != tt.redirectTo {
 				t.Fatalf("got error %q and redirect URI %q, want %q and %q", code, a.RedirectURI, tt.code, tt.redirectTo)
 			}
@@ -329,14 +339,14 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 			CodeChallenge:       rapid.String().Draw(t, "code_challenge"),
 			CodeChallengeMethod: rapid.String().Draw(t, "method"),
 		}
+		a.Scopes = rapid.SliceOfNDistinct(rapid.String(), 1, -1, rapid.ID).Draw(t, "scopes")
 		subject := rapid.StringN(1, -1, -1).Draw(t, "subject")
-		scopes := rapid.SliceOf(rapid.String()).Draw(t, "scopes")
 		expiresAt := time.Unix(rapid.Int64Range(0, 1<<40).Draw(t, "expires_at"), 0)
-		code, err := IssueCode(a, subject, scopes, expiresAt, time.Hour)
+		code, err := IssueCode(a, subject, a.Scopes, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := Code{a.ClientID, subject, scopes, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
+		want := Code{a.ClientID, subject, a.Scopes, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
 		if !reflect.DeepEqual(code, want) {
 			t.Fatalf("got %+v, want %+v", code, want)
 		}
@@ -345,7 +355,7 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 
 func TestAccessTokenExpiry(t *testing.T) {
 	expiresAt := time.Unix(1_000_000, 0)
-	code, err := IssueCode(AuthorizationRequest{}, "alice", nil, expiresAt, time.Hour)
+	code, err := IssueCode(AuthorizationRequest{Scopes: []string{"read"}}, "alice", []string{"read"}, expiresAt, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,12 +379,22 @@ func TestConsumedRejectsCodePastRetention(t *testing.T) {
 	}
 }
 
-func TestIssueCodeRejectsEmptyGrant(t *testing.T) {
-	if _, err := IssueCode(AuthorizationRequest{Scopes: []string{"read"}}, "alice", nil, time.Time{}, time.Hour); err == nil {
-		t.Fatal("got a code granting no scopes for a request with scopes")
-	}
-	if _, err := IssueCode(AuthorizationRequest{}, "alice", nil, time.Time{}, time.Hour); err != nil {
-		t.Fatalf("got error %v for a request without scopes", err)
+func TestIssueCodeGrantsRequestedScopes(t *testing.T) {
+	a := AuthorizationRequest{Scopes: []string{"read", "write"}}
+	for name, tt := range map[string]struct {
+		granted []string
+		want    []string
+	}{
+		"all":           {[]string{"write", "read"}, []string{"read", "write"}},
+		"fewer":         {[]string{"write"}, []string{"write"}},
+		"repeated":      {[]string{"read", "read"}, []string{"read"}},
+		"none":          {nil, nil},
+		"not requested": {[]string{"read", "admin"}, nil},
+	} {
+		code, err := IssueCode(a, "alice", tt.granted, time.Time{}, time.Hour)
+		if (err == nil) != (tt.want != nil) || !slices.Equal(code.Scopes, tt.want) {
+			t.Errorf("%s: got scopes %q and error %v, want %q", name, code.Scopes, err, tt.want)
+		}
 	}
 }
 
@@ -425,5 +445,138 @@ func TestPending(t *testing.T) {
 func TestDenied(t *testing.T) {
 	if code := errorCode(Denied()); code != "access_denied" {
 		t.Fatalf("got error %q, want access_denied", code)
+	}
+}
+
+func TestAuthorizeResolvesScopes(t *testing.T) {
+	client := &Client{ID: "client", RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: supportedScopes, DefaultScopes: []string{"read", "write"}}
+	for requested, want := range map[string][]string{
+		"":                 {"read", "write"},
+		"admin":            {"admin"},
+		"write read write": {"write", "read"},
+		"read  write ":     {"read", "write"},
+	} {
+		r := AuthorizationParams{ResponseType: "code", Scope: requested, CodeChallenge: s256(verifierGen.Example()), CodeChallengeMethod: "S256"}
+		a, err := Authorize(client, r, supportedScopes, time.Time{})
+		if err != nil || !slices.Equal(a.Scopes, want) {
+			t.Errorf("got scopes %q and error %v for scope %q, want %q", a.Scopes, err, requested, want)
+		}
+	}
+}
+
+// malformedScopes are not scope-tokens.
+var malformedScopes = []string{"read write", "a\tb", `x"y`, `x\y`, "é", "\x7f"}
+
+var scopeGen = rapid.SampledFrom(append([]string{"", "read", "write", "admin", "openid"}, malformedScopes...))
+
+// TestScopesStayWithinLimits checks that a Client gets only scopes that are supported, allowed for it, requested or default, and granted.
+func TestScopesStayWithinLimits(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		supported := rapid.SliceOf(scopeGen).Draw(t, "supported")
+		client := &Client{
+			ID:            "client",
+			RedirectURIs:  []string{"https://c.example/cb"},
+			AllowedScopes: rapid.SliceOf(scopeGen).Draw(t, "allowed"),
+			DefaultScopes: rapid.SliceOf(scopeGen).Draw(t, "defaults"),
+		}
+		requested := rapid.SliceOf(scopeGen).Draw(t, "requested")
+		r := AuthorizationParams{ResponseType: "code", Scope: strings.Join(requested, " "), CodeChallenge: s256(verifierGen.Draw(t, "verifier")), CodeChallengeMethod: "S256"}
+		asked := strings.Split(r.Scope, " ")
+		if r.Scope == "" {
+			asked = client.DefaultScopes
+		}
+		asked = slices.DeleteFunc(slices.Clone(asked), func(s string) bool { return s == "" })
+		valid := len(asked) > 0 && !slices.ContainsFunc(asked, func(s string) bool {
+			return slices.Contains(malformedScopes, s) || !slices.Contains(supported, s) || !slices.Contains(client.AllowedScopes, s)
+		})
+		a, err := Authorize(client, r, supported, time.Time{})
+		if (err == nil) != valid || err != nil && err.Code != "invalid_scope" {
+			t.Fatalf("got scopes %q and error %v, want valid %v", a.Scopes, err, valid)
+		}
+		if err != nil {
+			return
+		}
+		if !distinct(a.Scopes) {
+			t.Fatalf("got repeated scopes %q", a.Scopes)
+		}
+		for _, s := range a.Scopes {
+			if !slices.Contains(asked, s) || !slices.Contains(supported, s) || !slices.Contains(client.AllowedScopes, s) {
+				t.Fatalf("got scope %q of %q for %q", s, a.Scopes, asked)
+			}
+		}
+		granted := rapid.SliceOf(scopeGen).Draw(t, "granted")
+		code, err := IssueCode(a, "alice", granted, time.Time{}, time.Hour)
+		want := len(granted) > 0 && !slices.ContainsFunc(granted, func(s string) bool { return !slices.Contains(a.Scopes, s) })
+		if (err == nil) != want {
+			t.Fatalf("got error %v granting %q of %q, want a code %v", err, granted, a.Scopes, want)
+		}
+		if !distinct(code.Scopes) {
+			t.Fatalf("got repeated code scopes %q", code.Scopes)
+		}
+		for _, s := range code.Scopes {
+			if !slices.Contains(granted, s) || !slices.Contains(a.Scopes, s) {
+				t.Fatalf("got code scopes %q granting %q of %q", code.Scopes, granted, a.Scopes)
+			}
+		}
+	})
+}
+
+func distinct(s []string) bool {
+	return len(slices.Compact(slices.Sorted(slices.Values(s)))) == len(s)
+}
+
+func TestResolveScopesHidesSupportedScopes(t *testing.T) {
+	_, unsupported := resolveScopes("delete", supportedScopes, []string{"read"}, nil)
+	_, notAllowed := resolveScopes("admin", supportedScopes, []string{"read"}, nil)
+	if unsupported == nil || notAllowed == nil || *unsupported != *notAllowed {
+		t.Fatalf("got errors %v and %v, want the same error for an unsupported and a disallowed scope", unsupported, notAllowed)
+	}
+}
+
+func TestResolveScopesRejectsMalformedScopes(t *testing.T) {
+	for _, scope := range malformedScopes {
+		configured := []string{scope}
+		for _, requested := range []string{"", scope} {
+			if scopes, err := resolveScopes(requested, configured, configured, configured); errorCode(err) != "invalid_scope" {
+				t.Errorf("got scopes %q and error %v for %q requesting %q, want invalid_scope", scopes, err, scope, requested)
+			}
+		}
+	}
+}
+
+// wellFormed reports whether s is one or more of the characters a scope-token allows (RFC 6749, Appendix A.4).
+func wellFormed(s string) bool {
+	return s != "" && strings.IndexFunc(s, func(c rune) bool { return c < 0x21 || c > 0x7e || c == '"' || c == '\\' }) < 0
+}
+
+func FuzzResolveScopes(f *testing.F) {
+	f.Add("read write", "admin")
+	f.Add("", "read write")
+	f.Add("read  admin", "")
+	f.Add("read\twrite", "a\tb")
+	f.Fuzz(func(t *testing.T, requested, scope string) {
+		allowed := []string{"read", "write", scope}
+		scopes, err := resolveScopes(requested, append(supportedScopes, scope), allowed, []string{scope})
+		if err != nil && err.Code != "invalid_scope" || err == nil && len(scopes) == 0 {
+			t.Fatalf("got scopes %q and error %v", scopes, err)
+		}
+		for _, s := range scopes {
+			if !slices.Contains(allowed, s) || !wellFormed(s) {
+				t.Fatalf("got scope %q for %q", s, requested)
+			}
+		}
+	})
+}
+
+func TestScopeToken(t *testing.T) {
+	for _, s := range []string{"read", "a:b", "!#[]~"} {
+		if !ScopeToken(s) {
+			t.Errorf("%q is not a scope-token", s)
+		}
+	}
+	for _, s := range append([]string{""}, malformedScopes...) {
+		if ScopeToken(s) {
+			t.Errorf("%q is a scope-token", s)
+		}
 	}
 }

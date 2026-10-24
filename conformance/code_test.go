@@ -49,6 +49,8 @@ func TestCodeExpires(t *testing.T) {
 }
 
 // TestTokenResponseCarriesGrantedScope checks that the token response names the granted scopes.
+//
+//conformance:covers INV-0003
 func TestTokenResponseCarriesGrantedScope(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
@@ -61,9 +63,15 @@ func TestTokenResponseCarriesGrantedScope(t *testing.T) {
 	}
 }
 
-// TestRejectedCompletionKeepsRequest checks that a Completion without a subject or granted scopes is rejected and leaves the request pending.
+// TestRejectedCompletionKeepsRequest checks that a Completion without a subject, without granted scopes or granting unrequested scopes is rejected and leaves the request pending.
+//
+//conformance:covers INV-0003
 func TestRejectedCompletionKeepsRequest(t *testing.T) {
-	for name, c := range map[string]oauth21.Completion{"no subject": {Scopes: []string{"read"}}, "no scopes": {Subject: "alice"}} {
+	for name, c := range map[string]oauth21.Completion{
+		"no subject":        {Scopes: []string{"read"}},
+		"no scopes":         {Subject: "alice"},
+		"unrequested scope": {Subject: "alice", Scopes: []string{"read", "write"}},
+	} {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t)
 			params := authorizeParams()

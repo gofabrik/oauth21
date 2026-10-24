@@ -28,6 +28,10 @@ type Client struct {
 	RedirectURIs []string
 	// SecretHash is the SecretHasher hash of a confidential Client's secret.
 	SecretHash string
+	// AllowedScopes are the scopes the Client may request.
+	AllowedScopes []string
+	// DefaultScopes are requested for the Client when it omits scope.
+	DefaultScopes []string
 }
 
 // AuthorizationRequest is a validated request waiting for the Host Application.

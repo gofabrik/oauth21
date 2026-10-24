@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +37,8 @@ type Config struct {
 	Codes                 store.Codes
 	Tokens                store.Tokens
 
+	// Scopes are the supported scopes, at least one, each a scope-token.
+	Scopes []string
 	// AuthorizationRequestLifetime defaults to ten minutes.
 	AuthorizationRequestLifetime time.Duration
 	// CodeLifetime is at most ten minutes and defaults to one minute.
@@ -68,6 +71,9 @@ func New(c Config) (*Server, error) {
 	if c.Clients == nil || c.AuthorizationRequests == nil || c.Codes == nil || c.Tokens == nil {
 		return nil, errors.New("oauth21: every Store is required")
 	}
+	if len(c.Scopes) == 0 || slices.ContainsFunc(c.Scopes, func(s string) bool { return !protocol.ScopeToken(s) }) {
+		return nil, errors.New("oauth21: Scopes must be one or more scope-tokens")
+	}
 	if !validLifetime(c.AuthorizationRequestLifetime) || !validLifetime(c.CodeLifetime) || c.CodeLifetime > 10*time.Minute || !validLifetime(c.AccessTokenLifetime) {
 		return nil, errors.New("oauth21: lifetimes must be at least one second, and CodeLifetime at most ten minutes")
 	}
@@ -80,6 +86,7 @@ func New(c Config) (*Server, error) {
 	if c.AccessTokenLifetime == 0 {
 		c.AccessTokenLifetime = time.Hour
 	}
+	c.Scopes = slices.Clone(c.Scopes)
 	if c.SecretHasher == nil {
 		c.SecretHasher = PBKDF2{}
 	}
@@ -216,7 +223,7 @@ func (s *Server) authorizationRedirect(r *http.Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	a, perr := protocol.Authorize(client, protocol.AuthorizationParams(params), s.config.Clock().Add(s.config.AuthorizationRequestLifetime))
+	a, perr := protocol.Authorize(client, protocol.AuthorizationParams(params), s.config.Scopes, s.config.Clock().Add(s.config.AuthorizationRequestLifetime))
 	switch {
 	case a.RedirectURI == "" && perr != nil:
 		return "", oauthError(perr)
@@ -402,7 +409,14 @@ func oauthError(e *protocol.Error) *wire.Error {
 }
 
 func protocolClient(c store.Client) protocol.Client {
-	return protocol.Client{ID: c.ID, Public: c.Type == store.Public, RedirectURIs: c.RedirectURIs, SecretHash: c.SecretHash}
+	return protocol.Client{
+		ID:            c.ID,
+		Public:        c.Type == store.Public,
+		RedirectURIs:  c.RedirectURIs,
+		SecretHash:    c.SecretHash,
+		AllowedScopes: c.AllowedScopes,
+		DefaultScopes: c.DefaultScopes,
+	}
 }
 
 func protocolRequest(r store.AuthorizationRequest) protocol.AuthorizationRequest {

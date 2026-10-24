@@ -15,7 +15,7 @@ func TestLoopbackRedirectURIIgnoresPort(t *testing.T) {
 		"http://[::1]/cb":          "http://[::1]:61023/cb",
 	} {
 		t.Run(requested, func(t *testing.T) {
-			a := newAuthorizationServer(t, store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{registered}})
+			a := newAuthorizationServer(t, store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{registered}, AllowedScopes: readScope, DefaultScopes: readScope})
 			params := authorizeParams()
 			params.Set("client_id", "native")
 			params.Set("redirect_uri", requested)
@@ -44,9 +44,9 @@ func TestRedirectURIMustMatchExactly(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t,
-				store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{"http://127.0.0.1/cb"}},
-				store.Client{ID: "localhost", Type: store.Public, RedirectURIs: []string{"http://localhost/cb"}},
-				store.Client{ID: "lan", Type: store.Public, RedirectURIs: []string{"http://10.0.0.1/cb"}},
+				store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{"http://127.0.0.1/cb"}, AllowedScopes: readScope, DefaultScopes: readScope},
+				store.Client{ID: "localhost", Type: store.Public, RedirectURIs: []string{"http://localhost/cb"}, AllowedScopes: readScope, DefaultScopes: readScope},
+				store.Client{ID: "lan", Type: store.Public, RedirectURIs: []string{"http://10.0.0.1/cb"}, AllowedScopes: readScope, DefaultScopes: readScope},
 			)
 			params := authorizeParams()
 			params.Set("client_id", tt.clientID)
@@ -61,7 +61,7 @@ func TestRedirectURIMustMatchExactly(t *testing.T) {
 
 // TestCodeIsBoundToClient checks that another Client cannot redeem a code.
 func TestCodeIsBoundToClient(t *testing.T) {
-	a := newAuthorizationServer(t, store.Client{ID: "other", Type: store.Public, RedirectURIs: []string{redirectURI}})
+	a := newAuthorizationServer(t, store.Client{ID: "other", Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope})
 	params := tokenParams(a.code(authorizeParams()))
 	params.Set("client_id", "other")
 	status, _, body := a.token(params, nil)

@@ -36,6 +36,9 @@ const (
 	state       = "xyz"
 )
 
+// readScope is the scope most Clients under test are allowed and default to.
+var readScope = []string{"read"}
+
 // challenge is the S256 code challenge of verifier.
 var challenge = s256(verifier)
 
@@ -99,7 +102,7 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 	t.Helper()
 	a := &authorizationServer{t: t}
 	m := memstore.NewWithClock(a.now)
-	m.AddClient(store.Client{ID: clientID, Type: store.Public, RedirectURIs: []string{redirectURI}})
+	m.AddClient(store.Client{ID: clientID, Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: []string{"read", "write"}, DefaultScopes: readScope})
 	for _, c := range clients {
 		m.AddClient(c)
 	}
@@ -116,6 +119,7 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 		AuthorizationRequests: m,
 		Codes:                 a.recorder,
 		Tokens:                a.recorder,
+		Scopes:                []string{"read", "write", "admin"},
 		Clock:                 a.now,
 	})
 	if err != nil {
@@ -317,7 +321,7 @@ func (a *authorizationServer) wantNotPending(id string) {
 	if _, err := a.srv.AuthorizationRequest(t.Context(), id); !errors.Is(err, oauth21.ErrRequestNotPending) {
 		t.Fatalf("got error %v reading the request, want ErrRequestNotPending", err)
 	}
-	if _, err := a.srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice"}); !errors.Is(err, oauth21.ErrRequestNotPending) {
+	if _, err := a.srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice", Scopes: readScope}); !errors.Is(err, oauth21.ErrRequestNotPending) {
 		t.Fatalf("got error %v completing the request, want ErrRequestNotPending", err)
 	}
 	if _, err := a.srv.Deny(t.Context(), id); !errors.Is(err, oauth21.ErrRequestNotPending) {

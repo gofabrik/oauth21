@@ -27,6 +27,9 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// readScope is the scope the test Client is allowed and gets by default.
+var readScope = []string{"read"}
+
 const (
 	issuer   = "https://as.example"
 	verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -39,7 +42,7 @@ func sum(v string) []byte {
 
 func newServer(t testing.TB, m *memstore.Store, codes store.Codes, tokens store.Tokens) *oauth21.Server {
 	t.Helper()
-	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
 	srv, err := oauth21.New(oauth21.Config{
 		Issuer:                issuer,
 		LoginURL:              "/login",
@@ -47,6 +50,7 @@ func newServer(t testing.TB, m *memstore.Store, codes store.Codes, tokens store.
 		AuthorizationRequests: m,
 		Codes:                 codes,
 		Tokens:                tokens,
+		Scopes:                readScope,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +112,7 @@ func requestID(t rapid.TB, srv *oauth21.Server) string {
 // issueCode runs an authorization request through Complete and returns the code.
 func issueCode(t testing.TB, srv *oauth21.Server) string {
 	t.Helper()
-	redirect, err := srv.Complete(context.Background(), requestID(t, srv), oauth21.Completion{Subject: "alice"})
+	redirect, err := srv.Complete(context.Background(), requestID(t, srv), oauth21.Completion{Subject: "alice", Scopes: readScope})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,9 +262,9 @@ func TestCodeExpiringDuringConsumeIsRejected(t *testing.T) {
 func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
 		withLifetime := func(lifetime time.Duration) *oauth21.Server {
-			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime})
+			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -281,6 +285,20 @@ func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
 	})
 }
 
+func TestNewCopiesScopes(t *testing.T) {
+	m := memstore.New()
+	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+	scopes := []string{"read"}
+	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: scopes, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopes[0] = "admin"
+	if requestID(t, srv) == "" {
+		t.Fatal("got no Authorization Request after the configured scopes changed")
+	}
+}
+
 func TestNewRequiresConfig(t *testing.T) {
 	m := memstore.New()
 	valid := oauth21.Config{
@@ -290,6 +308,7 @@ func TestNewRequiresConfig(t *testing.T) {
 		AuthorizationRequests: m,
 		Codes:                 m,
 		Tokens:                m,
+		Scopes:                readScope,
 	}
 	for name, change := range map[string]func(*oauth21.Config){
 		"issuer":                      func(c *oauth21.Config) { c.Issuer = "" },
@@ -309,6 +328,8 @@ func TestNewRequiresConfig(t *testing.T) {
 		"Authorization Request Store": func(c *oauth21.Config) { c.AuthorizationRequests = nil },
 		"code Store":                  func(c *oauth21.Config) { c.Codes = nil },
 		"token Store":                 func(c *oauth21.Config) { c.Tokens = nil },
+		"scopes":                      func(c *oauth21.Config) { c.Scopes = nil },
+		"malformed scope":             func(c *oauth21.Config) { c.Scopes = []string{"read", "read write"} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := valid
@@ -348,6 +369,8 @@ func FuzzAuthorizationHandler(f *testing.F) {
 	f.Add(false, authorizeQuery)
 	f.Add(true, authorizeQuery)
 	f.Add(false, authorizeQuery+"&client_id=client")
+	f.Add(false, authorizeQuery+"&scope=read+read")
+	f.Add(false, authorizeQuery+"&scope=read+write")
 	f.Add(false, strings.Replace(authorizeQuery, "S256", "plain", 1))
 	f.Add(false, "client_id=%zz&redirect_uri=http://127.0.0.1:1/cb")
 	m := memstore.New()
@@ -391,7 +414,7 @@ func FuzzTokenHandler(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, body, authorization string) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, SecretHash: hash})
+		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash})
 		srv := newServer(t, m, m, m)
 		body = strings.ReplaceAll(body, "CODE", issueCode(t, srv))
 		r := tokenRequest(body)
@@ -422,7 +445,7 @@ func (acceptSecret) Verify(hash, secret string) bool { return hash == "hash" && 
 
 func TestSecretHasherVerifiesSecrets(t *testing.T) {
 	m := memstore.New()
-	m.AddClient(store.Client{ID: "client", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, SecretHash: "hash"})
+	m.AddClient(store.Client{ID: "client", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: "hash"})
 	srv, err := oauth21.New(oauth21.Config{
 		Issuer:                issuer,
 		LoginURL:              "/login",
@@ -430,6 +453,7 @@ func TestSecretHasherVerifiesSecrets(t *testing.T) {
 		AuthorizationRequests: m,
 		Codes:                 m,
 		Tokens:                m,
+		Scopes:                readScope,
 		SecretHasher:          acceptSecret{},
 	})
 	if err != nil {
@@ -478,7 +502,7 @@ func TestUntrustedErrorsAreRendered(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := tt.stores
 			f.Store = memstore.New()
-			f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+			f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
 			var got oauth21.AuthorizationError
 			srv, err := oauth21.New(oauth21.Config{
 				Issuer:                issuer,
@@ -487,6 +511,7 @@ func TestUntrustedErrorsAreRendered(t *testing.T) {
 				AuthorizationRequests: &f,
 				Codes:                 f.Store,
 				Tokens:                f.Store,
+				Scopes:                readScope,
 				RenderError: func(w http.ResponseWriter, _ *http.Request, e oauth21.AuthorizationError) {
 					got = e
 					w.WriteHeader(http.StatusTeapot)
@@ -505,8 +530,8 @@ func TestUntrustedErrorsAreRendered(t *testing.T) {
 
 func TestStoreFailureAfterTrustIsRedirected(t *testing.T) {
 	f := &failingStores{Store: memstore.New(), requests: true}
-	f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
-	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, LoginURL: "/login", Clients: f, AuthorizationRequests: f, Codes: f, Tokens: f})
+	f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: f, AuthorizationRequests: f, Codes: f, Tokens: f})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +556,7 @@ func TestConcurrentCompletionAndDenialSucceedOnce(t *testing.T) {
 	for i := range errs {
 		wg.Go(func() {
 			if i%2 == 0 {
-				_, errs[i] = srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice"})
+				_, errs[i] = srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice", Scopes: readScope})
 			} else {
 				_, errs[i] = srv.Deny(t.Context(), id)
 			}
@@ -560,7 +585,7 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 		time.Sleep(10*time.Minute - time.Second)
 		live := requestID(t, srv)
 		time.Sleep(time.Second)
-		if _, err := srv.Complete(t.Context(), expired, oauth21.Completion{Subject: "alice"}); !errors.Is(err, oauth21.ErrRequestNotPending) {
+		if _, err := srv.Complete(t.Context(), expired, oauth21.Completion{Subject: "alice", Scopes: readScope}); !errors.Is(err, oauth21.ErrRequestNotPending) {
 			t.Fatalf("got error %v completing an expired request, want ErrRequestNotPending", err)
 		}
 		if _, err := srv.Deny(t.Context(), expired); !errors.Is(err, oauth21.ErrRequestNotPending) {
@@ -577,7 +602,7 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		now := time.Unix(1_000_000, 0)
 		m := memstore.NewWithClock(func() time.Time { return now })
-		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
 		srv, err := oauth21.New(oauth21.Config{
 			Issuer:                       issuer,
 			LoginURL:                     "/login",
@@ -585,6 +610,7 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 			AuthorizationRequests:        m,
 			Codes:                        m,
 			Tokens:                       m,
+			Scopes:                       readScope,
 			AuthorizationRequestLifetime: time.Minute,
 			Clock:                        func() time.Time { return now },
 		})
@@ -626,7 +652,7 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 			},
 			"complete": func(t *rapid.T) {
 				id, want := draw(t)
-				redirect, err := srv.Complete(context.Background(), id, oauth21.Completion{Subject: "alice"})
+				redirect, err := srv.Complete(context.Background(), id, oauth21.Completion{Subject: "alice", Scopes: readScope})
 				wantPending(t, err, want)
 				if want && !strings.Contains(redirect, "code=") {
 					t.Fatalf("got redirect %q, want a code", redirect)
@@ -649,7 +675,7 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{""}})
+	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{""}, AllowedScopes: readScope, DefaultScopes: readScope})
 	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+authorizeQuery, nil))
 	if w.Code != http.StatusBadRequest || w.Header().Get("Location") != "" {
 		t.Fatalf("got status %d and Location %q, want 400 without redirect", w.Code, w.Header().Get("Location"))
