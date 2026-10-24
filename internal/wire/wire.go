@@ -111,6 +111,8 @@ type TokenRequest struct {
 	RedirectURI  string
 	ClientID     string
 	CodeVerifier string
+	RefreshToken string
+	Scope        string
 	ClientSecret string
 	// AuthScheme is the scheme of the Authorization header, or "" without one.
 	AuthScheme  string
@@ -175,6 +177,8 @@ func (r *TokenRequest) fields() map[string]*string {
 		"redirect_uri":  &r.RedirectURI,
 		"client_id":     &r.ClientID,
 		"code_verifier": &r.CodeVerifier,
+		"refresh_token": &r.RefreshToken,
+		"scope":         &r.Scope,
 		"client_secret": &r.ClientSecret,
 	}
 }
@@ -198,10 +202,11 @@ func assignOnce(params url.Values, fields map[string]*string) *Error {
 
 // TokenResponse is a successful token response.
 type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int64  `json:"expires_in"`
-	Scope       string `json:"scope,omitempty"`
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	Scope        string `json:"scope,omitempty"`
 }
 
 // WriteToken writes a successful token response.

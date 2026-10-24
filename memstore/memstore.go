@@ -13,13 +13,14 @@ import (
 
 // Store keeps every entity in memory. It is safe for concurrent use.
 type Store struct {
-	mu       sync.Mutex
-	clock    func() time.Time
-	clients  map[string]store.Client
-	requests map[string]store.AuthorizationRequest
-	codes    map[string]store.Code
-	tokens   map[string]store.Token
-	revoked  map[string]bool
+	mu            sync.Mutex
+	clock         func() time.Time
+	clients       map[string]store.Client
+	requests      map[string]store.AuthorizationRequest
+	codes         map[string]store.Code
+	tokens        map[string]store.Token
+	refreshTokens map[string]store.RefreshToken
+	revoked       map[string]bool
 }
 
 // New returns an empty Store that removes expired entities by time.Now.
@@ -30,12 +31,13 @@ func New() *Store {
 // NewWithClock returns an empty Store that removes expired entities by clock.
 func NewWithClock(clock func() time.Time) *Store {
 	return &Store{
-		clock:    clock,
-		clients:  map[string]store.Client{},
-		requests: map[string]store.AuthorizationRequest{},
-		codes:    map[string]store.Code{},
-		tokens:   map[string]store.Token{},
-		revoked:  map[string]bool{},
+		clock:         clock,
+		clients:       map[string]store.Client{},
+		requests:      map[string]store.AuthorizationRequest{},
+		codes:         map[string]store.Code{},
+		tokens:        map[string]store.Token{},
+		refreshTokens: map[string]store.RefreshToken{},
+		revoked:       map[string]bool{},
 	}
 }
 
@@ -131,25 +133,59 @@ func (s *Store) Token(_ context.Context, hash []byte) (store.Token, error) {
 	return cloneToken(t), err
 }
 
-// RevokeGrant removes every token of the Grant with identifier grantID and refuses new ones.
+// CreateRefreshToken stores t unless its Grant was revoked.
+func (s *Store) CreateRefreshToken(_ context.Context, t store.RefreshToken) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.revoked[t.Grant.ID] {
+		return store.ErrRevoked
+	}
+	s.removeExpired()
+	s.refreshTokens[string(t.Hash)] = cloneRefreshToken(t)
+	return nil
+}
+
+// RefreshToken returns the refresh token with hash.
+func (s *Store) RefreshToken(_ context.Context, hash []byte) (store.RefreshToken, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, err := get(s.refreshTokens, string(hash))
+	return cloneRefreshToken(t), err
+}
+
+// RotateRefreshToken marks the refresh token with hash rotated and returns it as it was before, storing next when it was not rotated yet.
+func (s *Store) RotateRefreshToken(_ context.Context, hash []byte, next store.RefreshToken) (store.RefreshToken, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.removeExpired()
+	t, err := get(s.refreshTokens, string(hash))
+	if err != nil || t.Rotated {
+		return cloneRefreshToken(t), err
+	}
+	rotated := t
+	rotated.Rotated = true
+	s.refreshTokens[string(hash)] = rotated
+	s.refreshTokens[string(next.Hash)] = cloneRefreshToken(next)
+	return cloneRefreshToken(t), nil
+}
+
+// RevokeGrant removes every access and refresh token of the Grant with identifier grantID and refuses new ones.
 func (s *Store) RevokeGrant(_ context.Context, grantID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.revoked[grantID] = true
-	for hash, t := range s.tokens {
-		if t.Grant.ID == grantID {
-			delete(s.tokens, hash)
-		}
-	}
+	maps.DeleteFunc(s.tokens, func(_ string, t store.Token) bool { return t.Grant.ID == grantID })
+	maps.DeleteFunc(s.refreshTokens, func(_ string, t store.RefreshToken) bool { return t.Grant.ID == grantID })
 	return nil
 }
 
-// removeExpired removes expired Authorization Requests and tokens, and codes past their RetainUntil.
+// removeExpired removes expired Authorization Requests, access and refresh tokens, and codes past their RetainUntil.
 func (s *Store) removeExpired() {
 	now := s.clock()
 	maps.DeleteFunc(s.requests, func(_ string, r store.AuthorizationRequest) bool { return !now.Before(r.ExpiresAt) })
 	maps.DeleteFunc(s.codes, func(_ string, c store.Code) bool { return !now.Before(c.RetainUntil) })
 	maps.DeleteFunc(s.tokens, func(_ string, t store.Token) bool { return !now.Before(t.ExpiresAt) })
+	maps.DeleteFunc(s.refreshTokens, func(_ string, t store.RefreshToken) bool { return !now.Before(t.ExpiresAt) })
 }
 
 func get[V any](m map[string]V, key string) (V, error) {
@@ -187,6 +223,13 @@ func cloneCode(c store.Code) store.Code {
 func cloneToken(t store.Token) store.Token {
 	t.Hash = slices.Clone(t.Hash)
 	t.Grant = cloneGrant(t.Grant)
+	t.Scopes = slices.Clone(t.Scopes)
 	t.Audience = slices.Clone(t.Audience)
+	return t
+}
+
+func cloneRefreshToken(t store.RefreshToken) store.RefreshToken {
+	t.Hash = slices.Clone(t.Hash)
+	t.Grant = cloneGrant(t.Grant)
 	return t
 }

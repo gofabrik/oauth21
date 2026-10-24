@@ -90,6 +90,22 @@ func (r *recorder) CreateToken(ctx context.Context, t store.Token) error {
 	return r.Store.CreateToken(ctx, t)
 }
 
+func (r *recorder) CreateRefreshToken(ctx context.Context, t store.RefreshToken) error {
+	r.record(t.Hash)
+	return r.Store.CreateRefreshToken(ctx, t)
+}
+
+func (r *recorder) RefreshToken(ctx context.Context, hash []byte) (store.RefreshToken, error) {
+	r.record(hash)
+	return r.Store.RefreshToken(ctx, hash)
+}
+
+func (r *recorder) RotateRefreshToken(ctx context.Context, hash []byte, next store.RefreshToken) (store.RefreshToken, error) {
+	r.record(hash)
+	r.record(next.Hash)
+	return r.Store.RotateRefreshToken(ctx, hash, next)
+}
+
 // keys returns the keys recorded so far.
 func (r *recorder) keys() [][]byte {
 	r.mu.Lock()
@@ -99,6 +115,12 @@ func (r *recorder) keys() [][]byte {
 
 // newAuthorizationServer starts an Authorization Server with the public Client and any extra Clients.
 func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizationServer {
+	t.Helper()
+	return newConfiguredServer(t, func(*oauth21.Config) {}, clients...)
+}
+
+// newConfiguredServer starts an Authorization Server with the Config that configure changes, the public Client and any extra Clients.
+func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients ...store.Client) *authorizationServer {
 	t.Helper()
 	a := &authorizationServer{t: t}
 	m := memstore.NewWithClock(a.now)
@@ -112,7 +134,7 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 	a.url, a.client, a.recorder = ts.URL, ts.Client(), &recorder{Store: m}
 	a.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(a.client.CloseIdleConnections)
-	srv, err := oauth21.New(oauth21.Config{
+	c := oauth21.Config{
 		Issuer:                ts.URL,
 		LoginURL:              ts.URL + "/login",
 		Clients:               m,
@@ -121,7 +143,9 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 		Tokens:                a.recorder,
 		Scopes:                []string{"read", "write", "admin"},
 		Clock:                 a.now,
-	})
+	}
+	configure(&c)
+	srv, err := oauth21.New(c)
 	if err != nil {
 		t.Fatal(err)
 	}

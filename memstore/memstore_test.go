@@ -44,6 +44,7 @@ func TestExpiredEntitiesAreRemoved(t *testing.T) {
 			m.CreateAuthorizationRequest(t.Context(), store.AuthorizationRequest{ID: "expired", ExpiresAt: expiresAt}),
 			m.CreateCode(t.Context(), store.Code{Hash: []byte("expired"), ExpiresAt: expiresAt, RetainUntil: expiresAt}),
 			m.CreateToken(t.Context(), store.Token{Hash: []byte("expired"), ExpiresAt: expiresAt}),
+			m.CreateRefreshToken(t.Context(), store.RefreshToken{Hash: []byte("expired"), ExpiresAt: expiresAt}),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -60,6 +61,9 @@ func TestExpiredEntitiesAreRemoved(t *testing.T) {
 		}
 		if _, err := m.Token(t.Context(), []byte("expired")); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("got error %v for an expired token, want ErrNotFound", err)
+		}
+		if _, err := m.RefreshToken(t.Context(), []byte("expired")); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("got error %v for an expired refresh token, want ErrNotFound", err)
 		}
 		if _, err := m.Code(t.Context(), []byte("live")); err != nil {
 			t.Fatal(err)

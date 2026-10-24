@@ -7,9 +7,13 @@ requirements:
     status: applicable
   - id: INV-0002
     keyword: MUST
-    text: Stores receive authorization codes and access tokens only as their SHA-256 hashes.
+    text: Stores receive authorization codes, access tokens and refresh tokens only as their SHA-256 hashes.
     status: applicable
   - id: INV-0003
     keyword: MUST
     text: A Client obtains only scopes that are supported, allowed for it, requested or default for it, and granted by the Host Application.
+    status: applicable
+  - id: INV-0004
+    keyword: MUST
+    text: A refresh token that rotates issues tokens at most once, also when it is used concurrently, and presenting it after its rotation revokes its Grant while any token of the Grant is valid.
     status: applicable

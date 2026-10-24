@@ -260,7 +260,12 @@ func TestValidateTokenRequest(t *testing.T) {
 		"other grant_type":   {public, func(r *TokenRequest) { r.GrantType = "password" }, "unsupported_grant_type"},
 		"missing code":       {public, func(r *TokenRequest) { r.Code = "" }, "invalid_request"},
 		"missing verifier":   {public, func(r *TokenRequest) { r.CodeVerifier = "" }, "invalid_request"},
-		"unauthenticated":    {nil, func(*TokenRequest) {}, "invalid_client"},
+		"refresh": {public, func(r *TokenRequest) {
+			*r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r", ClientID: "client"}
+		}, ""},
+		"missing refresh":         {public, func(r *TokenRequest) { *r = TokenRequest{GrantType: "refresh_token", ClientID: "client"} }, "invalid_request"},
+		"refresh unauthenticated": {nil, func(r *TokenRequest) { *r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r"} }, "invalid_client"},
+		"unauthenticated":         {nil, func(*TokenRequest) {}, "invalid_client"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -353,19 +358,15 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 	})
 }
 
-func TestAccessTokenExpiry(t *testing.T) {
-	expiresAt := time.Unix(1_000_000, 0)
-	code, err := IssueCode(AuthorizationRequest{Scopes: []string{"read"}}, "alice", []string{"read"}, expiresAt, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := expiresAt.Add(-30 * time.Second)
+func TestTokenExpiry(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	limit := now.Add(90 * time.Minute)
 	for lifetime, want := range map[time.Duration]time.Time{
 		time.Minute:   now.Add(time.Minute),
 		time.Hour:     now.Add(time.Hour),
-		2 * time.Hour: expiresAt.Add(time.Hour),
+		2 * time.Hour: limit,
 	} {
-		if got := AccessTokenExpiry(code, now, lifetime); !got.Equal(want) {
+		if got := TokenExpiry(now, lifetime, limit); !got.Equal(want) {
 			t.Errorf("got expiry %v for lifetime %v, want %v", got, lifetime, want)
 		}
 	}
@@ -578,5 +579,175 @@ func TestScopeToken(t *testing.T) {
 		if ScopeToken(s) {
 			t.Errorf("%q is a scope-token", s)
 		}
+	}
+}
+
+func TestRefresh(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		expiresAt := time.Unix(1_000_000, 0)
+		token := RefreshToken{ClientID: "client", Scopes: []string{"read", "write"}, ExpiresAt: expiresAt, Rotated: rapid.Bool().Draw(t, "rotated")}
+		client := Client{ID: rapid.SampledFrom([]string{"client", "other"}).Draw(t, "client"), Public: rapid.Bool().Draw(t, "public"), AllowedScopes: supportedScopes}
+		requested := rapid.SampledFrom([]string{"", "read", "write read", "admin", "read admin"}).Draw(t, "scope")
+		reuseConfidential := rapid.Bool().Draw(t, "reuse confidential")
+		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
+		effect, scopes, err := Refresh(&token, client, TokenRequest{Scope: requested}, supportedScopes, reuseConfidential, now)
+		bound := client.ID == "client"
+		granted := !strings.Contains(requested, "admin")
+		want := bound && !token.Rotated && now.Before(expiresAt) && granted
+		if (err == nil) != want {
+			t.Fatalf("got error %v, want a refresh %v", err, want)
+		}
+		if (effect == RevokeGrant) != (bound && token.Rotated) {
+			t.Fatalf("got effect %v, want Grant revocation for every rotated token presented by its Client", effect)
+		}
+		if want && (effect == RotateRefreshToken) != (client.Public || !reuseConfidential) {
+			t.Fatalf("got effect %v, want rotation unless a confidential Client reuses its token", effect)
+		}
+		for _, s := range scopes {
+			if !slices.Contains(token.Scopes, s) || requested != "" && !strings.Contains(requested, s) {
+				t.Fatalf("got scopes %q for %q of %q", scopes, requested, token.Scopes)
+			}
+		}
+		if want && requested == "" && !slices.Equal(scopes, token.Scopes) {
+			t.Fatalf("got scopes %q without scope, want the granted %q", scopes, token.Scopes)
+		}
+		if effect, _, err := Refresh(nil, client, TokenRequest{}, supportedScopes, reuseConfidential, now); err == nil || effect != NoEffect {
+			t.Fatal("an unknown refresh token refreshes or revokes")
+		}
+	})
+}
+
+func TestRefreshKeepsScopesWithinLimits(t *testing.T) {
+	token := RefreshToken{ClientID: "client", Scopes: []string{"read", "write"}, ExpiresAt: time.Unix(1_000_000, 0)}
+	client := Client{ID: "client", Public: true, AllowedScopes: []string{"read", "write"}}
+	now := token.ExpiresAt.Add(-time.Minute)
+	for name, tt := range map[string]struct {
+		requested string
+		supported []string
+		allowed   []string
+		want      []string
+	}{
+		"omitted":             {"", supportedScopes, client.AllowedScopes, []string{"read", "write"}},
+		"narrower":            {"write", supportedScopes, client.AllowedScopes, []string{"write"}},
+		"not granted":         {"read admin", supportedScopes, supportedScopes, nil},
+		"no longer allowed":   {"", supportedScopes, []string{"read"}, []string{"read"}},
+		"no longer supported": {"write", []string{"read"}, client.AllowedScopes, nil},
+		"none left":           {"", supportedScopes, []string{"admin"}, nil},
+	} {
+		c := client
+		c.AllowedScopes = tt.allowed
+		_, scopes, err := Refresh(&token, c, TokenRequest{Scope: tt.requested}, tt.supported, false, now)
+		if (err == nil) != (tt.want != nil) || err != nil && err.Code != "invalid_scope" || !slices.Equal(scopes, tt.want) {
+			t.Errorf("%s: got scopes %q and error %v, want %q", name, scopes, err, tt.want)
+		}
+	}
+}
+
+// TestRefreshTokenFamily checks the refresh tokens of one Grant against a model, including refreshes that race for the rotation, a clock that moves during it, and Grant revocation.
+func TestRefreshTokenFamily(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		expiresAt := time.Unix(1_000_000, 0)
+		now := expiresAt.Add(-time.Hour)
+		client := Client{ID: "client", Public: rapid.Bool().Draw(t, "public"), AllowedScopes: []string{"read"}}
+		reuseConfidential := rapid.Bool().Draw(t, "reuse confidential")
+		rotates := client.Public || !reuseConfidential
+		code := Code{ClientID: "client", Scopes: []string{"read"}, RetainUntil: expiresAt.Add(time.Hour)}
+		stored := []RefreshToken{IssueRefreshToken(code, now, time.Hour)}
+		revoked, current, issued := false, 0, map[int]int{}
+		load := func(i int) *RefreshToken {
+			if revoked {
+				return nil
+			}
+			token := stored[i]
+			return &token
+		}
+		// refresh refreshes with token i from snapshot, the token as read before the rotation, and checks the outcome against the model.
+		refresh := func(t *rapid.T, i int, snapshot *RefreshToken) {
+			rotatedAt := now.Add(time.Duration(rapid.Int64Range(0, int64(time.Second)).Draw(t, "rotate duration")))
+			fresh := snapshot != nil && !snapshot.Rotated && now.Before(expiresAt)
+			wantRotate := fresh && rotates && !revoked && i == current
+			wantIssue := fresh && (!rotates || wantRotate && rotatedAt.Before(expiresAt))
+			wantRevoke := snapshot != nil && (snapshot.Rotated || fresh && rotates && !revoked && i != current)
+			effect, _, err := Refresh(snapshot, client, TokenRequest{}, []string{"read"}, reuseConfidential, now)
+			if effect == RotateRefreshToken {
+				before := load(i)
+				if before != nil && !before.Rotated {
+					stored[i].Rotated = true
+					stored = append(stored, Successor(*before))
+				}
+				effect, err = Rotated(before, rotatedAt)
+			}
+			if (err == nil) != wantIssue || (effect == RevokeGrant) != wantRevoke {
+				t.Fatalf("got effect %v and error %v refreshing with token %d of %d, want issue %v and Grant revocation %v", effect, err, i, len(stored), wantIssue, wantRevoke)
+			}
+			if effect == RevokeGrant {
+				revoked = true
+			}
+			if wantRotate {
+				current = len(stored) - 1
+			}
+			if wantIssue {
+				issued[i]++
+			}
+		}
+		t.Repeat(map[string]func(*rapid.T){
+			"advance": func(t *rapid.T) {
+				now = now.Add(time.Duration(rapid.Int64Range(0, int64(10*time.Minute)).Draw(t, "advance")))
+			},
+			"refresh": func(t *rapid.T) {
+				i := rapid.IntRange(0, len(stored)-1).Draw(t, "token")
+				refresh(t, i, load(i))
+			},
+			"refresh twice from one read": func(t *rapid.T) {
+				i := rapid.IntRange(0, len(stored)-1).Draw(t, "token")
+				snapshot := load(i)
+				refresh(t, i, snapshot)
+				refresh(t, i, snapshot)
+			},
+			"revoke": func(*rapid.T) {
+				revoked = true
+			},
+			"": func(t *rapid.T) {
+				for i, n := range issued {
+					if rotates && n > 1 {
+						t.Fatalf("issued tokens %d times for rotating refresh token %d", n, i)
+					}
+				}
+				if !rotates && len(stored) > 1 {
+					t.Fatalf("got %d refresh tokens, want the first one only without rotation", len(stored))
+				}
+			},
+		})
+	})
+}
+
+func TestRotatedRejectsRefreshTokenAtExpiry(t *testing.T) {
+	expiresAt := time.Unix(1_000_000, 0)
+	token := RefreshToken{ExpiresAt: expiresAt}
+	if effect, err := Rotated(&token, expiresAt.Add(-time.Nanosecond)); err != nil || effect != NoEffect {
+		t.Fatalf("got effect %v and error %v before expiry, want the token accepted", effect, err)
+	}
+	if effect, err := Rotated(&token, expiresAt); err == nil || effect != NoEffect {
+		t.Fatalf("got effect %v and error %v at expiry, want the token rejected", effect, err)
+	}
+}
+
+func TestIssueRefreshToken(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	code := Code{ClientID: "client", Scopes: []string{"read"}, RetainUntil: now.Add(time.Hour)}
+	for lifetime, want := range map[time.Duration]time.Time{time.Minute: now.Add(time.Minute), 2 * time.Hour: code.RetainUntil} {
+		got := IssueRefreshToken(code, now, lifetime)
+		if got.ClientID != "client" || !slices.Equal(got.Scopes, code.Scopes) || !got.ExpiresAt.Equal(want) || got.Rotated {
+			t.Errorf("got %+v for lifetime %v, want it bound to the code and expiring at %v", got, lifetime, want)
+		}
+	}
+}
+
+func TestSuccessorKeepsScopesAndExpiry(t *testing.T) {
+	token := RefreshToken{ClientID: "client", Scopes: []string{"read", "write"}, ExpiresAt: time.Unix(1_000_000, 0), Rotated: true}
+	want := token
+	want.Rotated = false
+	if got := Successor(token); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

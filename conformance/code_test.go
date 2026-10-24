@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -100,57 +101,63 @@ func TestCodeIsSingleUse(t *testing.T) {
 	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// concurrentRedemptions is the number of token requests racing for one code.
-const concurrentRedemptions = 8
+// concurrentRequests is the number of token requests racing for one code or refresh token.
+const concurrentRequests = 8
+
+// race sends concurrentRequests token requests params at once and returns the bodies of those that succeed.
+func (a *authorizationServer) race(params url.Values) []map[string]any {
+	a.t.Helper()
+	start := make(chan struct{})
+	statuses := make([]int, concurrentRequests)
+	bodies := make([]map[string]any, concurrentRequests)
+	var wg sync.WaitGroup
+	for i := range statuses {
+		wg.Go(func() {
+			<-start
+			statuses[i], _, bodies[i] = a.token(params, nil)
+		})
+	}
+	close(start)
+	wg.Wait()
+	var issued []map[string]any
+	for i, status := range statuses {
+		switch status {
+		case http.StatusOK:
+			issued = append(issued, bodies[i])
+		case http.StatusBadRequest:
+		default:
+			a.t.Fatalf("got status %d, want 200 or 400", status)
+		}
+	}
+	return issued
+}
 
 // TestConcurrentRedemptionIssuesAtMostOneToken checks that concurrent redemptions of a code issue at most one access token.
 //
 //conformance:covers INV-0001
 func TestConcurrentRedemptionIssuesAtMostOneToken(t *testing.T) {
 	a := newAuthorizationServer(t)
-	params := tokenParams(a.code(authorizeParams()))
-	start := make(chan struct{})
-	statuses := make([]int, concurrentRedemptions)
-	var wg sync.WaitGroup
-	for i := range statuses {
-		wg.Go(func() {
-			<-start
-			statuses[i], _, _ = a.token(params, nil)
-		})
-	}
-	close(start)
-	wg.Wait()
-	issued := 0
-	for _, status := range statuses {
-		switch status {
-		case http.StatusOK:
-			issued++
-		case http.StatusBadRequest:
-		default:
-			t.Fatalf("got status %d, want 200 or 400", status)
-		}
-	}
-	if issued > 1 {
-		t.Fatalf("got %d access tokens for one code, want at most 1", issued)
+	if issued := a.race(tokenParams(a.code(authorizeParams()))); len(issued) > 1 {
+		t.Fatalf("got %d access tokens for one code, want at most 1", len(issued))
 	}
 }
 
-// TestStoresOnlyReceiveHashes checks that the code and token Stores receive the SHA-256 hashes of codes and access tokens, never their values.
+// TestStoresOnlyReceiveHashes checks that the code and token Stores receive the SHA-256 hashes of codes, access tokens and refresh tokens, never their values.
 //
 //conformance:covers INV-0002
 func TestStoresOnlyReceiveHashes(t *testing.T) {
 	a := newAuthorizationServer(t)
 	code := a.code(authorizeParams())
-	status, _, body := a.token(tokenParams(code), nil)
-	token, _ := body["access_token"].(string)
-	if status != http.StatusOK || token == "" {
-		t.Fatalf("got status %d and body %v, want an access token", status, body)
+	token, refresh := a.tokens(tokenParams(code), nil)
+	refreshed, next := a.tokens(refreshParams(refresh), nil)
+	hashes := map[string]bool{}
+	for _, v := range []string{code, token, refresh, refreshed, next} {
+		hashes[s256(v)] = false
 	}
-	hashes := map[string]bool{s256(code): false, s256(token): false}
 	for _, key := range a.recorder.keys() {
 		k := base64.RawURLEncoding.EncodeToString(key)
 		if _, ok := hashes[k]; !ok {
-			t.Fatalf("a Store received the key %q, want only the SHA-256 hash of the code or the access token", key)
+			t.Fatalf("a Store received the key %q, want only the SHA-256 hash of a code or token", key)
 		}
 		hashes[k] = true
 	}

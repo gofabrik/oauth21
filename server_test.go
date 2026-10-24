@@ -110,7 +110,7 @@ func requestID(t rapid.TB, srv *oauth21.Server) string {
 }
 
 // issueCode runs an authorization request through Complete and returns the code.
-func issueCode(t testing.TB, srv *oauth21.Server) string {
+func issueCode(t rapid.TB, srv *oauth21.Server) string {
 	t.Helper()
 	redirect, err := srv.Complete(context.Background(), requestID(t, srv), oauth21.Completion{Subject: "alice", Scopes: readScope})
 	if err != nil {
@@ -121,6 +121,23 @@ func issueCode(t testing.TB, srv *oauth21.Server) string {
 		t.Fatal(err)
 	}
 	return cb.Query().Get("code")
+}
+
+// tokenPair is the access token and the refresh token of a successful token response.
+type tokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+// refreshToken redeems a fresh code and returns the refresh token it issues.
+func refreshToken(t rapid.TB, srv *oauth21.Server) string {
+	t.Helper()
+	var body tokenPair
+	w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv))))
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.RefreshToken == "" {
+		t.Fatalf("got status %d and error %v, want a refresh token", w.Code, err)
+	}
+	return body.RefreshToken
 }
 
 func TestCodeReplayRevokesGrant(t *testing.T) {
@@ -264,7 +281,7 @@ func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
 		m := memstore.New()
 		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
 		withLifetime := func(lifetime time.Duration) *oauth21.Server {
-			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime})
+			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime, RefreshTokenLifetime: lifetime})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -277,7 +294,7 @@ func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
 			ExpiresIn   int64  `json:"expires_in"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.ExpiresIn != 120 {
-			t.Fatalf("got expires_in %d and error %v, want 120, the code lifetime plus the access token lifetime at issue", body.ExpiresIn, err)
+			t.Fatalf("got expires_in %d and error %v, want 120, the code lifetime plus the token lifetimes at issue", body.ExpiresIn, err)
 		}
 		if got, err := m.Token(t.Context(), sum(body.AccessToken)); err != nil || !got.ExpiresAt.Equal(time.Now().Add(2*time.Minute)) {
 			t.Fatalf("got token %+v and error %v, want it to expire with the code's retention", got, err)
@@ -320,6 +337,7 @@ func TestNewRequiresConfig(t *testing.T) {
 		"negative code lifetime":      func(c *oauth21.Config) { c.CodeLifetime = -time.Second },
 		"long code lifetime":          func(c *oauth21.Config) { c.CodeLifetime = 11 * time.Minute },
 		"negative token lifetime":     func(c *oauth21.Config) { c.AccessTokenLifetime = -time.Second },
+		"short refresh lifetime":      func(c *oauth21.Config) { c.RefreshTokenLifetime = time.Millisecond },
 		"short code lifetime":         func(c *oauth21.Config) { c.CodeLifetime = time.Millisecond },
 		"short token lifetime":        func(c *oauth21.Config) { c.AccessTokenLifetime = 500 * time.Millisecond },
 		"malformed login URL":         func(c *oauth21.Config) { c.LoginURL = "%zz" },
@@ -396,7 +414,7 @@ func FuzzAuthorizationHandler(f *testing.F) {
 	})
 }
 
-// FuzzTokenHandler fuzzes token requests in which CODE stands for a freshly issued code.
+// FuzzTokenHandler fuzzes token requests in which CODE stands for a freshly issued code and REFRESH for a fresh refresh token.
 func FuzzTokenHandler(f *testing.F) {
 	f.Add(tokenBody("CODE"), "")
 	f.Add(tokenBody("CODE")+"&code=other", "")
@@ -406,6 +424,10 @@ func FuzzTokenHandler(f *testing.F) {
 	f.Add(tokenBody("CODE"), "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
 	f.Add(tokenBody("CODE"), "Basic !")
 	f.Add(tokenBody("CODE"), "Bearer x")
+	f.Add("grant_type=refresh_token&refresh_token=REFRESH&client_id=client", "")
+	f.Add("grant_type=refresh_token&refresh_token=REFRESH&client_id=client&scope=read", "")
+	f.Add("grant_type=refresh_token&refresh_token=REFRESH&client_id=client&scope=admin", "")
+	f.Add("grant_type=refresh_token&refresh_token=REFRESH", "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
 	f.Add("grant_type=client_credentials", "")
 	f.Add("%zz", "")
 	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
@@ -417,6 +439,9 @@ func FuzzTokenHandler(f *testing.F) {
 		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash})
 		srv := newServer(t, m, m, m)
 		body = strings.ReplaceAll(body, "CODE", issueCode(t, srv))
+		if strings.Contains(body, "REFRESH") {
+			body = strings.ReplaceAll(body, "REFRESH", refreshToken(t, srv))
+		}
 		r := tokenRequest(body)
 		r.Header["Authorization"] = []string{authorization}
 		w := do(srv.TokenHandler(), r)
@@ -680,4 +705,87 @@ func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	if w.Code != http.StatusBadRequest || w.Header().Get("Location") != "" {
 		t.Fatalf("got status %d and Location %q, want 400 without redirect", w.Code, w.Header().Get("Location"))
 	}
+}
+
+// TestRefreshTokenFamily checks the refresh tokens of a Grant over HTTP against a model of rotation, reuse, revocation and expiry.
+func TestRefreshTokenFamily(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		now := time.Unix(1_000_000, 0)
+		clock := func() time.Time { return now }
+		m := memstore.NewWithClock(clock)
+		public := rapid.Bool().Draw(t, "public")
+		reuse := rapid.Bool().Draw(t, "reuse confidential")
+		srv, err := oauth21.New(oauth21.Config{
+			Issuer:                         issuer,
+			LoginURL:                       "/login",
+			Clients:                        m,
+			AuthorizationRequests:          m,
+			Codes:                          m,
+			Tokens:                         m,
+			Scopes:                         readScope,
+			SecretHasher:                   acceptSecret{},
+			AccessTokenLifetime:            2 * time.Hour,
+			RefreshTokenLifetime:           time.Hour,
+			ReuseConfidentialRefreshTokens: reuse,
+			Clock:                          clock,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope}
+		credentials := ""
+		if !public {
+			client.Type, client.SecretHash, credentials = store.Confidential, "hash", "&client_secret=secret"
+		}
+		m.AddClient(client)
+		w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv))+credentials))
+		var body tokenPair
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.RefreshToken == "" {
+			t.Fatalf("got status %d and error %v, want a refresh token", w.Code, err)
+		}
+		expiresAt := now.Add(time.Hour)
+		rotates := public || !reuse
+		refreshTokens, accessTokens := []string{body.RefreshToken, "unknown"}, []string{body.AccessToken}
+		current, revoked := 0, false
+		t.Repeat(map[string]func(*rapid.T){
+			"advance": func(t *rapid.T) {
+				now = now.Add(time.Duration(rapid.Int64Range(0, int64(20*time.Minute)).Draw(t, "advance")))
+			},
+			"refresh": func(t *rapid.T) {
+				i := rapid.IntRange(0, len(refreshTokens)-1).Draw(t, "refresh token")
+				live := !revoked && now.Before(expiresAt)
+				wantOK := live && i == current
+				w := do(srv.TokenHandler(), tokenRequest("grant_type=refresh_token&client_id=client&refresh_token="+refreshTokens[i]+credentials))
+				if (w.Code == http.StatusOK) != wantOK {
+					t.Fatalf("got status %d refreshing with token %d of %d, want success %v", w.Code, i, len(refreshTokens), wantOK)
+				}
+				if live && rotates && i != current && refreshTokens[i] != "unknown" {
+					revoked = true
+				}
+				if !wantOK {
+					return
+				}
+				var body tokenPair
+				if err := json.NewDecoder(w.Body).Decode(&body); err != nil || (body.RefreshToken != "") != rotates {
+					t.Fatalf("got refresh token %q and error %v, want a new one %v", body.RefreshToken, err, rotates)
+				}
+				accessTokens = append(accessTokens, body.AccessToken)
+				if rotates {
+					refreshTokens = append(refreshTokens, body.RefreshToken)
+					current = len(refreshTokens) - 1
+				}
+			},
+			"": func(t *rapid.T) {
+				for _, a := range accessTokens {
+					got, err := m.Token(context.Background(), sum(a))
+					switch {
+					case revoked && !errors.Is(err, store.ErrNotFound):
+						t.Fatalf("got token %+v and error %v after the Grant was revoked, want ErrNotFound", got, err)
+					case err == nil && got.ExpiresAt.After(expiresAt):
+						t.Fatalf("got an access token expiring at %v, after its Refresh Token Family at %v", got.ExpiresAt, expiresAt)
+					}
+				}
+			},
+		})
+	})
 }

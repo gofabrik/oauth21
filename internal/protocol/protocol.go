@@ -25,6 +25,12 @@ const (
 // methodS256 is the only supported code challenge method.
 const methodS256 = "S256"
 
+// Grant types of the token endpoint.
+const (
+	AuthorizationCodeGrant = "authorization_code"
+	RefreshTokenGrant      = "refresh_token"
+)
+
 // Error is an OAuth error response.
 type Error struct {
 	Code        string
@@ -239,12 +245,12 @@ func IssueCode(a AuthorizationRequest, subject string, granted []string, expires
 	}, nil
 }
 
-// AccessTokenExpiry is when an access token issued from code at now with lifetime expires, at the latest at the code's RetainUntil.
-func AccessTokenExpiry(code Code, now time.Time, lifetime time.Duration) time.Time {
-	if expiresAt := now.Add(lifetime); expiresAt.Before(code.RetainUntil) {
+// TokenExpiry is when a token issued at now with lifetime expires, at the latest at limit.
+func TokenExpiry(now time.Time, lifetime time.Duration, limit time.Time) time.Time {
+	if expiresAt := now.Add(lifetime); expiresAt.Before(limit) {
 		return expiresAt
 	}
-	return code.RetainUntil
+	return limit
 }
 
 // TokenRequest is the parameters of a token request.
@@ -254,6 +260,8 @@ type TokenRequest struct {
 	RedirectURI  string
 	ClientID     string
 	CodeVerifier string
+	RefreshToken string
+	Scope        string
 	ClientSecret string
 	// AuthScheme is the scheme of the Authorization header, or "" without one.
 	AuthScheme  string
@@ -299,17 +307,24 @@ func Authenticate(client *Client, r TokenRequest, verify func(hash, secret strin
 	return nil
 }
 
-// ValidateTokenRequest checks r for client, which is nil when unknown, before its code is consumed.
+// ValidateTokenRequest checks r for client, which is nil when unknown, before its code or refresh token is loaded.
 func ValidateTokenRequest(client *Client, r TokenRequest, verify func(hash, secret string) bool) *Error {
-	switch {
-	case r.GrantType == "":
+	switch r.GrantType {
+	case "":
 		return &Error{invalidRequest, "grant_type required"}
-	case r.GrantType != "authorization_code":
-		return &Error{unsupportedGrantType, "grant_type must be authorization_code"}
-	case r.Code == "":
-		return &Error{invalidRequest, "code required"}
-	case r.CodeVerifier == "":
-		return &Error{invalidRequest, "code_verifier required"}
+	case AuthorizationCodeGrant:
+		switch {
+		case r.Code == "":
+			return &Error{invalidRequest, "code required"}
+		case r.CodeVerifier == "":
+			return &Error{invalidRequest, "code_verifier required"}
+		}
+	case RefreshTokenGrant:
+		if r.RefreshToken == "" {
+			return &Error{invalidRequest, "refresh_token required"}
+		}
+	default:
+		return &Error{unsupportedGrantType, "grant_type must be authorization_code or refresh_token"}
 	}
 	return Authenticate(client, r, verify)
 }
@@ -322,8 +337,10 @@ const (
 	NoEffect Effect = iota
 	// ConsumeCode asks to consume the code atomically and pass the result to Consumed.
 	ConsumeCode
-	// RevokeGrant asks to revoke the Grant of the code.
+	// RevokeGrant asks to revoke the Grant of the code or refresh token.
 	RevokeGrant
+	// RotateRefreshToken asks to replace the refresh token by a new one atomically and pass the result to Rotated.
+	RotateRefreshToken
 )
 
 // Redeem decides whether r from the Client clientID may redeem code (nil when unknown) at now.
@@ -348,6 +365,63 @@ func Consumed(code *Code, now time.Time) (Effect, *Error) {
 		return RevokeGrant, &Error{invalidGrant, "code already used"}
 	case !now.Before(code.ExpiresAt), !now.Before(code.RetainUntil):
 		return NoEffect, &Error{invalidGrant, "code expired"}
+	}
+	return NoEffect, nil
+}
+
+// RefreshToken is what a refresh token is bound to.
+type RefreshToken struct {
+	ClientID string
+	// Scopes are the scopes of the Grant.
+	Scopes    []string
+	ExpiresAt time.Time
+	Rotated   bool
+}
+
+// IssueRefreshToken is the first refresh token of the Refresh Token Family of code redeemed at now.
+func IssueRefreshToken(code Code, now time.Time, lifetime time.Duration) RefreshToken {
+	return RefreshToken{ClientID: code.ClientID, Scopes: code.Scopes, ExpiresAt: TokenExpiry(now, lifetime, code.RetainUntil)}
+}
+
+// Successor is the refresh token that replaces token in its Refresh Token Family.
+func Successor(token RefreshToken) RefreshToken {
+	token.Rotated = false
+	return token
+}
+
+// Refresh decides whether r from client may use token (nil when unknown) at now, and returns the scopes of the new access token; only confidential Clients may reuse their token.
+func Refresh(token *RefreshToken, client Client, r TokenRequest, supported []string, reuseConfidential bool, now time.Time) (Effect, []string, *Error) {
+	if token != nil && token.ClientID != client.ID {
+		return NoEffect, nil, &Error{invalidGrant, "refresh token was issued to another client"}
+	}
+	if effect, err := Rotated(token, now); err != nil {
+		return effect, nil, err
+	}
+	scopes, err := refreshScopes(r.Scope, token.Scopes, supported, client.AllowedScopes)
+	if err != nil {
+		return NoEffect, nil, err
+	}
+	if client.Public || !reuseConfidential {
+		return RotateRefreshToken, scopes, nil
+	}
+	return NoEffect, scopes, nil
+}
+
+// refreshScopes resolves the requested scopes of a refresh against the granted ones that are still supported and allowed, all of those when requested is empty.
+func refreshScopes(requested string, granted, supported, allowed []string) ([]string, *Error) {
+	available := slices.DeleteFunc(slices.Clone(granted), func(s string) bool { return !slices.Contains(supported, s) || !slices.Contains(allowed, s) })
+	return resolveScopes(requested, supported, available, available)
+}
+
+// Rotated decides on the refresh token RotateRefreshToken returned at now, nil when unknown.
+func Rotated(token *RefreshToken, now time.Time) (Effect, *Error) {
+	switch {
+	case token == nil:
+		return NoEffect, &Error{invalidGrant, "invalid refresh token"}
+	case token.Rotated:
+		return RevokeGrant, &Error{invalidGrant, "refresh token already rotated"}
+	case !now.Before(token.ExpiresAt):
+		return NoEffect, &Error{invalidGrant, "refresh token expired"}
 	}
 	return NoEffect, nil
 }

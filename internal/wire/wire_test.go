@@ -223,6 +223,7 @@ func FuzzParseAuthorizationParams(f *testing.F) {
 
 func FuzzParseTokenRequest(f *testing.F) {
 	f.Add("grant_type=authorization_code&code=c&client_id=c&code_verifier=v")
+	f.Add("grant_type=refresh_token&refresh_token=r&scope=a+b&client_id=c")
 	f.Add("code=a&code=b")
 	f.Add("%zz")
 	f.Fuzz(func(t *testing.T, body string) {

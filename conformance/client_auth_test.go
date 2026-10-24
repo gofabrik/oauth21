@@ -19,11 +19,17 @@ const (
 // newConfidentialServer starts an Authorization Server with a confidential Client that has secret.
 func newConfidentialServer(t *testing.T) *authorizationServer {
 	t.Helper()
+	return newAuthorizationServer(t, confidentialClient(t))
+}
+
+// confidentialClient returns the confidential Client that has secret.
+func confidentialClient(t *testing.T) store.Client {
+	t.Helper()
 	hash, err := oauth21.PBKDF2{Iterations: 1000}.Hash(secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newAuthorizationServer(t, store.Client{ID: confidentialID, Type: store.Confidential, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash})
+	return store.Client{ID: confidentialID, Type: store.Confidential, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash}
 }
 
 // confidentialCode runs an authorization request of the confidential Client and returns its token request without credentials.

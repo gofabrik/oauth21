@@ -71,10 +71,21 @@ type Code struct {
 
 // Token is an access token, stored by the SHA-256 hash of its value.
 type Token struct {
-	Hash      []byte
-	Grant     Grant
+	Hash  []byte
+	Grant Grant
+	// Scopes are the scopes of the token, the Grant's or fewer.
+	Scopes    []string
 	Audience  []string
 	ExpiresAt time.Time
+}
+
+// RefreshToken is a refresh token, stored by the SHA-256 hash of its value.
+type RefreshToken struct {
+	Hash      []byte
+	Grant     Grant
+	ExpiresAt time.Time
+	// Rotated is set once the refresh token was replaced by a new one.
+	Rotated bool
 }
 
 // Clients holds the registered Clients.
@@ -98,11 +109,16 @@ type Codes interface {
 	ConsumeCode(ctx context.Context, hash []byte) (Code, error)
 }
 
-// Tokens holds the access tokens.
+// Tokens holds the access tokens and the refresh tokens, rotated or not, until they expire.
 type Tokens interface {
 	// CreateToken fails with ErrRevoked when the Grant of t was revoked.
 	CreateToken(ctx context.Context, t Token) error
 	Token(ctx context.Context, hash []byte) (Token, error)
-	// RevokeGrant removes every token of the Grant with identifier grantID and refuses new ones.
+	// CreateRefreshToken fails with ErrRevoked when the Grant of t was revoked.
+	CreateRefreshToken(ctx context.Context, t RefreshToken) error
+	RefreshToken(ctx context.Context, hash []byte) (RefreshToken, error)
+	// RotateRefreshToken atomically marks a refresh token rotated and returns it as it was before; it stores next only when the token was not rotated yet and its Grant was not revoked.
+	RotateRefreshToken(ctx context.Context, hash []byte, next RefreshToken) (RefreshToken, error)
+	// RevokeGrant removes every access and refresh token of the Grant with identifier grantID and refuses new ones.
 	RevokeGrant(ctx context.Context, grantID string) error
 }
