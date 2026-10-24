@@ -3,8 +3,10 @@ package memstore
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/gofabrik/oauth21/store"
 )
@@ -12,6 +14,7 @@ import (
 // Store keeps every entity in memory. It is safe for concurrent use.
 type Store struct {
 	mu       sync.Mutex
+	clock    func() time.Time
 	clients  map[string]store.Client
 	requests map[string]store.AuthorizationRequest
 	codes    map[string]store.Code
@@ -19,9 +22,15 @@ type Store struct {
 	revoked  map[string]bool
 }
 
-// New returns an empty Store.
+// New returns an empty Store that removes expired entities by time.Now.
 func New() *Store {
+	return NewWithClock(time.Now)
+}
+
+// NewWithClock returns an empty Store that removes expired entities by clock.
+func NewWithClock(clock func() time.Time) *Store {
 	return &Store{
+		clock:    clock,
 		clients:  map[string]store.Client{},
 		requests: map[string]store.AuthorizationRequest{},
 		codes:    map[string]store.Code{},
@@ -49,6 +58,7 @@ func (s *Store) Client(_ context.Context, id string) (store.Client, error) {
 func (s *Store) CreateAuthorizationRequest(_ context.Context, r store.AuthorizationRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.removeExpired()
 	s.requests[r.ID] = cloneRequest(r)
 	return nil
 }
@@ -74,6 +84,7 @@ func (s *Store) ConsumeAuthorizationRequest(_ context.Context, id string) (store
 func (s *Store) CreateCode(_ context.Context, c store.Code) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.removeExpired()
 	s.codes[string(c.Hash)] = cloneCode(c)
 	return nil
 }
@@ -107,6 +118,7 @@ func (s *Store) CreateToken(_ context.Context, t store.Token) error {
 	if s.revoked[t.Grant.ID] {
 		return store.ErrRevoked
 	}
+	s.removeExpired()
 	s.tokens[string(t.Hash)] = cloneToken(t)
 	return nil
 }
@@ -130,6 +142,14 @@ func (s *Store) RevokeGrant(_ context.Context, grantID string) error {
 		}
 	}
 	return nil
+}
+
+// removeExpired removes expired Authorization Requests and tokens, and codes past their RetainUntil.
+func (s *Store) removeExpired() {
+	now := s.clock()
+	maps.DeleteFunc(s.requests, func(_ string, r store.AuthorizationRequest) bool { return !now.Before(r.ExpiresAt) })
+	maps.DeleteFunc(s.codes, func(_ string, c store.Code) bool { return !now.Before(c.RetainUntil) })
+	maps.DeleteFunc(s.tokens, func(_ string, t store.Token) bool { return !now.Before(t.ExpiresAt) })
 }
 
 func get[V any](m map[string]V, key string) (V, error) {

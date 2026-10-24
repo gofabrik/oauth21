@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -10,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,17 +46,59 @@ func s256(v string) string {
 
 // authorizationServer is an Authorization Server under test, reached over HTTP.
 type authorizationServer struct {
-	t      *testing.T
-	srv    *oauth21.Server
-	url    string
-	client *http.Client
-	skew   atomic.Int64
+	t        *testing.T
+	srv      *oauth21.Server
+	url      string
+	client   *http.Client
+	skew     atomic.Int64
+	recorder *recorder
+}
+
+// recorder records the keys the Authorization Server sends to the code and token Stores.
+type recorder struct {
+	*memstore.Store
+	mu       sync.Mutex
+	received [][]byte
+}
+
+func (r *recorder) record(key []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.received = append(r.received, slices.Clone(key))
+}
+
+func (r *recorder) CreateCode(ctx context.Context, c store.Code) error {
+	r.record(c.Hash)
+	return r.Store.CreateCode(ctx, c)
+}
+
+func (r *recorder) Code(ctx context.Context, hash []byte) (store.Code, error) {
+	r.record(hash)
+	return r.Store.Code(ctx, hash)
+}
+
+func (r *recorder) ConsumeCode(ctx context.Context, hash []byte) (store.Code, error) {
+	r.record(hash)
+	return r.Store.ConsumeCode(ctx, hash)
+}
+
+func (r *recorder) CreateToken(ctx context.Context, t store.Token) error {
+	r.record(t.Hash)
+	return r.Store.CreateToken(ctx, t)
+}
+
+// keys returns the keys recorded so far.
+func (r *recorder) keys() [][]byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.received)
 }
 
 // newAuthorizationServer starts an Authorization Server with the public Client and any extra Clients.
 func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizationServer {
 	t.Helper()
-	m := memstore.New()
+	a := &authorizationServer{t: t}
+	m := memstore.NewWithClock(a.now)
 	m.AddClient(store.Client{ID: clientID, Type: store.Public, RedirectURIs: []string{redirectURI}})
 	for _, c := range clients {
 		m.AddClient(c)
@@ -61,7 +106,7 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 	mux := http.NewServeMux()
 	ts := httptest.NewTLSServer(mux)
 	t.Cleanup(ts.Close)
-	a := &authorizationServer{t: t, url: ts.URL, client: ts.Client()}
+	a.url, a.client, a.recorder = ts.URL, ts.Client(), &recorder{Store: m}
 	a.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(a.client.CloseIdleConnections)
 	srv, err := oauth21.New(oauth21.Config{
@@ -69,9 +114,9 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 		LoginURL:              ts.URL + "/login",
 		Clients:               m,
 		AuthorizationRequests: m,
-		Codes:                 m,
-		Tokens:                m,
-		Clock:                 func() time.Time { return time.Now().Add(time.Duration(a.skew.Load())) },
+		Codes:                 a.recorder,
+		Tokens:                a.recorder,
+		Clock:                 a.now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +125,11 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 	mux.Handle("/authorize", srv.AuthorizationHandler())
 	mux.Handle("/token", srv.TokenHandler())
 	return a
+}
+
+// now is the clock of the Authorization Server and its Stores.
+func (a *authorizationServer) now() time.Time {
+	return time.Now().Add(time.Duration(a.skew.Load()))
 }
 
 // advance moves the clock of the Authorization Server forward by d.

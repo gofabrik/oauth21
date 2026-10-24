@@ -3,11 +3,14 @@ package memstore_test
 import (
 	"errors"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"go.uber.org/goleak"
 
 	"github.com/gofabrik/oauth21/memstore"
 	"github.com/gofabrik/oauth21/store"
+	"github.com/gofabrik/oauth21/storetest"
 )
 
 func TestMain(m *testing.M) {
@@ -27,40 +30,59 @@ func TestEntitiesAreCopied(t *testing.T) {
 	if again, _ := m.Client(t.Context(), "client"); again.RedirectURIs[0] != "https://c.example/cb" {
 		t.Fatalf("got redirect URI %q, want the registered one", again.RedirectURIs[0])
 	}
-
-	r := store.AuthorizationRequest{ID: "r", Scopes: []string{"read"}}
-	if err := m.CreateAuthorizationRequest(t.Context(), r); err != nil {
-		t.Fatal(err)
-	}
-	r.Scopes[0] = "admin"
-	if got, _ := m.AuthorizationRequest(t.Context(), "r"); got.Scopes[0] != "read" {
-		t.Fatalf("got scope %q, want read", got.Scopes[0])
-	}
-
-	code := store.Code{Hash: []byte("h"), Grant: store.Grant{Scopes: []string{"read"}, Audience: []string{"api"}}}
-	if err := m.CreateCode(t.Context(), code); err != nil {
-		t.Fatal(err)
-	}
-	code.Hash[0], code.Grant.Scopes[0], code.Grant.Audience[0] = 'x', "admin", "other"
-	got2, err := m.ConsumeCode(t.Context(), []byte("h"))
-	if err != nil || got2.Grant.Scopes[0] != "read" || got2.Grant.Audience[0] != "api" {
-		t.Fatalf("got code %+v and error %v, want the stored one", got2, err)
-	}
 }
 
-func TestRevokedGrantRefusesTokens(t *testing.T) {
-	m := memstore.New()
-	grant := store.Grant{ID: "g"}
-	if err := m.CreateToken(t.Context(), store.Token{Hash: []byte("a"), Grant: grant}); err != nil {
+func TestStoreContract(t *testing.T) {
+	storetest.Run(t, func(*testing.T) storetest.Store { return memstore.New() })
+}
+
+func TestExpiredEntitiesAreRemoved(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m := memstore.New()
+		expiresAt := time.Now().Add(time.Minute)
+		err := errors.Join(
+			m.CreateAuthorizationRequest(t.Context(), store.AuthorizationRequest{ID: "expired", ExpiresAt: expiresAt}),
+			m.CreateCode(t.Context(), store.Code{Hash: []byte("expired"), ExpiresAt: expiresAt, RetainUntil: expiresAt}),
+			m.CreateToken(t.Context(), store.Token{Hash: []byte("expired"), ExpiresAt: expiresAt}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Minute)
+		if err := m.CreateCode(t.Context(), store.Code{Hash: []byte("live"), RetainUntil: time.Now().Add(time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.AuthorizationRequest(t.Context(), "expired"); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("got error %v for an expired Authorization Request, want ErrNotFound", err)
+		}
+		if _, err := m.Code(t.Context(), []byte("expired")); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("got error %v for a code past its RetainUntil, want ErrNotFound", err)
+		}
+		if _, err := m.Token(t.Context(), []byte("expired")); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("got error %v for an expired token, want ErrNotFound", err)
+		}
+		if _, err := m.Code(t.Context(), []byte("live")); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestRemovalFollowsTheClock(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	m := memstore.NewWithClock(func() time.Time { return now })
+	for _, r := range []store.AuthorizationRequest{{ID: "expiring", ExpiresAt: now.Add(time.Minute)}, {ID: "pending", ExpiresAt: now.Add(2 * time.Minute)}} {
+		if err := m.CreateAuthorizationRequest(t.Context(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now = now.Add(time.Minute)
+	if err := m.CreateAuthorizationRequest(t.Context(), store.AuthorizationRequest{ID: "new", ExpiresAt: now.Add(time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.RevokeGrant(t.Context(), "g"); err != nil {
-		t.Fatal(err)
+	if _, err := m.AuthorizationRequest(t.Context(), "expiring"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("got error %v for an Authorization Request expired by the clock, want ErrNotFound", err)
 	}
-	if _, err := m.Token(t.Context(), []byte("a")); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("got error %v for a token of a revoked Grant, want ErrNotFound", err)
-	}
-	if err := m.CreateToken(t.Context(), store.Token{Hash: []byte("b"), Grant: grant}); !errors.Is(err, store.ErrRevoked) {
-		t.Fatalf("got error %v creating a token for a revoked Grant, want ErrRevoked", err)
+	if _, err := m.AuthorizationRequest(t.Context(), "pending"); err != nil {
+		t.Fatalf("got error %v for an Authorization Request that has not expired by the clock", err)
 	}
 }

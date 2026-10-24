@@ -98,7 +98,7 @@ func TestRedeemIssuedCode(t *testing.T) {
 		v := verifierGen.Draw(t, "verifier")
 		a := AuthorizationRequest{ClientID: "client", RedirectURI: "https://c.example/cb", CodeChallenge: s256(v), CodeChallengeMethod: "S256"}
 		expiresAt := time.Unix(1_000_000, 0)
-		code, err := IssueCode(a, "alice", nil, expiresAt)
+		code, err := IssueCode(a, "alice", nil, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,15 +111,74 @@ func TestRedeemIssuedCode(t *testing.T) {
 		}
 		code.Used = rapid.Bool().Draw(t, "used")
 		bound := clientID == "client" && r.RedirectURI != "https://c.example/other" && r.CodeVerifier == v
-		revoke, err := Redeem(&code, clientID, r, now)
-		if want := bound && !code.Used && now.Before(expiresAt); (err == nil) != want {
-			t.Fatalf("got redeemed %v, want %v", err == nil, want)
+		effect, err := Redeem(&code, clientID, r, now)
+		if want := bound && !code.Used && now.Before(expiresAt); (effect == ConsumeCode) != want || (err == nil) != want {
+			t.Fatalf("got effect %v and error %v, want consume %v", effect, err, want)
 		}
-		if revoke != (bound && code.Used) {
-			t.Fatalf("got Grant revocation %v, want it for every replay with the right client and verifier", revoke)
+		if (effect == RevokeGrant) != (bound && code.Used) {
+			t.Fatalf("got effect %v, want Grant revocation for every replay with the right client and verifier", effect)
 		}
-		if revoke, err := Redeem(nil, clientID, r, now); err == nil || revoke {
+		if effect, err := Redeem(nil, clientID, r, now); err == nil || effect != NoEffect {
 			t.Fatal("an unknown code redeems or revokes")
+		}
+	})
+}
+
+// TestRedemption checks the two-step redemption of a code against a model, including redemptions that race for the consume and a clock that moves during it.
+func TestRedemption(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		v := verifierGen.Draw(t, "verifier")
+		expiresAt := time.Unix(1_000_000, 0)
+		now := expiresAt.Add(-time.Minute)
+		stored, perr := IssueCode(AuthorizationRequest{ClientID: "client", CodeChallenge: s256(v), CodeChallengeMethod: "S256"}, "alice", nil, expiresAt, time.Hour)
+		if perr != nil {
+			t.Fatal(perr)
+		}
+		consumed, issued := false, 0
+		// redeem redeems from snapshot, the code as read before the consume, and checks the outcome against the model.
+		redeem := func(t *rapid.T, snapshot Code) {
+			verifier := v
+			if !rapid.Bool().Draw(t, "right verifier") {
+				verifier = strings.Repeat("w", 43)
+			}
+			consumedAt := now.Add(time.Duration(rapid.Int64Range(0, int64(time.Second)).Draw(t, "consume duration")))
+			wantConsume := verifier == v && !consumed && now.Before(expiresAt)
+			wantIssue := wantConsume && consumedAt.Before(expiresAt)
+			wantRevoke := verifier == v && consumed
+			effect, err := Redeem(&snapshot, "client", TokenRequest{CodeVerifier: verifier}, now)
+			if effect == ConsumeCode {
+				before := stored
+				stored.Used = true
+				effect, err = Consumed(&before, consumedAt)
+			}
+			if (err == nil) != wantIssue || (effect == RevokeGrant) != wantRevoke {
+				t.Fatalf("got effect %v and error %v, want issue %v and Grant revocation %v", effect, err, wantIssue, wantRevoke)
+			}
+			consumed = consumed || wantConsume
+			if wantIssue {
+				issued++
+			}
+		}
+		t.Repeat(map[string]func(*rapid.T){
+			"advance": func(t *rapid.T) {
+				now = now.Add(time.Duration(rapid.Int64Range(0, int64(30*time.Second)).Draw(t, "advance")))
+			},
+			"redeem": func(t *rapid.T) {
+				redeem(t, stored)
+			},
+			"redeem twice from one read": func(t *rapid.T) {
+				snapshot := stored
+				redeem(t, snapshot)
+				redeem(t, snapshot)
+			},
+			"": func(t *rapid.T) {
+				if issued > 1 {
+					t.Fatalf("issued tokens %d times for one code", issued)
+				}
+			},
+		})
+		if effect, err := Consumed(nil, now); err == nil || effect != NoEffect {
+			t.Fatal("consuming an unknown code redeems or revokes")
 		}
 	})
 }
@@ -273,22 +332,48 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 		subject := rapid.StringN(1, -1, -1).Draw(t, "subject")
 		scopes := rapid.SliceOf(rapid.String()).Draw(t, "scopes")
 		expiresAt := time.Unix(rapid.Int64Range(0, 1<<40).Draw(t, "expires_at"), 0)
-		code, err := IssueCode(a, subject, scopes, expiresAt)
+		code, err := IssueCode(a, subject, scopes, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := Code{a.ClientID, subject, scopes, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, false}
+		want := Code{a.ClientID, subject, scopes, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
 		if !reflect.DeepEqual(code, want) {
 			t.Fatalf("got %+v, want %+v", code, want)
 		}
 	})
 }
 
+func TestAccessTokenExpiry(t *testing.T) {
+	expiresAt := time.Unix(1_000_000, 0)
+	code, err := IssueCode(AuthorizationRequest{}, "alice", nil, expiresAt, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := expiresAt.Add(-30 * time.Second)
+	for lifetime, want := range map[time.Duration]time.Time{
+		time.Minute:   now.Add(time.Minute),
+		time.Hour:     now.Add(time.Hour),
+		2 * time.Hour: expiresAt.Add(time.Hour),
+	} {
+		if got := AccessTokenExpiry(code, now, lifetime); !got.Equal(want) {
+			t.Errorf("got expiry %v for lifetime %v, want %v", got, lifetime, want)
+		}
+	}
+}
+
+func TestConsumedRejectsCodePastRetention(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	code := Code{ExpiresAt: now.Add(time.Minute)}
+	if effect, err := Consumed(&code, now); err == nil || effect != NoEffect {
+		t.Fatalf("got effect %v and error %v for a code without RetainUntil, want it rejected", effect, err)
+	}
+}
+
 func TestIssueCodeRejectsEmptyGrant(t *testing.T) {
-	if _, err := IssueCode(AuthorizationRequest{Scopes: []string{"read"}}, "alice", nil, time.Time{}); err == nil {
+	if _, err := IssueCode(AuthorizationRequest{Scopes: []string{"read"}}, "alice", nil, time.Time{}, time.Hour); err == nil {
 		t.Fatal("got a code granting no scopes for a request with scopes")
 	}
-	if _, err := IssueCode(AuthorizationRequest{}, "alice", nil, time.Time{}); err != nil {
+	if _, err := IssueCode(AuthorizationRequest{}, "alice", nil, time.Time{}, time.Hour); err != nil {
 		t.Fatalf("got error %v for a request without scopes", err)
 	}
 }
@@ -303,7 +388,7 @@ func TestTokenCreated(t *testing.T) {
 }
 
 func TestIssueCodeRequiresSubject(t *testing.T) {
-	if _, err := IssueCode(AuthorizationRequest{ClientID: "client"}, "", nil, time.Time{}); err == nil {
+	if _, err := IssueCode(AuthorizationRequest{ClientID: "client"}, "", nil, time.Time{}, time.Hour); err == nil {
 		t.Fatal("got a code without a subject")
 	}
 }

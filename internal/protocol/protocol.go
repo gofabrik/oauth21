@@ -165,11 +165,13 @@ type Code struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time
-	Used                bool
+	// RetainUntil is when the code may be removed, used or not.
+	RetainUntil time.Time
+	Used        bool
 }
 
-// IssueCode binds a code for a to the Resource Owner subject and the granted scopes.
-func IssueCode(a AuthorizationRequest, subject string, scopes []string, expiresAt time.Time) (Code, *Error) {
+// IssueCode binds a code for a to the Resource Owner subject and the granted scopes, retaining it for tokenLifetime after it expires.
+func IssueCode(a AuthorizationRequest, subject string, scopes []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
 	if subject == "" {
 		return Code{}, &Error{invalidRequest, "subject required"}
 	}
@@ -184,7 +186,16 @@ func IssueCode(a AuthorizationRequest, subject string, scopes []string, expiresA
 		CodeChallenge:       a.CodeChallenge,
 		CodeChallengeMethod: a.CodeChallengeMethod,
 		ExpiresAt:           expiresAt,
+		RetainUntil:         expiresAt.Add(tokenLifetime),
 	}, nil
+}
+
+// AccessTokenExpiry is when an access token issued from code at now with lifetime expires, at the latest at the code's RetainUntil.
+func AccessTokenExpiry(code Code, now time.Time, lifetime time.Duration) time.Time {
+	if expiresAt := now.Add(lifetime); expiresAt.Before(code.RetainUntil) {
+		return expiresAt
+	}
+	return code.RetainUntil
 }
 
 // TokenRequest is the parameters of a token request.
@@ -254,21 +265,42 @@ func ValidateTokenRequest(client *Client, r TokenRequest, verify func(hash, secr
 	return Authenticate(client, r, verify)
 }
 
-// Redeem decides whether r from the Client clientID may redeem code (nil when unknown) at now, and whether to revoke its Grant.
-func Redeem(code *Code, clientID string, r TokenRequest, now time.Time) (revokeGrant bool, err *Error) {
-	if code == nil {
-		return false, &Error{invalidGrant, "invalid code"}
+// Effect is a Store operation protocol asks the server to apply.
+type Effect int
+
+const (
+	// NoEffect asks for no Store operation.
+	NoEffect Effect = iota
+	// ConsumeCode asks to consume the code atomically and pass the result to Consumed.
+	ConsumeCode
+	// RevokeGrant asks to revoke the Grant of the code.
+	RevokeGrant
+)
+
+// Redeem decides whether r from the Client clientID may redeem code (nil when unknown) at now.
+func Redeem(code *Code, clientID string, r TokenRequest, now time.Time) (Effect, *Error) {
+	if code != nil {
+		if err := bound(code, clientID, r); err != nil {
+			return NoEffect, err
+		}
 	}
-	if err := bound(code, clientID, r); err != nil {
-		return false, err
+	if effect, err := Consumed(code, now); err != nil {
+		return effect, err
 	}
+	return ConsumeCode, nil
+}
+
+// Consumed decides on the code ConsumeCode returned at now, nil when unknown.
+func Consumed(code *Code, now time.Time) (Effect, *Error) {
 	switch {
+	case code == nil:
+		return NoEffect, &Error{invalidGrant, "invalid code"}
 	case code.Used:
-		return true, &Error{invalidGrant, "code already used"}
-	case !now.Before(code.ExpiresAt):
-		return false, &Error{invalidGrant, "code expired"}
+		return RevokeGrant, &Error{invalidGrant, "code already used"}
+	case !now.Before(code.ExpiresAt), !now.Before(code.RetainUntil):
+		return NoEffect, &Error{invalidGrant, "code expired"}
 	}
-	return false, nil
+	return NoEffect, nil
 }
 
 // TokenCreated decides on the result of creating a token, which fails when its Grant was revoked.

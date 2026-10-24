@@ -60,7 +60,9 @@ type Code struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time
-	Used                bool
+	// RetainUntil is when the Store may remove the code, used or not.
+	RetainUntil time.Time
+	Used        bool
 }
 
 // Token is an access token, stored by the SHA-256 hash of its value.
@@ -84,7 +86,7 @@ type AuthorizationRequests interface {
 	ConsumeAuthorizationRequest(ctx context.Context, id string) (AuthorizationRequest, error)
 }
 
-// Codes holds the authorization codes.
+// Codes holds the authorization codes until their RetainUntil.
 type Codes interface {
 	CreateCode(ctx context.Context, c Code) error
 	Code(ctx context.Context, hash []byte) (Code, error)

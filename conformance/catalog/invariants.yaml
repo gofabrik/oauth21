@@ -1,0 +1,11 @@
+document: INV
+title: Security Invariants
+requirements:
+  - id: INV-0001
+    keyword: MUST
+    text: An authorization code issues tokens at most once, also when it is redeemed concurrently.
+    status: applicable
+  - id: INV-0002
+    keyword: MUST
+    text: Stores receive authorization codes and access tokens only as their SHA-256 hashes.
+    status: applicable

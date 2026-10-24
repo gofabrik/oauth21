@@ -1,7 +1,6 @@
 package oauth21_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -36,32 +35,6 @@ const (
 func sum(v string) []byte {
 	s := sha256.Sum256([]byte(v))
 	return s[:]
-}
-
-// recorder records the keys the Authorization Server sends to the code and token Stores.
-type recorder struct {
-	*memstore.Store
-	keys [][]byte
-}
-
-func (r *recorder) CreateCode(ctx context.Context, c store.Code) error {
-	r.keys = append(r.keys, c.Hash)
-	return r.Store.CreateCode(ctx, c)
-}
-
-func (r *recorder) Code(ctx context.Context, hash []byte) (store.Code, error) {
-	r.keys = append(r.keys, hash)
-	return r.Store.Code(ctx, hash)
-}
-
-func (r *recorder) ConsumeCode(ctx context.Context, hash []byte) (store.Code, error) {
-	r.keys = append(r.keys, hash)
-	return r.Store.ConsumeCode(ctx, hash)
-}
-
-func (r *recorder) CreateToken(ctx context.Context, t store.Token) error {
-	r.keys = append(r.keys, t.Hash)
-	return r.Store.CreateToken(ctx, t)
 }
 
 func newServer(t testing.TB, m *memstore.Store, codes store.Codes, tokens store.Tokens) *oauth21.Server {
@@ -108,26 +81,6 @@ func tokenRequest(body string) *http.Request {
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/token", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return r
-}
-
-func TestStoresOnlyReceiveHashes(t *testing.T) {
-	m := memstore.New()
-	rec := &recorder{Store: m}
-	srv := newServer(t, m, rec, rec)
-
-	code := issueCode(t, srv)
-
-	token := accessToken(t, do(srv.TokenHandler(), tokenRequest(tokenBody(code))))
-
-	want := [][]byte{sum(code), sum(code), sum(code), sum(token)}
-	if len(rec.keys) != len(want) {
-		t.Fatalf("got %d Store keys, want %d", len(rec.keys), len(want))
-	}
-	for i, key := range rec.keys {
-		if !bytes.Equal(key, want[i]) {
-			t.Errorf("Store key %d is %x, want the SHA-256 hash %x", i, key, want[i])
-		}
-	}
 }
 
 // accessToken returns the access token of a successful token response.
@@ -261,6 +214,69 @@ func TestCodeExpires(t *testing.T) {
 		time.Sleep(time.Minute)
 		if w := do(srv.TokenHandler(), tokenRequest(tokenBody(code))); w.Code != http.StatusBadRequest {
 			t.Fatalf("got status %d for an expired code, want 400", w.Code)
+		}
+	})
+}
+
+func TestReplayAfterCodeExpiryRevokesGrant(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, tokens := memstore.New(), memstore.New()
+		srv := newServer(t, m, m, tokens)
+		code := issueCode(t, srv)
+		token := accessToken(t, do(srv.TokenHandler(), tokenRequest(tokenBody(code))))
+		time.Sleep(2 * time.Minute)
+		issueCode(t, srv)
+		if w := do(srv.TokenHandler(), tokenRequest(tokenBody(code))); w.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d for a replay, want 400", w.Code)
+		}
+		if _, err := tokens.Token(t.Context(), sum(token)); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("got error %v for the access token of a code replayed after expiry, want it revoked", err)
+		}
+	})
+}
+
+// slowConsume takes a minute to consume a code.
+type slowConsume struct {
+	*memstore.Store
+}
+
+func (s slowConsume) ConsumeCode(ctx context.Context, hash []byte) (store.Code, error) {
+	time.Sleep(time.Minute)
+	return s.Store.ConsumeCode(ctx, hash)
+}
+
+func TestCodeExpiringDuringConsumeIsRejected(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m := memstore.New()
+		srv := newServer(t, m, slowConsume{m}, m)
+		if w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv)))); w.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d for a code that expired while it was consumed, want 400", w.Code)
+		}
+	})
+}
+
+func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m := memstore.New()
+		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
+		withLifetime := func(lifetime time.Duration) *oauth21.Server {
+			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return srv
+		}
+		code := issueCode(t, withLifetime(time.Minute))
+		w := do(withLifetime(time.Hour).TokenHandler(), tokenRequest(tokenBody(code)))
+		var body struct {
+			AccessToken string `json:"access_token"`
+			ExpiresIn   int64  `json:"expires_in"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.ExpiresIn != 120 {
+			t.Fatalf("got expires_in %d and error %v, want 120, the code lifetime plus the access token lifetime at issue", body.ExpiresIn, err)
+		}
+		if got, err := m.Token(t.Context(), sum(body.AccessToken)); err != nil || !got.ExpiresAt.Equal(time.Now().Add(2*time.Minute)) {
+			t.Fatalf("got token %+v and error %v, want it to expire with the code's retention", got, err)
 		}
 	})
 }
@@ -560,7 +576,7 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 func TestAuthorizationRequestLifecycle(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		now := time.Unix(1_000_000, 0)
-		m := memstore.New()
+		m := memstore.NewWithClock(func() time.Time { return now })
 		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}})
 		srv, err := oauth21.New(oauth21.Config{
 			Issuer:                       issuer,
