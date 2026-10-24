@@ -15,8 +15,9 @@ const ServerError = "server_error"
 
 // OAuth error codes wire produces or answers differently.
 const (
-	invalidRequest = "invalid_request"
-	invalidClient  = "invalid_client"
+	invalidRequest    = "invalid_request"
+	invalidClient     = "invalid_client"
+	insufficientScope = "insufficient_scope"
 )
 
 // Error is an OAuth error response.
@@ -327,6 +328,63 @@ func encodeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// ParseBearer reads the access token of the Bearer credentials in the Authorization header of r, "" without them; it ignores access tokens in the query and the body.
+func ParseBearer(r *http.Request) (string, *Error) {
+	authorizations := r.Header.Values("Authorization")
+	switch {
+	case len(authorizations) > 1:
+		return "", &Error{invalidRequest, "repeated Authorization header"}
+	case len(authorizations) == 0:
+		return "", nil
+	}
+	scheme, credentials, _ := strings.Cut(authorizations[0], " ")
+	if !strings.EqualFold(scheme, "Bearer") {
+		return "", nil
+	}
+	token := strings.TrimLeft(credentials, " ")
+	if !token68(token) {
+		return "", &Error{invalidRequest, "malformed Bearer credentials"}
+	}
+	return token, nil
+}
+
+// token68 reports whether v is a token68 (RFC 9110).
+func token68(v string) bool {
+	trimmed := strings.TrimRight(v, "=")
+	return trimmed != "" && strings.IndexFunc(trimmed, func(c rune) bool { return !token68Char(c) }) < 0
+}
+
+// token68Char reports whether c may appear in a token68 before its trailing '=' characters.
+func token68Char(c rune) bool {
+	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' || strings.ContainsRune("-._~+/", c)
+}
+
+// WriteBearerError writes a Bearer challenge for e, without error when e is nil, naming the required scope when it is set.
+func WriteBearerError(w http.ResponseWriter, e *Error, scope string) {
+	if e != nil && e.Code == ServerError {
+		w.WriteHeader(e.Status())
+		return
+	}
+	status, challenge := http.StatusUnauthorized, `Bearer realm="oauth21"`
+	if scope != "" {
+		challenge += `, scope="` + scope + `"`
+	}
+	if e != nil {
+		switch e.Code {
+		case invalidRequest:
+			status = e.Status()
+		case insufficientScope:
+			status = http.StatusForbidden
+		}
+		challenge += `, error="` + e.Code + `"`
+		if e.Description != "" {
+			challenge += `, error_description="` + e.Description + `"`
+		}
+	}
+	w.Header().Set("WWW-Authenticate", challenge)
+	w.WriteHeader(status)
 }
 
 // Redirect returns base with the non-empty params appended to its query.

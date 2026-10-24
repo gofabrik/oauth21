@@ -923,3 +923,25 @@ func TestRevoke(t *testing.T) {
 		}
 	})
 }
+
+func TestAccess(t *testing.T) {
+	granted := []string{"read", "write"}
+	for _, c := range []struct {
+		active   bool
+		scopes   []string
+		required []string
+		want     string
+	}{
+		{true, granted, nil, ""},
+		{true, granted, []string{"read"}, ""},
+		{true, granted, []string{"write", "read"}, ""},
+		{true, granted, []string{"read", "admin"}, "insufficient_scope"},
+		{true, nil, []string{"read"}, "insufficient_scope"},
+		{false, granted, nil, "invalid_token"},
+		{false, granted, []string{"read"}, "invalid_token"},
+	} {
+		if got := errorCode(Access(c.active, c.scopes, c.required)); got != c.want {
+			t.Errorf("active %v with %q requiring %q: got %q, want %q", c.active, c.scopes, c.required, got, c.want)
+		}
+	}
+}

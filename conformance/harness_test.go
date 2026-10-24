@@ -52,6 +52,7 @@ type authorizationServer struct {
 	t        *testing.T
 	srv      *oauth21.Server
 	url      string
+	mux      *http.ServeMux
 	client   *http.Client
 	skew     atomic.Int64
 	recorder *recorder
@@ -141,7 +142,7 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	mux := http.NewServeMux()
 	ts := httptest.NewTLSServer(mux)
 	t.Cleanup(ts.Close)
-	a.url, a.client, a.recorder = ts.URL, ts.Client(), &recorder{Store: m}
+	a.url, a.mux, a.client, a.recorder = ts.URL, mux, ts.Client(), &recorder{Store: m}
 	a.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(a.client.CloseIdleConnections)
 	c := oauth21.Config{

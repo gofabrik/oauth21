@@ -21,6 +21,8 @@ const (
 	unauthorizedClient      = "unauthorized_client"
 	unsupportedGrantType    = "unsupported_grant_type"
 	unsupportedResponseType = "unsupported_response_type"
+	invalidToken            = "invalid_token"
+	insufficientScope       = "insufficient_scope"
 )
 
 // methodS256 is the only supported code challenge method.
@@ -537,6 +539,17 @@ func Introspect(token *Token, clientID string, now time.Time) *Token {
 		return nil
 	}
 	return token
+}
+
+// Access decides whether an access token, active or not, with scopes may reach a resource that requires the scopes required.
+func Access(active bool, scopes, required []string) *Error {
+	switch {
+	case !active:
+		return &Error{invalidToken, "access token not active"}
+	case slices.ContainsFunc(required, func(s string) bool { return !slices.Contains(scopes, s) }):
+		return &Error{insufficientScope, "access token lacks a required scope"}
+	}
+	return nil
 }
 
 // TokenCreated decides on the result of creating a token, which fails when its Grant was revoked.

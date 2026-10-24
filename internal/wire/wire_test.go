@@ -436,3 +436,79 @@ func fuzzTokenParamRequest(f *testing.F, parse func(*http.Request) (string, Cred
 		}
 	})
 }
+
+func TestParseBearer(t *testing.T) {
+	for _, c := range []struct {
+		headers []string
+		token   string
+		err     string
+	}{
+		{nil, "", ""},
+		{[]string{""}, "", ""},
+		{[]string{"Bearer mF_9.B5f-4.1JqM"}, "mF_9.B5f-4.1JqM", ""},
+		{[]string{"bEaReR  abc+/~=="}, "abc+/~==", ""},
+		{[]string{"Basic eDp5"}, "", ""},
+		{[]string{"Bearer"}, "", "malformed Bearer credentials"},
+		{[]string{"Bearer "}, "", "malformed Bearer credentials"},
+		{[]string{"Bearer a b"}, "", "malformed Bearer credentials"},
+		{[]string{"Bearer a=b"}, "", "malformed Bearer credentials"},
+		{[]string{"Bearer ="}, "", "malformed Bearer credentials"},
+		{[]string{"Bearer a", "Bearer a"}, "", "repeated Authorization header"},
+	} {
+		r := get("access_token=query")
+		r.Header["Authorization"] = c.headers
+		token, err := ParseBearer(r)
+		if token != c.token || c.err == "" && err != nil || c.err != "" && (err == nil || err.Code != "invalid_request" || err.Description != c.err) {
+			t.Errorf("%q: got token %q and error %v, want %q and %q", c.headers, token, err, c.token, c.err)
+		}
+	}
+}
+
+func TestWriteBearerError(t *testing.T) {
+	for _, c := range []struct {
+		err       *Error
+		scope     string
+		status    int
+		challenge string
+	}{
+		{nil, "", http.StatusUnauthorized, `Bearer realm="oauth21"`},
+		{nil, "read write", http.StatusUnauthorized, `Bearer realm="oauth21", scope="read write"`},
+		{&Error{"invalid_request", "bad"}, "", http.StatusBadRequest, `Bearer realm="oauth21", error="invalid_request", error_description="bad"`},
+		{&Error{"invalid_token", ""}, "read", http.StatusUnauthorized, `Bearer realm="oauth21", scope="read", error="invalid_token"`},
+		{&Error{"insufficient_scope", "more"}, "read", http.StatusForbidden, `Bearer realm="oauth21", scope="read", error="insufficient_scope", error_description="more"`},
+		{&Error{Code: ServerError}, "read", http.StatusInternalServerError, ""},
+	} {
+		w := httptest.NewRecorder()
+		WriteBearerError(w, c.err, c.scope)
+		if w.Code != c.status || w.Header().Get("WWW-Authenticate") != c.challenge {
+			t.Errorf("%v: got status %d and WWW-Authenticate %q, want %d and %q", c.err, w.Code, w.Header().Get("WWW-Authenticate"), c.status, c.challenge)
+		}
+	}
+}
+
+func FuzzParseBearer(f *testing.F) {
+	f.Add("Bearer abc", "")
+	f.Add("bearer a.b-c_d~e+f/g==", "Bearer x")
+	f.Add("Basic eDp5", "")
+	f.Add("Bearer  =", "")
+	f.Fuzz(func(t *testing.T, header, second string) {
+		r := get("")
+		r.Header["Authorization"] = []string{header}
+		if second != "" {
+			r.Header.Add("Authorization", second)
+		}
+		token, err := ParseBearer(r)
+		switch {
+		case err != nil && err.Code != "invalid_request", err != nil && token != "":
+			t.Fatalf("got token %q and error %v, want invalid_request without a token", token, err)
+		case token != "" && !token68(token), token != "" && !strings.HasSuffix(header, token):
+			t.Fatalf("got token %q from %q, want a token68 ending the header", token, header)
+		case token == "":
+			return
+		}
+		r.Header["Authorization"] = []string{"Bearer " + token}
+		if again, err := ParseBearer(r); err != nil || again != token {
+			t.Fatalf("got token %q and error %v after a round trip, want %q", again, err, token)
+		}
+	})
+}
