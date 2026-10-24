@@ -65,5 +65,5 @@ func TestCodeIsBoundToClient(t *testing.T) {
 	params := tokenParams(a.code(authorizeParams()))
 	params.Set("client_id", "other")
 	status, _, body := a.token(params, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }

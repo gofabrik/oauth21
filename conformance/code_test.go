@@ -46,7 +46,7 @@ func TestCodeExpires(t *testing.T) {
 	params := tokenParams(a.code(authorizeParams()))
 	a.advance(10 * time.Minute)
 	status, _, body := a.token(params, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // TestTokenResponseCarriesGrantedScope checks that the token response names the granted scopes.
@@ -98,7 +98,7 @@ func TestCodeIsSingleUse(t *testing.T) {
 		t.Fatalf("got status %d and body %v, want 200", status, body)
 	}
 	status, _, body := a.token(params, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // concurrentRequests is the number of token requests racing for one code or refresh token.
@@ -142,7 +142,7 @@ func TestConcurrentRedemptionIssuesAtMostOneToken(t *testing.T) {
 	}
 }
 
-// TestStoresOnlyReceiveHashes checks that the code and token Stores receive the SHA-256 hashes of codes, access tokens and refresh tokens, never their values.
+// TestStoresOnlyReceiveHashes checks that the code and token Stores receive the SHA-256 hashes of codes, access tokens and refresh tokens, never their values, also on revocation.
 //
 //conformance:covers INV-0002
 func TestStoresOnlyReceiveHashes(t *testing.T) {
@@ -150,6 +150,7 @@ func TestStoresOnlyReceiveHashes(t *testing.T) {
 	code := a.code(authorizeParams())
 	token, refresh := a.tokens(tokenParams(code), nil)
 	refreshed, next := a.tokens(refreshParams(refresh), nil)
+	a.revoke(revocationParams(refreshed), nil)
 	hashes := map[string]bool{}
 	for _, v := range []string{code, token, refresh, refreshed, next} {
 		hashes[s256(v)] = false
@@ -176,7 +177,7 @@ func TestPublicClientCredentialsAreRejected(t *testing.T) {
 			header := http.Header{}
 			header.Set("Authorization", scheme+" "+base64.StdEncoding.EncodeToString([]byte("other:wrong")))
 			status, respHeader, body := a.token(tokenParams(a.code(authorizeParams())), header)
-			a.wantTokenError(status, body, http.StatusUnauthorized, "invalid_client")
+			a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
 			if got, _, _ := strings.Cut(respHeader.Get("WWW-Authenticate"), " "); got != scheme {
 				t.Fatalf("got WWW-Authenticate %q, want the %s scheme", respHeader.Get("WWW-Authenticate"), scheme)
 			}
@@ -187,7 +188,7 @@ func TestPublicClientCredentialsAreRejected(t *testing.T) {
 		params := tokenParams(a.code(authorizeParams()))
 		params.Set("client_secret", "wrong")
 		status, _, body := a.token(params, nil)
-		a.wantTokenError(status, body, http.StatusBadRequest, "invalid_client")
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 	})
 }
 
@@ -196,7 +197,7 @@ func TestFailedRedemptionKeepsCode(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := tokenParams(a.code(authorizeParams()))
 	status, _, body := a.token(withVerifier(params, strings.Repeat("w", 43)), nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	if status, _, body := a.token(params, nil); status != http.StatusOK {
 		t.Fatalf("got status %d and body %v after a failed attempt, want 200", status, body)
 	}

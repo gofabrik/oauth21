@@ -133,6 +133,14 @@ func (s *Store) Token(_ context.Context, hash []byte) (store.Token, error) {
 	return cloneToken(t), err
 }
 
+// RevokeToken removes the access token with hash.
+func (s *Store) RevokeToken(_ context.Context, hash []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.tokens, string(hash))
+	return nil
+}
+
 // CreateRefreshToken stores t unless its Grant was revoked.
 func (s *Store) CreateRefreshToken(_ context.Context, t store.RefreshToken) error {
 	s.mu.Lock()

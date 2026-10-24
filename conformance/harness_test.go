@@ -90,6 +90,16 @@ func (r *recorder) CreateToken(ctx context.Context, t store.Token) error {
 	return r.Store.CreateToken(ctx, t)
 }
 
+func (r *recorder) Token(ctx context.Context, hash []byte) (store.Token, error) {
+	r.record(hash)
+	return r.Store.Token(ctx, hash)
+}
+
+func (r *recorder) RevokeToken(ctx context.Context, hash []byte) error {
+	r.record(hash)
+	return r.Store.RevokeToken(ctx, hash)
+}
+
 func (r *recorder) CreateRefreshToken(ctx context.Context, t store.RefreshToken) error {
 	r.record(t.Hash)
 	return r.Store.CreateRefreshToken(ctx, t)
@@ -152,6 +162,7 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	a.srv = srv
 	mux.Handle("/authorize", srv.AuthorizationHandler())
 	mux.Handle("/token", srv.TokenHandler())
+	mux.Handle("/revoke", srv.RevocationHandler())
 	return a
 }
 
@@ -283,7 +294,13 @@ func withVerifier(params url.Values, v string) url.Values {
 // token sends a token request with header and returns the status, headers and decoded JSON body.
 func (a *authorizationServer) token(params url.Values, header http.Header) (int, http.Header, map[string]any) {
 	a.t.Helper()
-	status, respHeader, raw := a.send(http.MethodPost, "/token", params.Encode(), header)
+	return a.sendJSON(http.MethodPost, "/token", params.Encode(), header)
+}
+
+// sendJSON sends a request with header to path and returns the status, headers and decoded JSON body of the response.
+func (a *authorizationServer) sendJSON(method, path, form string, header http.Header) (int, http.Header, map[string]any) {
+	a.t.Helper()
+	status, respHeader, raw := a.send(method, path, form, header)
 	if ct := respHeader.Get("Content-Type"); ct != "application/json" {
 		a.t.Fatalf("got Content-Type %q, want application/json", ct)
 	}
@@ -294,8 +311,8 @@ func (a *authorizationServer) token(params url.Values, header http.Header) (int,
 	return status, respHeader, body
 }
 
-// wantTokenError checks that a token error response has wantStatus and carries code.
-func (a *authorizationServer) wantTokenError(status int, body map[string]any, wantStatus int, code string) {
+// wantOAuthError checks that a token or revocation endpoint error response has wantStatus and carries code.
+func (a *authorizationServer) wantOAuthError(status int, body map[string]any, wantStatus int, code string) {
 	t := a.t
 	t.Helper()
 	if status != wantStatus || body["error"] != code {

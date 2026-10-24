@@ -3,6 +3,7 @@ package wire
 import (
 	"context"
 	"encoding/base64"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,6 +32,11 @@ func encode(fields map[string]*string) string {
 	return v.Encode()
 }
 
+// basic returns an Authorization header carrying id and secret as client_secret_basic.
+func basic(id, secret string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(id)+":"+url.QueryEscape(secret)))
+}
+
 func post(body string) *http.Request {
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -56,9 +62,22 @@ func TestParseRejects(t *testing.T) {
 		"repeated authorization parameter": func() *Error { _, err := ParseAuthorizationParams(get("client_id=a&client_id=b")); return err },
 		"malformed query":                  func() *Error { _, err := ParseAuthorizationParams(get("client_id=%zz")); return err },
 		"authorization method":             func() *Error { _, err := ParseAuthorizationParams(put); return err },
-		"repeated token parameter":         func() *Error { _, err := ParseTokenRequest(post("code=a&code=b")); return err },
-		"malformed form":                   func() *Error { _, err := ParseTokenRequest(post("code=%zz")); return err },
-		"token method":                     func() *Error { _, err := ParseTokenRequest(get("code=a")); return err },
+		"repeated token parameter":         func() *Error { _, _, err := ParseTokenRequest(post("code=a&code=b")); return err },
+		"malformed form":                   func() *Error { _, _, err := ParseTokenRequest(post("code=%zz")); return err },
+		"token method":                     func() *Error { _, _, err := ParseTokenRequest(get("code=a")); return err },
+		"repeated revocation parameter":    func() *Error { _, _, err := ParseRevocationRequest(post("token=a&token=b")); return err },
+		"repeated token_type_hint": func() *Error {
+			_, _, err := ParseRevocationRequest(post("token=a&token_type_hint=a&token_type_hint=b"))
+			return err
+		},
+		"malformed revocation form": func() *Error { _, _, err := ParseRevocationRequest(post("token=%zz")); return err },
+		"revocation method":         func() *Error { _, _, err := ParseRevocationRequest(get("token=a")); return err },
+		"repeated revocation Authorization": func() *Error {
+			r := post("token=a")
+			r.Header["Authorization"] = []string{"Basic eDp5", "Bearer abc"}
+			_, _, err := ParseRevocationRequest(r)
+			return err
+		},
 	}
 	for name, parse := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -90,15 +109,15 @@ func TestParseTreatsEmptyAsOmitted(t *testing.T) {
 func TestParseTokenRequestCredentials(t *testing.T) {
 	r := post("client_id=c&client_secret=s")
 	r.Header.Set("Authorization", "Basic YSUyMGIrYzpwJTNBJTI1Kw==")
-	got, err := ParseTokenRequest(r)
-	want := TokenRequest{ClientID: "c", ClientSecret: "s", AuthScheme: "Basic", BasicID: "a b c", BasicSecret: "p:% "}
+	_, got, err := ParseTokenRequest(r)
+	want := Credentials{ClientID: "c", ClientSecret: "s", AuthScheme: "Basic", BasicID: "a b c", BasicSecret: "p:% "}
 	if err != nil || got != want {
 		t.Fatalf("got %+v and error %v, want %+v", got, err, want)
 	}
 }
 
 func TestParseTokenRequestAuthorization(t *testing.T) {
-	for header, want := range map[string]TokenRequest{
+	for header, want := range map[string]Credentials{
 		"basic eDp5":     {AuthScheme: "Basic", BasicID: "x", BasicSecret: "y"},
 		"Basic Og==":     {AuthScheme: "Basic"},
 		"Basic eDp5Onp6": {AuthScheme: "Basic", BasicID: "x", BasicSecret: "y:zz"},
@@ -108,7 +127,7 @@ func TestParseTokenRequestAuthorization(t *testing.T) {
 	} {
 		r := post("")
 		r.Header.Set("Authorization", header)
-		if got, err := ParseTokenRequest(r); err != nil || got != want {
+		if _, got, err := ParseTokenRequest(r); err != nil || got != want {
 			t.Errorf("%q: got %+v and error %v, want %+v", header, got, err, want)
 		}
 	}
@@ -117,7 +136,7 @@ func TestParseTokenRequestAuthorization(t *testing.T) {
 func TestParseTokenRequestRejectsRepeatedAuthorization(t *testing.T) {
 	r := post("")
 	r.Header["Authorization"] = []string{"Basic eDp5", "Bearer abc"}
-	if _, err := ParseTokenRequest(r); err == nil || err.Code != "invalid_request" {
+	if _, _, err := ParseTokenRequest(r); err == nil || err.Code != "invalid_request" {
 		t.Fatalf("got error %v, want invalid_request", err)
 	}
 }
@@ -126,9 +145,27 @@ func TestParseTokenRequestRejectsMalformedBasic(t *testing.T) {
 	for _, header := range []string{"Basic", "Basic !!", "Basic eHk=", "Basic JXp6Onk=", "Basic eDolenk="} {
 		r := post("")
 		r.Header.Set("Authorization", header)
-		if _, err := ParseTokenRequest(r); err == nil || err.Code != "invalid_client" {
+		if _, _, err := ParseTokenRequest(r); err == nil || err.Code != "invalid_client" {
 			t.Errorf("%q: got error %v, want invalid_client", header, err)
 		}
+	}
+}
+
+func TestParseRevocationRequest(t *testing.T) {
+	r := post("token=t&token_type_hint=refresh_token&client_id=c&client_secret=s")
+	r.Header.Set("Authorization", "Basic YSUyMGIrYzpwJTNBJTI1Kw==")
+	token, got, err := ParseRevocationRequest(r)
+	want := Credentials{ClientID: "c", ClientSecret: "s", AuthScheme: "Basic", BasicID: "a b c", BasicSecret: "p:% "}
+	if err != nil || token != "t" || got != want {
+		t.Fatalf("got token %q, %+v and error %v, want t and %+v", token, got, err, want)
+	}
+}
+
+func TestParseRevocationRequestRejectsMalformedBasic(t *testing.T) {
+	r := post("token=t")
+	r.Header.Set("Authorization", "Basic eHk=")
+	if _, _, err := ParseRevocationRequest(r); err == nil || err.Code != "invalid_client" {
+		t.Fatalf("got error %v, want invalid_client", err)
 	}
 }
 
@@ -146,19 +183,19 @@ func TestErrorStatus(t *testing.T) {
 	}
 }
 
-func TestWriteTokenErrorChallengesUnauthorized(t *testing.T) {
+func TestWriteErrorChallengesUnauthorized(t *testing.T) {
 	w := httptest.NewRecorder()
-	WriteTokenError(w, &Error{Code: "invalid_client"}, "Bearer")
+	WriteError(w, &Error{Code: "invalid_client"}, "Bearer")
 	if w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") != "Bearer" {
 		t.Fatalf("got status %d and WWW-Authenticate %q, want 401 and Bearer", w.Code, w.Header().Get("WWW-Authenticate"))
 	}
 	w = httptest.NewRecorder()
-	WriteTokenError(w, &Error{Code: "invalid_client"}, "Basic")
+	WriteError(w, &Error{Code: "invalid_client"}, "Basic")
 	if got := w.Header().Get("WWW-Authenticate"); got != `Basic realm="oauth21"` {
 		t.Fatalf("got WWW-Authenticate %q, want a Basic challenge with a realm", got)
 	}
 	w = httptest.NewRecorder()
-	WriteTokenError(w, &Error{Code: "invalid_client"}, "")
+	WriteError(w, &Error{Code: "invalid_client"}, "")
 	if w.Code != http.StatusBadRequest || w.Header().Get("WWW-Authenticate") != "" {
 		t.Fatalf("got status %d and WWW-Authenticate %q, want 400 without a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
 	}
@@ -176,9 +213,9 @@ func TestChallenge(t *testing.T) {
 	}
 }
 
-func TestWriteTokenError(t *testing.T) {
+func TestWriteError(t *testing.T) {
 	w := httptest.NewRecorder()
-	WriteTokenError(w, &Error{"invalid_grant", "bad code"}, "Basic")
+	WriteError(w, &Error{"invalid_grant", "bad code"}, "Basic")
 	if w.Code != http.StatusBadRequest || w.Header().Get("Cache-Control") != "no-store" ||
 		w.Body.String() != `{"error":"invalid_grant","error_description":"bad code"}`+"\n" {
 		t.Fatalf("got status %d, headers %v and body %q", w.Code, w.Header(), w.Body.String())
@@ -227,13 +264,15 @@ func FuzzParseTokenRequest(f *testing.F) {
 	f.Add("code=a&code=b")
 	f.Add("%zz")
 	f.Fuzz(func(t *testing.T, body string) {
-		req, err := ParseTokenRequest(post(body))
+		req, c, err := ParseTokenRequest(post(body))
 		if err != nil {
 			return
 		}
-		again, err := ParseTokenRequest(post(encode(req.fields())))
-		if err != nil || again != req {
-			t.Fatalf("got %+v and error %v after a round trip, want %+v", again, err, req)
+		fields := req.fields()
+		maps.Copy(fields, c.fields())
+		again, againCredentials, err := ParseTokenRequest(post(encode(fields)))
+		if err != nil || again != req || againCredentials != c {
+			t.Fatalf("got %+v, %+v and error %v after a round trip, want %+v and %+v", again, againCredentials, err, req, c)
 		}
 	})
 }
@@ -244,9 +283,9 @@ func FuzzParseTokenRequestBasic(f *testing.F) {
 	f.Add("", "")
 	f.Fuzz(func(t *testing.T, id, secret string) {
 		r := post("")
-		r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(id)+":"+url.QueryEscape(secret))))
-		got, err := ParseTokenRequest(r)
-		if want := (TokenRequest{AuthScheme: "Basic", BasicID: id, BasicSecret: secret}); err != nil || got != want {
+		r.Header.Set("Authorization", basic(id, secret))
+		_, got, err := ParseTokenRequest(r)
+		if want := (Credentials{AuthScheme: "Basic", BasicID: id, BasicSecret: secret}); err != nil || got != want {
 			t.Fatalf("got %+v and error %v, want %+v", got, err, want)
 		}
 	})
@@ -260,7 +299,7 @@ func FuzzParseTokenRequestAuthorization(f *testing.F) {
 	f.Fuzz(func(t *testing.T, header string) {
 		r := post("")
 		r.Header["Authorization"] = []string{header}
-		got, err := ParseTokenRequest(r)
+		_, got, err := ParseTokenRequest(r)
 		if err != nil {
 			if err.Code != "invalid_client" {
 				t.Fatalf("got error %v, want invalid_client", err)
@@ -269,6 +308,38 @@ func FuzzParseTokenRequestAuthorization(f *testing.F) {
 		}
 		if got.AuthScheme != "Basic" && (got.BasicID != "" || got.BasicSecret != "") {
 			t.Fatalf("got %+v, want Basic credentials only with the Basic scheme", got)
+		}
+	})
+}
+
+func FuzzParseRevocationRequest(f *testing.F) {
+	f.Add("token=t&token_type_hint=access_token&client_id=c", "")
+	f.Add("token=t", "Basic eDp5")
+	f.Add("token=a&token=b", "")
+	f.Add("%zz", "Bearer abc")
+	f.Fuzz(func(t *testing.T, body, header string) {
+		r := post(body)
+		r.Header["Authorization"] = []string{header}
+		token, c, err := ParseRevocationRequest(r)
+		if err != nil {
+			if err.Code != "invalid_request" && err.Code != "invalid_client" {
+				t.Fatalf("got error %v, want invalid_request or invalid_client", err)
+			}
+			return
+		}
+		fields := c.fields()
+		fields["token"] = &token
+		r = post(encode(fields))
+		switch c.AuthScheme {
+		case "":
+		case "Basic":
+			r.Header.Set("Authorization", basic(c.BasicID, c.BasicSecret))
+		default:
+			r.Header.Set("Authorization", c.AuthScheme)
+		}
+		again, againCredentials, err := ParseRevocationRequest(r)
+		if err != nil || again != token || againCredentials != c {
+			t.Fatalf("got token %q, %+v and error %v after a round trip, want %q and %+v", again, againCredentials, err, token, c)
 		}
 	})
 }

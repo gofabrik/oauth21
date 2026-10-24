@@ -116,6 +116,8 @@ type Tokens interface {
 	// CreateToken fails with ErrRevoked when the Grant of t was revoked.
 	CreateToken(ctx context.Context, t Token) error
 	Token(ctx context.Context, hash []byte) (Token, error)
+	// RevokeToken removes the access token with hash, if there is one.
+	RevokeToken(ctx context.Context, hash []byte) error
 	// CreateRefreshToken fails with ErrRevoked when the Grant of t was revoked.
 	CreateRefreshToken(ctx context.Context, t RefreshToken) error
 	RefreshToken(ctx context.Context, hash []byte) (RefreshToken, error)

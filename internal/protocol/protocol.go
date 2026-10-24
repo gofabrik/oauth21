@@ -277,10 +277,14 @@ type TokenRequest struct {
 	GrantType    string
 	Code         string
 	RedirectURI  string
-	ClientID     string
 	CodeVerifier string
 	RefreshToken string
 	Scope        string
+}
+
+// Credentials is how a request identifies and authenticates its Client.
+type Credentials struct {
+	ClientID     string
 	ClientSecret string
 	// AuthScheme is the scheme of the Authorization header, or "" without one.
 	AuthScheme  string
@@ -289,7 +293,7 @@ type TokenRequest struct {
 }
 
 // Identify returns the identifier of the Client r comes from, rejecting more than one authentication method.
-func Identify(r TokenRequest) (string, *Error) {
+func Identify(r Credentials) (string, *Error) {
 	switch {
 	case r.AuthScheme != "" && r.ClientSecret != "":
 		return "", &Error{invalidRequest, "more than one client authentication method"}
@@ -302,7 +306,7 @@ func Identify(r TokenRequest) (string, *Error) {
 }
 
 // Authenticate decides whether r authenticates client, which is nil when unknown; verify reports whether a secret matches a secret hash.
-func Authenticate(client *Client, r TokenRequest, verify func(hash, secret string) bool) *Error {
+func Authenticate(client *Client, r Credentials, verify func(hash, secret string) bool) *Error {
 	secret, presented := r.ClientSecret, r.ClientSecret != ""
 	switch r.AuthScheme {
 	case "":
@@ -326,8 +330,8 @@ func Authenticate(client *Client, r TokenRequest, verify func(hash, secret strin
 	return nil
 }
 
-// ValidateTokenRequest checks r for client, which is nil when unknown, before its code or refresh token is loaded.
-func ValidateTokenRequest(client *Client, r TokenRequest, verify func(hash, secret string) bool) *Error {
+// ValidateTokenRequest checks r with credentials c for client, which is nil when unknown, before its code or refresh token is loaded.
+func ValidateTokenRequest(client *Client, r TokenRequest, c Credentials, verify func(hash, secret string) bool) *Error {
 	switch r.GrantType {
 	case "":
 		return &Error{invalidRequest, "grant_type required"}
@@ -346,7 +350,7 @@ func ValidateTokenRequest(client *Client, r TokenRequest, verify func(hash, secr
 	default:
 		return &Error{unsupportedGrantType, "grant_type must be authorization_code, refresh_token or client_credentials"}
 	}
-	if err := Authenticate(client, r, verify); err != nil {
+	if err := Authenticate(client, c, verify); err != nil {
 		return err
 	}
 	if !client.Allows(r.GrantType) {
@@ -367,6 +371,8 @@ const (
 	RevokeGrant
 	// RotateRefreshToken asks to replace the refresh token by a new one atomically and pass the result to Rotated.
 	RotateRefreshToken
+	// RevokeToken asks to revoke the access token.
+	RevokeToken
 )
 
 // Redeem decides whether r from the Client clientID may redeem code (nil when unknown) at now.
@@ -461,6 +467,44 @@ func ClientCredentials(client Client, r TokenRequest, supported []string) ([]str
 		return nil, &Error{unauthorizedClient, "public clients cannot use client credentials"}
 	}
 	return resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes)
+}
+
+// ValidateRevocationRequest checks a revocation request for token with credentials c for client, which is nil when unknown, before the token is loaded.
+func ValidateRevocationRequest(client *Client, token string, c Credentials, verify func(hash, secret string) bool) *Error {
+	if token == "" {
+		return &Error{invalidRequest, "token required"}
+	}
+	return Authenticate(client, c, verify)
+}
+
+// Token is what an access token is bound to.
+type Token struct {
+	ClientID  string
+	ExpiresAt time.Time
+}
+
+// RevokeRefreshToken decides on revoking token, and so its Grant, for the Client clientID at now.
+func RevokeRefreshToken(token RefreshToken, clientID string, now time.Time) (Effect, *Error) {
+	return revoke(token.ClientID, token.ExpiresAt, RevokeGrant, clientID, now)
+}
+
+// RevokeAccessToken decides on revoking token (nil when unknown) for the Client clientID at now.
+func RevokeAccessToken(token *Token, clientID string, now time.Time) (Effect, *Error) {
+	if token == nil {
+		return NoEffect, nil
+	}
+	return revoke(token.ClientID, token.ExpiresAt, RevokeToken, clientID, now)
+}
+
+// revoke decides on revoking a token of owner expiring at expiresAt with effect.
+func revoke(owner string, expiresAt time.Time, effect Effect, clientID string, now time.Time) (Effect, *Error) {
+	switch {
+	case !now.Before(expiresAt):
+		return NoEffect, nil
+	case owner != clientID:
+		return NoEffect, &Error{invalidGrant, "token was issued to another client"}
+	}
+	return effect, nil
 }
 
 // TokenCreated decides on the result of creating a token, which fails when its Grant was revoked.

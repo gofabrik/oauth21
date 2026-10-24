@@ -33,6 +33,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Run("ConcurrentRotateRefreshToken", func(t *testing.T) { testConcurrentRotateRefreshToken(t, newStore(t)) })
 	t.Run("RevokeGrant", func(t *testing.T) { testRevokeGrant(t, newStore(t)) })
 	t.Run("ConcurrentRevokeGrant", func(t *testing.T) { testConcurrentRevokeGrant(t, newStore(t)) })
+	t.Run("RevokeToken", func(t *testing.T) { testRevokeToken(t, newStore(t)) })
 	t.Run("Expiry", func(t *testing.T) { testExpiry(t, newStore(t)) })
 	t.Run("UsedCodeIsRetained", func(t *testing.T) { testUsedCodeIsRetained(t, newStore(t)) })
 	t.Run("EntitiesAreCopied", func(t *testing.T) { testEntitiesAreCopied(t, newStore(t)) })
@@ -318,6 +319,38 @@ func testConcurrentRevokeGrant(t *testing.T, s Store) {
 		}
 		if _, err := s.RefreshToken(ctx, []byte("next-"+strconv.Itoa(i))); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("RefreshToken rotated while its Grant was revoked returned error %v, want ErrNotFound", err)
+		}
+	}
+}
+
+func testRevokeToken(t *testing.T, s Store) {
+	ctx := t.Context()
+	for _, tok := range []store.Token{newToken("a", "grant"), newToken("b", "grant")} {
+		if err := s.CreateToken(ctx, tok); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.CreateRefreshToken(ctx, newRefreshToken("r", "grant")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RevokeToken(ctx, []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Token(ctx, []byte("a")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Token of a revoked token returned error %v, want ErrNotFound", err)
+	}
+	if _, err := s.Token(ctx, []byte("b")); err != nil {
+		t.Fatalf("Token of another token of the Grant returned error %v", err)
+	}
+	if _, err := s.RefreshToken(ctx, []byte("r")); err != nil {
+		t.Fatalf("RefreshToken of the Grant returned error %v", err)
+	}
+	if err := s.CreateToken(ctx, newToken("c", "grant")); err != nil {
+		t.Fatalf("CreateToken for the Grant of a revoked token returned error %v", err)
+	}
+	for _, hash := range []string{"a", "unknown"} {
+		if err := s.RevokeToken(ctx, []byte(hash)); err != nil {
+			t.Fatalf("RevokeToken of an unknown token returned error %v", err)
 		}
 	}
 }

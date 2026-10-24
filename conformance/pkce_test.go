@@ -54,7 +54,7 @@ func TestCodeChallengeNotExposed(t *testing.T) {
 func TestTokenRequiresCodeVerifier(t *testing.T) {
 	a := newAuthorizationServer(t)
 	status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), ""), nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_request")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
 // TestTokenRejectsWrongCodeVerifier checks that a non-matching code verifier gets invalid_grant.
@@ -69,7 +69,7 @@ func TestTokenRejectsWrongCodeVerifier(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t)
 			status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), v), nil)
-			a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+			a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 		})
 	}
 }
@@ -86,7 +86,7 @@ func TestCodeChallengeIsBoundToCode(t *testing.T) {
 	second := a.code(params)
 
 	status, _, body := a.token(withVerifier(tokenParams(first), other), nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	if status, _, body := a.token(withVerifier(tokenParams(second), other), nil); status != http.StatusOK {
 		t.Fatalf("got status %d and body %v, want 200", status, body)
 	}

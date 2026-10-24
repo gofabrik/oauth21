@@ -253,38 +253,39 @@ func TestValidateTokenRequest(t *testing.T) {
 	public := &Client{ID: "client", Public: true}
 	serviceOnly := &Client{ID: "client", SecretHash: "hash", GrantTypes: []string{"client_credentials"}}
 	noRefresh := &Client{ID: "client", Public: true, GrantTypes: []string{"authorization_code"}}
-	valid := TokenRequest{GrantType: "authorization_code", Code: "c", ClientID: "client", CodeVerifier: "v"}
-	clientCredentials := TokenRequest{GrantType: "client_credentials", ClientID: "client", ClientSecret: "secret"}
+	type request struct {
+		TokenRequest
+		Credentials
+	}
+	valid := request{TokenRequest{GrantType: "authorization_code", Code: "c", CodeVerifier: "v"}, Credentials{ClientID: "client"}}
+	refresh := request{TokenRequest{GrantType: "refresh_token", RefreshToken: "r"}, Credentials{ClientID: "client"}}
+	clientCredentials := request{TokenRequest{GrantType: "client_credentials"}, Credentials{ClientID: "client", ClientSecret: "secret"}}
 	tests := map[string]struct {
 		client *Client
-		change func(*TokenRequest)
+		change func(*request)
 		code   string
 	}{
-		"valid":              {public, func(*TokenRequest) {}, ""},
-		"missing grant_type": {public, func(r *TokenRequest) { r.GrantType = "" }, "invalid_request"},
-		"other grant_type":   {public, func(r *TokenRequest) { r.GrantType = "password" }, "unsupported_grant_type"},
-		"missing code":       {public, func(r *TokenRequest) { r.Code = "" }, "invalid_request"},
-		"missing verifier":   {public, func(r *TokenRequest) { r.CodeVerifier = "" }, "invalid_request"},
-		"refresh": {public, func(r *TokenRequest) {
-			*r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r", ClientID: "client"}
-		}, ""},
-		"missing refresh":         {public, func(r *TokenRequest) { *r = TokenRequest{GrantType: "refresh_token", ClientID: "client"} }, "invalid_request"},
-		"refresh unauthenticated": {nil, func(r *TokenRequest) { *r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r"} }, "invalid_client"},
-		"unauthenticated":         {nil, func(*TokenRequest) {}, "invalid_client"},
-		"refresh not allowed": {noRefresh, func(r *TokenRequest) {
-			*r = TokenRequest{GrantType: "refresh_token", RefreshToken: "r", ClientID: "client"}
-		}, "unauthorized_client"},
-		"code not allowed":                      {serviceOnly, func(r *TokenRequest) { r.ClientSecret = "secret" }, "unauthorized_client"},
-		"client_credentials":                    {serviceOnly, func(r *TokenRequest) { *r = clientCredentials }, ""},
-		"client_credentials not allowed":        {&Client{ID: "client", SecretHash: "hash"}, func(r *TokenRequest) { *r = clientCredentials }, "unauthorized_client"},
-		"client_credentials unauthenticated":    {serviceOnly, func(r *TokenRequest) { *r = clientCredentials; r.ClientSecret = "wrong" }, "invalid_client"},
-		"client_credentials for unknown client": {nil, func(r *TokenRequest) { *r = clientCredentials }, "invalid_client"},
+		"valid":                                 {public, func(*request) {}, ""},
+		"missing grant_type":                    {public, func(r *request) { r.GrantType = "" }, "invalid_request"},
+		"other grant_type":                      {public, func(r *request) { r.GrantType = "password" }, "unsupported_grant_type"},
+		"missing code":                          {public, func(r *request) { r.Code = "" }, "invalid_request"},
+		"missing verifier":                      {public, func(r *request) { r.CodeVerifier = "" }, "invalid_request"},
+		"refresh":                               {public, func(r *request) { *r = refresh }, ""},
+		"missing refresh":                       {public, func(r *request) { *r = refresh; r.RefreshToken = "" }, "invalid_request"},
+		"refresh unauthenticated":               {nil, func(r *request) { *r = refresh; r.ClientID = "" }, "invalid_client"},
+		"unauthenticated":                       {nil, func(*request) {}, "invalid_client"},
+		"refresh not allowed":                   {noRefresh, func(r *request) { *r = refresh }, "unauthorized_client"},
+		"code not allowed":                      {serviceOnly, func(r *request) { r.ClientSecret = "secret" }, "unauthorized_client"},
+		"client_credentials":                    {serviceOnly, func(r *request) { *r = clientCredentials }, ""},
+		"client_credentials not allowed":        {&Client{ID: "client", SecretHash: "hash"}, func(r *request) { *r = clientCredentials }, "unauthorized_client"},
+		"client_credentials unauthenticated":    {serviceOnly, func(r *request) { *r = clientCredentials; r.ClientSecret = "wrong" }, "invalid_client"},
+		"client_credentials for unknown client": {nil, func(r *request) { *r = clientCredentials }, "invalid_client"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			r := valid
 			tt.change(&r)
-			if code := errorCode(ValidateTokenRequest(tt.client, r, verify)); code != tt.code {
+			if code := errorCode(ValidateTokenRequest(tt.client, r.TokenRequest, r.Credentials, verify)); code != tt.code {
 				t.Fatalf("got error %q, want %q", code, tt.code)
 			}
 		})
@@ -293,19 +294,19 @@ func TestValidateTokenRequest(t *testing.T) {
 
 func TestIdentify(t *testing.T) {
 	tests := map[string]struct {
-		r    TokenRequest
+		r    Credentials
 		id   string
 		code string
 	}{
-		"client_id":                  {TokenRequest{ClientID: "c"}, "c", ""},
-		"client_secret_post":         {TokenRequest{ClientID: "c", ClientSecret: "s"}, "c", ""},
-		"client_secret_basic":        {TokenRequest{AuthScheme: "Basic", BasicID: "c"}, "c", ""},
-		"Basic with client_id":       {TokenRequest{ClientID: "c", AuthScheme: "Basic", BasicID: "c"}, "c", ""},
-		"other scheme":               {TokenRequest{ClientID: "c", AuthScheme: "Bearer"}, "c", ""},
-		"none":                       {TokenRequest{}, "", ""},
-		"Basic and client_secret":    {TokenRequest{ClientSecret: "s", AuthScheme: "Basic", BasicID: "c"}, "", "invalid_request"},
-		"scheme and client_secret":   {TokenRequest{ClientID: "c", ClientSecret: "s", AuthScheme: "Bearer"}, "", "invalid_request"},
-		"Basic with other client_id": {TokenRequest{ClientID: "d", AuthScheme: "Basic", BasicID: "c"}, "", "invalid_client"},
+		"client_id":                  {Credentials{ClientID: "c"}, "c", ""},
+		"client_secret_post":         {Credentials{ClientID: "c", ClientSecret: "s"}, "c", ""},
+		"client_secret_basic":        {Credentials{AuthScheme: "Basic", BasicID: "c"}, "c", ""},
+		"Basic with client_id":       {Credentials{ClientID: "c", AuthScheme: "Basic", BasicID: "c"}, "c", ""},
+		"other scheme":               {Credentials{ClientID: "c", AuthScheme: "Bearer"}, "c", ""},
+		"none":                       {Credentials{}, "", ""},
+		"Basic and client_secret":    {Credentials{ClientSecret: "s", AuthScheme: "Basic", BasicID: "c"}, "", "invalid_request"},
+		"scheme and client_secret":   {Credentials{ClientID: "c", ClientSecret: "s", AuthScheme: "Bearer"}, "", "invalid_request"},
+		"Basic with other client_id": {Credentials{ClientID: "d", AuthScheme: "Basic", BasicID: "c"}, "", "invalid_client"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -322,22 +323,22 @@ func TestAuthenticate(t *testing.T) {
 	confidential := &Client{ID: "client", SecretHash: "hash"}
 	tests := map[string]struct {
 		client *Client
-		r      TokenRequest
+		r      Credentials
 		ok     bool
 	}{
-		"public":                        {public, TokenRequest{ClientID: "client"}, true},
-		"client_secret_basic":           {confidential, TokenRequest{AuthScheme: "Basic", BasicID: "client", BasicSecret: "secret"}, true},
-		"client_secret_post":            {confidential, TokenRequest{ClientID: "client", ClientSecret: "secret"}, true},
-		"unknown client":                {nil, TokenRequest{ClientID: "client"}, false},
-		"public with client_secret":     {public, TokenRequest{ClientID: "client", ClientSecret: "secret"}, false},
-		"public with Basic":             {public, TokenRequest{AuthScheme: "Basic", BasicID: "client"}, false},
-		"public with other scheme":      {public, TokenRequest{ClientID: "client", AuthScheme: "Bearer"}, false},
-		"confidential without a secret": {confidential, TokenRequest{ClientID: "client"}, false},
-		"wrong Basic secret":            {confidential, TokenRequest{AuthScheme: "Basic", BasicID: "client", BasicSecret: "wrong"}, false},
-		"wrong client_secret":           {confidential, TokenRequest{ClientID: "client", ClientSecret: "wrong"}, false},
-		"empty Basic secret":            {confidential, TokenRequest{AuthScheme: "Basic", BasicID: "client"}, false},
-		"other scheme":                  {confidential, TokenRequest{ClientID: "client", AuthScheme: "Bearer"}, false},
-		"no secret hash":                {&Client{ID: "client"}, TokenRequest{ClientID: "client", ClientSecret: "secret"}, false},
+		"public":                        {public, Credentials{ClientID: "client"}, true},
+		"client_secret_basic":           {confidential, Credentials{AuthScheme: "Basic", BasicID: "client", BasicSecret: "secret"}, true},
+		"client_secret_post":            {confidential, Credentials{ClientID: "client", ClientSecret: "secret"}, true},
+		"unknown client":                {nil, Credentials{ClientID: "client"}, false},
+		"public with client_secret":     {public, Credentials{ClientID: "client", ClientSecret: "secret"}, false},
+		"public with Basic":             {public, Credentials{AuthScheme: "Basic", BasicID: "client"}, false},
+		"public with other scheme":      {public, Credentials{ClientID: "client", AuthScheme: "Bearer"}, false},
+		"confidential without a secret": {confidential, Credentials{ClientID: "client"}, false},
+		"wrong Basic secret":            {confidential, Credentials{AuthScheme: "Basic", BasicID: "client", BasicSecret: "wrong"}, false},
+		"wrong client_secret":           {confidential, Credentials{ClientID: "client", ClientSecret: "wrong"}, false},
+		"empty Basic secret":            {confidential, Credentials{AuthScheme: "Basic", BasicID: "client"}, false},
+		"other scheme":                  {confidential, Credentials{ClientID: "client", AuthScheme: "Bearer"}, false},
+		"no secret hash":                {&Client{ID: "client"}, Credentials{ClientID: "client", ClientSecret: "secret"}, false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -824,4 +825,55 @@ func TestClientCredentialsResolvesScopes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateRevocationRequest(t *testing.T) {
+	public := &Client{ID: "client", Public: true}
+	confidential := &Client{ID: "client", SecretHash: "hash"}
+	tests := map[string]struct {
+		client *Client
+		token  string
+		c      Credentials
+		code   string
+	}{
+		"public":                       {public, "t", Credentials{ClientID: "client"}, ""},
+		"confidential":                 {confidential, "t", Credentials{AuthScheme: "Basic", BasicID: "client", BasicSecret: "secret"}, ""},
+		"missing token":                {public, "", Credentials{ClientID: "client"}, "invalid_request"},
+		"unknown client":               {nil, "t", Credentials{ClientID: "client"}, "invalid_client"},
+		"confidential unauthenticated": {confidential, "t", Credentials{ClientID: "client"}, "invalid_client"},
+		"wrong secret":                 {confidential, "t", Credentials{ClientID: "client", ClientSecret: "wrong"}, "invalid_client"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if code := errorCode(ValidateRevocationRequest(tt.client, tt.token, tt.c, verify)); code != tt.code {
+				t.Fatalf("got error %q, want %q", code, tt.code)
+			}
+		})
+	}
+}
+
+func TestRevoke(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		expiresAt := time.Unix(1_000_000, 0)
+		owner := rapid.SampledFrom([]string{"client", "other"}).Draw(t, "owner")
+		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
+		live := now.Before(expiresAt)
+		refresh, refreshErr := RevokeRefreshToken(RefreshToken{ClientID: owner, ExpiresAt: expiresAt, Rotated: rapid.Bool().Draw(t, "rotated")}, "client", now)
+		access, accessErr := RevokeAccessToken(&Token{ClientID: owner, ExpiresAt: expiresAt}, "client", now)
+		for kind, err := range map[string]*Error{"refresh": refreshErr, "access": accessErr} {
+			if foreign := live && owner != "client"; foreign != (err != nil) || err != nil && err.Code != "invalid_grant" {
+				t.Fatalf("got error %v for a %s token of %s, want invalid_grant only for another Client's live token", err, kind, owner)
+			}
+		}
+		mine := live && owner == "client"
+		if (refresh == RevokeGrant) != mine || refresh != RevokeGrant && refresh != NoEffect {
+			t.Fatalf("got effect %v for a refresh token of %s, want RevokeGrant only for a live token of the Client", refresh, owner)
+		}
+		if (access == RevokeToken) != mine || access != RevokeToken && access != NoEffect {
+			t.Fatalf("got effect %v for an access token of %s, want RevokeToken only for a live token of the Client", access, owner)
+		}
+		if effect, err := RevokeAccessToken(nil, "client", now); effect != NoEffect || err != nil {
+			t.Fatalf("got effect %v and error %v for an unknown token, want neither", effect, err)
+		}
+	})
 }

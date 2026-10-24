@@ -55,9 +55,9 @@ func (a *authorizationServer) wantReuseRevokesGrant(token string, request func(s
 		t.Fatal("got the presented refresh token back, want a new one")
 	}
 	status, _, body := a.token(request(token), header)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	status, _, body = a.token(request(successor), header)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // TestPublicClientRefreshes checks that a public Client gets a new access token and a new refresh token for its refresh token.
@@ -92,7 +92,7 @@ func TestCodeReplayRevokesRefreshToken(t *testing.T) {
 		t.Fatalf("got status %d for a replay, want 400", status)
 	}
 	status, _, body := a.token(refreshParams(refresh), nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // TestConcurrentRefreshRotatesOnce checks that concurrent refreshes with one refresh token of a public Client issue at most one access token, and that the refreshes that lose revoke the Grant.
@@ -107,7 +107,7 @@ func TestConcurrentRefreshRotatesOnce(t *testing.T) {
 	for _, body := range issued {
 		next, _ := body["refresh_token"].(string)
 		status, _, body := a.token(refreshParams(next), nil)
-		a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	}
 }
 
@@ -163,18 +163,18 @@ func TestConfidentialRefreshRequiresAuthentication(t *testing.T) {
 	params := confidentialRefreshParams(a.confidentialRefreshToken())
 	params.Set("client_id", confidentialID)
 	status, _, body := a.token(params, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_client")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 	status, _, body = a.token(params, basic(confidentialID, "wrong"))
-	a.wantTokenError(status, body, http.StatusUnauthorized, "invalid_client")
+	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
 }
 
 // TestRefreshTokenIsBoundToClient checks that a refresh token issued to one Client cannot be used by another.
 func TestRefreshTokenIsBoundToClient(t *testing.T) {
 	a := newConfidentialServer(t)
 	status, _, body := a.token(confidentialRefreshParams(a.publicRefreshToken()), basic(confidentialID, secret))
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	status, _, body = a.token(refreshParams(a.confidentialRefreshToken()), nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // TestRefreshMayNarrowScopes checks that a refresh request may ask for fewer of the granted scopes, and that the next refresh token keeps all of them.
@@ -210,7 +210,7 @@ func TestRefreshCannotWidenScopes(t *testing.T) {
 	wide := refreshParams(refresh)
 	wide.Set("scope", "read write")
 	status, _, body := a.token(wide, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_scope")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
 	if _, next := a.tokens(refreshParams(refresh), nil); next == "" {
 		t.Fatal("got no refresh token after a failed refresh")
 	}
@@ -228,7 +228,7 @@ func TestRefreshTokenExpires(t *testing.T) {
 	next, _ := body["refresh_token"].(string)
 	a.advance(30 * time.Minute)
 	status, _, body = a.token(refreshParams(next), nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // TestRedeemedAccessTokenExpiresWithRefreshToken checks that the access token of a code redemption expires at the latest with its Refresh Token Family.

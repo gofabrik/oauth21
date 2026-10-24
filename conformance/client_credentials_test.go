@@ -60,25 +60,25 @@ func TestClientCredentialsRequiresConfidentialClient(t *testing.T) {
 	params := clientCredentialsParams("")
 	params.Set("client_id", "public service")
 	status, _, body := a.token(params, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "unauthorized_client")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
 }
 
 // TestClientCredentialsRequiresAllowedGrantType checks that a confidential Client not allowed the grant type gets unauthorized_client.
 func TestClientCredentialsRequiresAllowedGrantType(t *testing.T) {
 	a := newServiceServer(t)
 	status, _, body := a.token(clientCredentialsParams(""), basic(confidentialID, secret))
-	a.wantTokenError(status, body, http.StatusBadRequest, "unauthorized_client")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
 }
 
 // TestClientCredentialsRequiresAuthentication checks that a client credentials request failing Client authentication gets invalid_client.
 func TestClientCredentialsRequiresAuthentication(t *testing.T) {
 	a := newServiceServer(t)
 	status, _, body := a.token(clientCredentialsParams(""), basic(serviceID, "wrong"))
-	a.wantTokenError(status, body, http.StatusUnauthorized, "invalid_client")
+	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
 	params := clientCredentialsParams("")
 	params.Set("client_id", serviceID)
 	status, _, body = a.token(params, nil)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_client")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 }
 
 // TestClientCredentialsScopes checks that a client credentials request gets the requested scopes only when they are supported and allowed for the Client.
@@ -92,7 +92,7 @@ func TestClientCredentialsScopes(t *testing.T) {
 	}
 	for _, scope := range []string{"read admin", "read delete"} {
 		status, _, body := a.token(clientCredentialsParams(scope), basic(serviceID, secret))
-		a.wantTokenError(status, body, http.StatusBadRequest, "invalid_scope")
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
 	}
 }
 
@@ -105,5 +105,5 @@ func TestClientCredentialsWithoutScopeOrDefaultsFails(t *testing.T) {
 	service.GrantTypes = []string{"client_credentials"}
 	a := newAuthorizationServer(t, service)
 	status, _, body := a.token(clientCredentialsParams(""), basic(confidentialID, secret))
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_scope")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
 }

@@ -83,7 +83,12 @@ func do(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 }
 
 func tokenRequest(body string) *http.Request {
-	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/token", strings.NewReader(body))
+	return formRequest("/token", body)
+}
+
+// formRequest returns a POST of the form body to path.
+func formRequest(path, body string) *http.Request {
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return r
 }
@@ -130,15 +135,21 @@ type tokenPair struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// refreshToken redeems a fresh code and returns the refresh token it issues.
-func refreshToken(t rapid.TB, srv *oauth21.Server) string {
+// tokens redeems a fresh code and returns the access token and the refresh token it issues.
+func tokens(t rapid.TB, srv *oauth21.Server) tokenPair {
 	t.Helper()
 	var body tokenPair
 	w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv))))
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.RefreshToken == "" {
 		t.Fatalf("got status %d and error %v, want a refresh token", w.Code, err)
 	}
-	return body.RefreshToken
+	return body
+}
+
+// refreshToken redeems a fresh code and returns the refresh token it issues.
+func refreshToken(t rapid.TB, srv *oauth21.Server) string {
+	t.Helper()
+	return tokens(t, srv).RefreshToken
 }
 
 func TestCodeReplayRevokesGrant(t *testing.T) {
@@ -434,6 +445,13 @@ var tokenErrors = map[string]bool{
 	"unauthorized_client":    true,
 	"unsupported_grant_type": true,
 	"invalid_scope":          true,
+}
+
+// revocationErrors are the error codes the revocation endpoint may return.
+var revocationErrors = map[string]bool{
+	"invalid_request": true,
+	"invalid_client":  true,
+	"invalid_grant":   true,
 }
 
 func FuzzAuthorizationHandler(f *testing.F) {
@@ -764,7 +782,7 @@ func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	}
 }
 
-// TestRefreshTokenFamily checks the refresh tokens of a Grant over HTTP against a model of rotation, reuse, revocation and expiry.
+// TestRefreshTokenFamily checks the refresh tokens of a Grant over HTTP against a model of rotation, reuse, revocation, token revocation and expiry.
 func TestRefreshTokenFamily(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		now := time.Unix(1_000_000, 0)
@@ -803,7 +821,7 @@ func TestRefreshTokenFamily(t *testing.T) {
 		expiresAt := now.Add(time.Hour)
 		rotates := public || !reuse
 		refreshTokens, accessTokens := []string{body.RefreshToken, "unknown"}, []string{body.AccessToken}
-		current, revoked := 0, false
+		current, revoked, revokedTokens := 0, false, map[string]bool{}
 		t.Repeat(map[string]func(*rapid.T){
 			"advance": func(t *rapid.T) {
 				now = now.Add(time.Duration(rapid.Int64Range(0, int64(20*time.Minute)).Draw(t, "advance")))
@@ -832,17 +850,90 @@ func TestRefreshTokenFamily(t *testing.T) {
 					current = len(refreshTokens) - 1
 				}
 			},
+			"revoke": func(t *rapid.T) {
+				live := !revoked && now.Before(expiresAt)
+				token := rapid.SampledFrom(append(slices.Clone(refreshTokens), accessTokens...)).Draw(t, "token")
+				if w := do(srv.RevocationHandler(), formRequest("/revoke", "client_id=client&token="+token+credentials)); w.Code != http.StatusOK {
+					t.Fatalf("got status %d revoking a token of the Client, want 200", w.Code)
+				}
+				switch {
+				case !live:
+				case slices.Contains(accessTokens, token):
+					revokedTokens[token] = true
+				case token != "unknown":
+					revoked = true
+				}
+			},
 			"": func(t *rapid.T) {
 				for _, a := range accessTokens {
 					got, err := m.Token(context.Background(), sum(a))
 					switch {
-					case revoked && !errors.Is(err, store.ErrNotFound):
-						t.Fatalf("got token %+v and error %v after the Grant was revoked, want ErrNotFound", got, err)
+					case (revoked || revokedTokens[a]) && !errors.Is(err, store.ErrNotFound):
+						t.Fatalf("got token %+v and error %v after it or its Grant was revoked, want ErrNotFound", got, err)
 					case err == nil && got.ExpiresAt.After(expiresAt):
 						t.Fatalf("got an access token expiring at %v, after its Refresh Token Family at %v", got.ExpiresAt, expiresAt)
 					}
 				}
 			},
 		})
+	})
+}
+
+func TestRevocationOfAnotherClientsTokenIsRefused(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	m.AddClient(store.Client{ID: "other", Type: store.Public})
+	body := tokens(t, srv)
+	for _, token := range []string{body.AccessToken, body.RefreshToken} {
+		w := do(srv.RevocationHandler(), formRequest("/revoke", "client_id=other&token="+token))
+		var resp struct{ Error string }
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil || w.Code != http.StatusBadRequest || resp.Error != "invalid_grant" {
+			t.Fatalf("got status %d, error %q and %v revoking another Client's token, want 400 and invalid_grant", w.Code, resp.Error, err)
+		}
+	}
+	if _, err := m.Token(t.Context(), sum(body.AccessToken)); err != nil {
+		t.Fatalf("got error %v for an access token another Client tried to revoke, want it kept", err)
+	}
+	if _, err := m.RefreshToken(t.Context(), sum(body.RefreshToken)); err != nil {
+		t.Fatalf("got error %v for a refresh token another Client tried to revoke, want it kept", err)
+	}
+}
+
+// FuzzRevocationHandler fuzzes revocation requests in which ACCESS and REFRESH stand for a fresh access token and refresh token of the public Client.
+func FuzzRevocationHandler(f *testing.F) {
+	f.Add("token=REFRESH&client_id=client", "")
+	f.Add("token=ACCESS&client_id=client&token_type_hint=refresh_token", "")
+	f.Add("token=unknown&client_id=client", "")
+	f.Add("token=REFRESH&client_id=confidential&client_secret=secret", "")
+	f.Add("token=ACCESS", "Basic Y29uZmlkZW50aWFsOnNlY3JldA==")
+	f.Add("token=ACCESS&client_id=client", "Bearer x")
+	f.Add("token=a&token=b", "")
+	f.Add("%zz", "")
+	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Fuzz(func(t *testing.T, body, authorization string) {
+		m := memstore.New()
+		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, SecretHash: hash})
+		srv := newServer(t, m, m, m)
+		var issued tokenPair
+		if strings.Contains(body, "ACCESS") || strings.Contains(body, "REFRESH") {
+			issued = tokens(t, srv)
+		}
+		body = strings.NewReplacer("ACCESS", issued.AccessToken, "REFRESH", issued.RefreshToken).Replace(body)
+		r := formRequest("/revoke", body)
+		r.Header["Authorization"] = []string{authorization}
+		w := do(srv.RevocationHandler(), r)
+		if w.Code == http.StatusOK {
+			return
+		}
+		var resp struct{ Error string }
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil || !revocationErrors[resp.Error] {
+			t.Fatalf("got status %d, body %+v and error %v", w.Code, resp, err)
+		}
+		if resp.Error == "invalid_client" && authorization != "" && (w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") == "") {
+			t.Fatalf("got status %d and WWW-Authenticate %q for a failed Authorization header, want 401 with a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+		}
 	})
 }

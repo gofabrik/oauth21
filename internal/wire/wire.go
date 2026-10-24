@@ -109,10 +109,25 @@ type TokenRequest struct {
 	GrantType    string
 	Code         string
 	RedirectURI  string
-	ClientID     string
 	CodeVerifier string
 	RefreshToken string
 	Scope        string
+}
+
+func (r *TokenRequest) fields() map[string]*string {
+	return map[string]*string{
+		"grant_type":    &r.GrantType,
+		"code":          &r.Code,
+		"redirect_uri":  &r.RedirectURI,
+		"code_verifier": &r.CodeVerifier,
+		"refresh_token": &r.RefreshToken,
+		"scope":         &r.Scope,
+	}
+}
+
+// Credentials is how a request identifies and authenticates its Client.
+type Credentials struct {
+	ClientID     string
 	ClientSecret string
 	// AuthScheme is the scheme of the Authorization header, or "" without one.
 	AuthScheme  string
@@ -120,36 +135,64 @@ type TokenRequest struct {
 	BasicSecret string
 }
 
+func (c *Credentials) fields() map[string]*string {
+	return map[string]*string{
+		"client_id":     &c.ClientID,
+		"client_secret": &c.ClientSecret,
+	}
+}
+
 // ParseTokenRequest reads a token request from the form body of a POST and the Client credentials of its Authorization header.
-func ParseTokenRequest(r *http.Request) (TokenRequest, *Error) {
+func ParseTokenRequest(r *http.Request) (TokenRequest, Credentials, *Error) {
+	var req TokenRequest
+	c, err := parseClientRequest(r, req.fields())
+	if err != nil {
+		return TokenRequest{}, Credentials{}, err
+	}
+	return req, c, nil
+}
+
+// ParseRevocationRequest reads the token of a revocation request from the form body of a POST, ignoring the value of token_type_hint, and the Client credentials of its Authorization header.
+func ParseRevocationRequest(r *http.Request) (string, Credentials, *Error) {
+	var token, hint string
+	c, err := parseClientRequest(r, map[string]*string{"token": &token, "token_type_hint": &hint})
+	if err != nil {
+		return "", Credentials{}, err
+	}
+	return token, c, nil
+}
+
+// parseClientRequest reads the form body of a POST into fields and returns the Client credentials of the body and the Authorization header.
+func parseClientRequest(r *http.Request, fields map[string]*string) (Credentials, *Error) {
 	if r.Method != http.MethodPost {
-		return TokenRequest{}, &Error{invalidRequest, "method not allowed"}
+		return Credentials{}, &Error{invalidRequest, "method not allowed"}
 	}
 	if err := r.ParseForm(); err != nil {
-		return TokenRequest{}, &Error{invalidRequest, "malformed form body"}
+		return Credentials{}, &Error{invalidRequest, "malformed form body"}
 	}
-	var req TokenRequest
-	if err := assignOnce(r.PostForm, req.fields()); err != nil {
-		return TokenRequest{}, err
+	var c Credentials
+	maps.Copy(fields, c.fields())
+	if err := assignOnce(r.PostForm, fields); err != nil {
+		return Credentials{}, err
 	}
 	authorizations := r.Header.Values("Authorization")
 	switch {
 	case len(authorizations) > 1:
-		return TokenRequest{}, &Error{invalidRequest, "repeated Authorization header"}
+		return Credentials{}, &Error{invalidRequest, "repeated Authorization header"}
 	case len(authorizations) == 0 || authorizations[0] == "":
-		return req, nil
+		return c, nil
 	}
 	scheme, credentials, _ := strings.Cut(authorizations[0], " ")
 	if !strings.EqualFold(scheme, "Basic") {
-		req.AuthScheme = scheme
-		return req, nil
+		c.AuthScheme = scheme
+		return c, nil
 	}
 	id, secret, ok := parseBasic(strings.TrimLeft(credentials, " "))
 	if !ok {
-		return TokenRequest{}, &Error{invalidClient, "malformed Basic credentials"}
+		return Credentials{}, &Error{invalidClient, "malformed Basic credentials"}
 	}
-	req.AuthScheme, req.BasicID, req.BasicSecret = "Basic", id, secret
-	return req, nil
+	c.AuthScheme, c.BasicID, c.BasicSecret = "Basic", id, secret
+	return c, nil
 }
 
 // parseBasic decodes the form-encoded Client identifier and secret of Basic credentials.
@@ -168,19 +211,6 @@ func parseBasic(credentials string) (id, secret string, ok bool) {
 	}
 	secret, err = url.QueryUnescape(encodedSecret)
 	return id, secret, err == nil
-}
-
-func (r *TokenRequest) fields() map[string]*string {
-	return map[string]*string{
-		"grant_type":    &r.GrantType,
-		"code":          &r.Code,
-		"redirect_uri":  &r.RedirectURI,
-		"client_id":     &r.ClientID,
-		"code_verifier": &r.CodeVerifier,
-		"refresh_token": &r.RefreshToken,
-		"scope":         &r.Scope,
-		"client_secret": &r.ClientSecret,
-	}
 }
 
 // assignOnce sets each field to its parameter; empty values count as omitted, and a parameter may appear once.
@@ -214,8 +244,8 @@ func WriteToken(w http.ResponseWriter, resp TokenResponse) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// WriteTokenError writes a token endpoint error, as a 401 with challenge for invalid_client when challenge is set.
-func WriteTokenError(w http.ResponseWriter, e *Error, challenge string) {
+// WriteError writes a token or revocation endpoint error, as a 401 with challenge for invalid_client when challenge is set.
+func WriteError(w http.ResponseWriter, e *Error, challenge string) {
 	status := e.Status()
 	if e.Code == invalidClient && challenge != "" {
 		status = http.StatusUnauthorized

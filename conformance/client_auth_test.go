@@ -114,7 +114,7 @@ func TestFailedClientAuthentication(t *testing.T) {
 			if tt.challenge != "" {
 				wantStatus = http.StatusUnauthorized
 			}
-			a.wantTokenError(status, body, wantStatus, "invalid_client")
+			a.wantOAuthError(status, body, wantStatus, "invalid_client")
 			if got := header.Get("WWW-Authenticate"); got != tt.challenge {
 				t.Fatalf("got WWW-Authenticate %q, want %q", got, tt.challenge)
 			}
@@ -127,7 +127,7 @@ func TestFailedClientAuthenticationKeepsCode(t *testing.T) {
 	a := newConfidentialServer(t)
 	params := a.confidentialCode()
 	status, _, body := a.token(params, basic(confidentialID, "wrong"))
-	a.wantTokenError(status, body, http.StatusUnauthorized, "invalid_client")
+	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
 	if status, _, body := a.token(params, basic(confidentialID, secret)); status != http.StatusOK {
 		t.Fatalf("got status %d and body %v after a failed attempt, want 200", status, body)
 	}
@@ -139,7 +139,7 @@ func TestMoreThanOneAuthenticationMethod(t *testing.T) {
 	params := a.confidentialCode()
 	params.Set("client_secret", secret)
 	status, _, body := a.token(params, basic(confidentialID, secret))
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_request")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
 // TestRepeatedAuthorizationHeader checks that a request with more than one Authorization header gets invalid_request.
@@ -148,7 +148,7 @@ func TestRepeatedAuthorizationHeader(t *testing.T) {
 	header := basic(confidentialID, secret)
 	header.Add("Authorization", "Bearer abc")
 	status, _, body := a.token(a.confidentialCode(), header)
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_request")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
 // TestPublicClientCannotUseBasic checks that a public Client presenting its own identifier with Basic gets invalid_client.
@@ -156,7 +156,7 @@ func TestPublicClientCannotUseBasic(t *testing.T) {
 	a := newConfidentialServer(t)
 	params := tokenParams(a.code(authorizeParams()))
 	status, header, body := a.token(params, basic(clientID, ""))
-	a.wantTokenError(status, body, http.StatusUnauthorized, "invalid_client")
+	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
 	if got := header.Get("WWW-Authenticate"); got != `Basic realm="oauth21"` {
 		t.Fatalf("got WWW-Authenticate %q, want a Basic challenge", got)
 	}
@@ -168,5 +168,5 @@ func TestCodeOfAnotherClient(t *testing.T) {
 	params := tokenParams(a.code(authorizeParams()))
 	params.Del("client_id")
 	status, _, body := a.token(params, basic(confidentialID, secret))
-	a.wantTokenError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }

@@ -273,7 +273,7 @@ func (s *Server) TokenHandler() http.Handler {
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.tokenResponse(r)
 	if err != nil {
-		wire.WriteTokenError(w, responseError(err), wire.Challenge(r))
+		wire.WriteError(w, responseError(err), wire.Challenge(r))
 		return
 	}
 	wire.WriteToken(w, resp)
@@ -281,20 +281,16 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 
 // tokenResponse answers the token request r.
 func (s *Server) tokenResponse(r *http.Request) (wire.TokenResponse, error) {
-	parsed, werr := wire.ParseTokenRequest(r)
+	parsed, credentials, werr := wire.ParseTokenRequest(r)
 	if werr != nil {
 		return wire.TokenResponse{}, werr
 	}
-	req := protocol.TokenRequest(parsed)
-	clientID, perr := protocol.Identify(req)
-	if perr != nil {
-		return wire.TokenResponse{}, oauthError(perr)
-	}
-	client, err := s.client(r.Context(), clientID)
+	req, c := protocol.TokenRequest(parsed), protocol.Credentials(credentials)
+	client, err := s.identify(r.Context(), c)
 	if err != nil {
 		return wire.TokenResponse{}, err
 	}
-	if perr := protocol.ValidateTokenRequest(client, req, s.config.SecretHasher.Verify); perr != nil {
+	if perr := protocol.ValidateTokenRequest(client, req, c, s.config.SecretHasher.Verify); perr != nil {
 		return wire.TokenResponse{}, oauthError(perr)
 	}
 	switch req.GrantType {
@@ -347,7 +343,7 @@ func (s *Server) redeemCode(ctx context.Context, clientID string, req protocol.T
 		now = s.config.Clock()
 		effect, perr = protocol.Consumed(code, now)
 	}
-	if err := s.apply(ctx, effect, stored.Grant.ID, perr); err != nil {
+	if err := s.apply(ctx, effect, stored.Grant.ID, nil, perr); err != nil {
 		return store.Code{}, time.Time{}, err
 	}
 	return stored, now, nil
@@ -378,7 +374,7 @@ func (s *Server) refresh(ctx context.Context, client protocol.Client, req protoc
 		effect, perr = protocol.Rotated(token, now)
 		next = value
 	}
-	if err := s.apply(ctx, effect, stored.Grant.ID, perr); err != nil {
+	if err := s.apply(ctx, effect, stored.Grant.ID, nil, perr); err != nil {
 		return wire.TokenResponse{}, err
 	}
 	resp, err := s.issueToken(ctx, stored.Grant, scopes, now, stored.ExpiresAt)
@@ -403,12 +399,60 @@ func (s *Server) clientCredentials(ctx context.Context, client protocol.Client, 
 	return s.issueToken(ctx, store.Grant{ID: grantID, ClientID: client.ID, Scopes: scopes}, scopes, now, now.Add(s.config.AccessTokenLifetime))
 }
 
-// apply applies effect to the Grant grantID and returns perr, protocol's decision with it, as an error response.
-func (s *Server) apply(ctx context.Context, effect protocol.Effect, grantID string, perr *protocol.Error) error {
-	if effect == protocol.RevokeGrant {
-		if err := s.config.Tokens.RevokeGrant(ctx, grantID); err != nil {
-			return err
-		}
+// RevocationHandler returns the revocation endpoint.
+func (s *Server) RevocationHandler() http.Handler {
+	return http.HandlerFunc(s.revoke)
+}
+
+func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
+	if err := s.revocation(r); err != nil {
+		wire.WriteError(w, responseError(err), wire.Challenge(r))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// revocation revokes the token of the revocation request r, its Grant for a refresh token.
+func (s *Server) revocation(r *http.Request) error {
+	token, credentials, werr := wire.ParseRevocationRequest(r)
+	if werr != nil {
+		return werr
+	}
+	ctx, c := r.Context(), protocol.Credentials(credentials)
+	client, err := s.identify(ctx, c)
+	if err != nil {
+		return err
+	}
+	if perr := protocol.ValidateRevocationRequest(client, token, c, s.config.SecretHasher.Verify); perr != nil {
+		return oauthError(perr)
+	}
+	storedRefresh, refresh, err := load(ctx, token, s.config.Tokens.RefreshToken, protocolRefreshToken)
+	if err != nil {
+		return err
+	}
+	if refresh != nil {
+		effect, perr := protocol.RevokeRefreshToken(*refresh, client.ID, s.config.Clock())
+		return s.apply(ctx, effect, storedRefresh.Grant.ID, nil, perr)
+	}
+	stored, access, err := load(ctx, token, s.config.Tokens.Token, protocolToken)
+	if err != nil {
+		return err
+	}
+	effect, perr := protocol.RevokeAccessToken(access, client.ID, s.config.Clock())
+	return s.apply(ctx, effect, stored.Grant.ID, stored.Hash, perr)
+}
+
+// apply applies effect to the Grant grantID or the access token with tokenHash and returns perr, protocol's decision with it, as an error response.
+func (s *Server) apply(ctx context.Context, effect protocol.Effect, grantID string, tokenHash []byte, perr *protocol.Error) error {
+	var err error
+	switch effect {
+	case protocol.RevokeGrant:
+		err = s.config.Tokens.RevokeGrant(ctx, grantID)
+	case protocol.RevokeToken:
+		err = s.config.Tokens.RevokeToken(ctx, tokenHash)
+	}
+	if err != nil {
+		return err
 	}
 	if perr != nil {
 		return oauthError(perr)
@@ -466,6 +510,15 @@ func load[S, P any](ctx context.Context, value string, get func(context.Context,
 	}
 	p := convert(stored)
 	return stored, &p, nil
+}
+
+// identify loads the Client that c identifies, or nil when there is none.
+func (s *Server) identify(ctx context.Context, c protocol.Credentials) (*protocol.Client, error) {
+	clientID, perr := protocol.Identify(c)
+	if perr != nil {
+		return nil, oauthError(perr)
+	}
+	return s.client(ctx, clientID)
 }
 
 // client loads the Client with identifier id, or nil when there is none.
@@ -576,6 +629,10 @@ func protocolRefreshToken(t store.RefreshToken) protocol.RefreshToken {
 		ExpiresAt: t.ExpiresAt,
 		Rotated:   t.Rotated,
 	}
+}
+
+func protocolToken(t store.Token) protocol.Token {
+	return protocol.Token{ClientID: t.Grant.ClientID, ExpiresAt: t.ExpiresAt}
 }
 
 func storeRefreshToken(hash []byte, grant store.Grant, t protocol.RefreshToken) store.RefreshToken {
