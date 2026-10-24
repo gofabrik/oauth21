@@ -852,6 +852,52 @@ func TestValidateRevocationRequest(t *testing.T) {
 	}
 }
 
+func TestValidateIntrospectionRequest(t *testing.T) {
+	resourceServer := &Client{ID: "rs", SecretHash: "hash", Introspect: true}
+	authenticated := Credentials{AuthScheme: "Basic", BasicID: "rs", BasicSecret: "secret"}
+	tests := map[string]struct {
+		client *Client
+		token  string
+		c      Credentials
+		code   string
+	}{
+		"allowed":                       {resourceServer, "t", authenticated, ""},
+		"missing token":                 {resourceServer, "", authenticated, "invalid_request"},
+		"unknown client":                {nil, "t", authenticated, "invalid_client"},
+		"unauthenticated":               {resourceServer, "t", Credentials{ClientID: "rs"}, "invalid_client"},
+		"wrong secret":                  {resourceServer, "t", Credentials{ClientID: "rs", ClientSecret: "wrong"}, "invalid_client"},
+		"public":                        {&Client{ID: "rs", Public: true, Introspect: true}, "t", Credentials{ClientID: "rs"}, "invalid_client"},
+		"confidential not allowed":      {&Client{ID: "rs", SecretHash: "hash"}, "t", authenticated, "unauthorized_client"},
+		"missing token, wrong secret":   {resourceServer, "", Credentials{ClientID: "rs", ClientSecret: "wrong"}, "invalid_client"},
+		"missing token, unknown client": {nil, "", authenticated, "invalid_client"},
+		"missing token, not allowed":    {&Client{ID: "rs", SecretHash: "hash"}, "", authenticated, "unauthorized_client"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if code := errorCode(ValidateIntrospectionRequest(tt.client, tt.token, tt.c, verify)); code != tt.code {
+				t.Fatalf("got error %q, want %q", code, tt.code)
+			}
+		})
+	}
+}
+
+func TestIntrospect(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		expiresAt := time.Unix(1_000_000, 0)
+		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
+		audience := rapid.SampledFrom([][]string{nil, {"rs"}, {"other"}, {"other", "rs"}}).Draw(t, "audience")
+		token := Token{ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: audience, ExpiresAt: expiresAt}
+		got := Introspect(&token, "rs", now)
+		active := now.Before(expiresAt) && (len(audience) == 0 || slices.Contains(audience, "rs"))
+		if active != (got != nil) || active && !reflect.DeepEqual(*got, token) {
+			t.Fatalf("got %+v at %v for a token expiring at %v with audience %q, want the token only while it is live and the caller is in its audience", got, now, expiresAt, audience)
+		}
+		if got := Introspect(nil, "rs", now); got != nil {
+			t.Fatalf("got %+v for an unknown token, want nil", got)
+		}
+	})
+}
+
 func TestRevoke(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		expiresAt := time.Unix(1_000_000, 0)

@@ -163,6 +163,7 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	mux.Handle("/authorize", srv.AuthorizationHandler())
 	mux.Handle("/token", srv.TokenHandler())
 	mux.Handle("/revoke", srv.RevocationHandler())
+	mux.Handle("/introspect", srv.IntrospectionHandler())
 	return a
 }
 
@@ -311,7 +312,7 @@ func (a *authorizationServer) sendJSON(method, path, form string, header http.He
 	return status, respHeader, body
 }
 
-// wantOAuthError checks that a token or revocation endpoint error response has wantStatus and carries code.
+// wantOAuthError checks that a token, revocation or introspection endpoint error response has wantStatus and carries code.
 func (a *authorizationServer) wantOAuthError(status int, body map[string]any, wantStatus int, code string) {
 	t := a.t
 	t.Helper()

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -454,6 +455,13 @@ var revocationErrors = map[string]bool{
 	"invalid_grant":   true,
 }
 
+// introspectionErrors are the error codes the introspection endpoint may return.
+var introspectionErrors = map[string]bool{
+	"invalid_request":     true,
+	"invalid_client":      true,
+	"unauthorized_client": true,
+}
+
 func FuzzAuthorizationHandler(f *testing.F) {
 	f.Add(false, authorizeQuery)
 	f.Add(true, authorizeQuery)
@@ -782,7 +790,7 @@ func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	}
 }
 
-// TestRefreshTokenFamily checks the refresh tokens of a Grant over HTTP against a model of rotation, reuse, revocation, token revocation and expiry.
+// TestRefreshTokenFamily checks the refresh tokens of a Grant, and the introspection of its access tokens, over HTTP against a model of rotation, reuse, revocation, token revocation and expiry.
 func TestRefreshTokenFamily(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		now := time.Unix(1_000_000, 0)
@@ -813,6 +821,7 @@ func TestRefreshTokenFamily(t *testing.T) {
 			client.Type, client.SecretHash, credentials = store.Confidential, "hash", "&client_secret=secret"
 		}
 		m.AddClient(client)
+		m.AddClient(store.Client{ID: "rs", Type: store.Confidential, SecretHash: "hash", Introspect: true})
 		w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv))+credentials))
 		var body tokenPair
 		if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.RefreshToken == "" {
@@ -873,10 +882,44 @@ func TestRefreshTokenFamily(t *testing.T) {
 					case err == nil && got.ExpiresAt.After(expiresAt):
 						t.Fatalf("got an access token expiring at %v, after its Refresh Token Family at %v", got.ExpiresAt, expiresAt)
 					}
+					var resp struct{ Active bool }
+					w := do(srv.IntrospectionHandler(), formRequest("/introspect", "client_id=rs&client_secret=secret&token="+a))
+					if err := json.NewDecoder(w.Body).Decode(&resp); err != nil || w.Code != http.StatusOK {
+						t.Fatalf("got status %d and error %v introspecting an access token, want 200", w.Code, err)
+					}
+					if want := !revoked && !revokedTokens[a] && now.Before(expiresAt); resp.Active != want {
+						t.Fatalf("got active %v introspecting an access token, want %v", resp.Active, want)
+					}
 				}
 			},
 		})
 	})
+}
+
+// TestIntrospectionChecksAudience checks that an access token with an audience introspects as active only for a Client in it.
+func TestIntrospectionChecksAudience(t *testing.T) {
+	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	m.AddClient(store.Client{ID: "rs-a", Type: store.Confidential, SecretHash: hash, Introspect: true})
+	m.AddClient(store.Client{ID: "rs-b", Type: store.Confidential, SecretHash: hash, Introspect: true})
+	grant := store.Grant{ID: "grant", ClientID: "client", Subject: "alice", Scopes: readScope, Audience: []string{"rs-a"}}
+	if err := m.CreateToken(t.Context(), store.Token{Hash: sum("token"), Grant: grant, Scopes: readScope, Audience: grant.Audience, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	for caller, want := range map[string]bool{"rs-a": true, "rs-b": false} {
+		w := do(srv.IntrospectionHandler(), formRequest("/introspect", "token=token&client_secret=secret&client_id="+caller))
+		var resp struct {
+			Active   bool
+			Audience []string `json:"aud"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil || w.Code != http.StatusOK || resp.Active != want || want && !slices.Equal(resp.Audience, grant.Audience) {
+			t.Errorf("%s: got status %d, %+v and error %v, want active %v with the token's audience", caller, w.Code, resp, err, want)
+		}
+	}
 }
 
 func TestRevocationOfAnotherClientsTokenIsRefused(t *testing.T) {
@@ -934,6 +977,55 @@ func FuzzRevocationHandler(f *testing.F) {
 		}
 		if resp.Error == "invalid_client" && authorization != "" && (w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") == "") {
 			t.Fatalf("got status %d and WWW-Authenticate %q for a failed Authorization header, want 401 with a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+		}
+	})
+}
+
+// FuzzIntrospectionHandler fuzzes introspection requests in which ACCESS and REFRESH stand for a fresh access token and refresh token of the public Client.
+func FuzzIntrospectionHandler(f *testing.F) {
+	f.Add("token=ACCESS&client_id=rs&client_secret=secret", "")
+	f.Add("token=REFRESH", "Basic cnM6c2VjcmV0")
+	f.Add("token=ACCESS&token_type_hint=refresh_token", "Basic cnM6c2VjcmV0")
+	f.Add("token=unknown", "Basic cnM6c2VjcmV0")
+	f.Add("token=ACCESS&client_id=confidential&client_secret=secret", "")
+	f.Add("token=ACCESS&client_id=client", "")
+	f.Add("token=ACCESS", "Bearer x")
+	f.Add("token=a&token=b", "")
+	f.Add("%zz", "")
+	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Fuzz(func(t *testing.T, body, authorization string) {
+		m := memstore.New()
+		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, SecretHash: hash})
+		m.AddClient(store.Client{ID: "rs", Type: store.Confidential, SecretHash: hash, Introspect: true})
+		srv := newServer(t, m, m, m)
+		var issued tokenPair
+		if strings.Contains(body, "ACCESS") || strings.Contains(body, "REFRESH") {
+			issued = tokens(t, srv)
+		}
+		body = strings.NewReplacer("ACCESS", issued.AccessToken, "REFRESH", issued.RefreshToken).Replace(body)
+		r := formRequest("/introspect", body)
+		r.Header["Authorization"] = []string{authorization}
+		w := do(srv.IntrospectionHandler(), r)
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("got status %d and error %v", w.Code, err)
+		}
+		switch {
+		case w.Code == http.StatusOK && resp["active"] == false:
+			if len(resp) != 1 {
+				t.Fatalf("got %v for an inactive token, want only active false", resp)
+			}
+		case w.Code == http.StatusOK:
+			if resp["active"] != true || resp["client_id"] != "client" || resp["sub"] != "alice" || resp["scope"] != "read" {
+				t.Fatalf("got %v, want the access token of alice and client", resp)
+			}
+		case !introspectionErrors[fmt.Sprint(resp["error"])]:
+			t.Fatalf("got status %d and body %v", w.Code, resp)
+		case resp["error"] == "invalid_client" && (w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") == ""):
+			t.Fatalf("got status %d and WWW-Authenticate %q for invalid_client, want 401 with a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
 		}
 	})
 }

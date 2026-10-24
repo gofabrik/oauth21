@@ -58,6 +58,8 @@ type Client struct {
 	DefaultScopes []string
 	// GrantTypes are the grant types the Client may use, authorization_code and refresh_token when empty.
 	GrantTypes []string
+	// Introspect lets a confidential Client call the introspection endpoint.
+	Introspect bool
 }
 
 // Allows reports whether c may use grantType.
@@ -480,6 +482,9 @@ func ValidateRevocationRequest(client *Client, token string, c Credentials, veri
 // Token is what an access token is bound to.
 type Token struct {
 	ClientID  string
+	Subject   string
+	Scopes    []string
+	Audience  []string
 	ExpiresAt time.Time
 }
 
@@ -505,6 +510,33 @@ func revoke(owner string, expiresAt time.Time, effect Effect, clientID string, n
 		return NoEffect, &Error{invalidGrant, "token was issued to another client"}
 	}
 	return effect, nil
+}
+
+// ValidateIntrospectionRequest checks an introspection request for token with credentials c for client, which is nil when unknown, before the token is loaded; the caller is checked first.
+func ValidateIntrospectionRequest(client *Client, token string, c Credentials, verify func(hash, secret string) bool) *Error {
+	if err := Authenticate(client, c, verify); err != nil {
+		return err
+	}
+	switch {
+	case client.Public:
+		return &Error{invalidClient, "client authentication required"}
+	case !client.Introspect:
+		return &Error{unauthorizedClient, "client may not introspect"}
+	case token == "":
+		return &Error{invalidRequest, "token required"}
+	}
+	return nil
+}
+
+// Introspect returns token (nil when unknown) when it is active at now for the Client clientID, and nil otherwise; a token with an audience is active only for a Client in it.
+func Introspect(token *Token, clientID string, now time.Time) *Token {
+	switch {
+	case token == nil, !now.Before(token.ExpiresAt):
+		return nil
+	case len(token.Audience) > 0 && !slices.Contains(token.Audience, clientID):
+		return nil
+	}
+	return token
 }
 
 // TokenCreated decides on the result of creating a token, which fails when its Grant was revoked.

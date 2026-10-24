@@ -442,6 +442,52 @@ func (s *Server) revocation(r *http.Request) error {
 	return s.apply(ctx, effect, stored.Grant.ID, stored.Hash, perr)
 }
 
+// IntrospectionHandler returns the introspection endpoint, which answers invalid client credentials with 401.
+func (s *Server) IntrospectionHandler() http.Handler {
+	return http.HandlerFunc(s.introspect)
+}
+
+func (s *Server) introspect(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.introspection(r)
+	if err != nil {
+		wire.WriteIntrospectionError(w, responseError(err))
+		return
+	}
+	wire.WriteIntrospection(w, resp)
+}
+
+// introspection answers the introspection request r; only access tokens can be active.
+func (s *Server) introspection(r *http.Request) (wire.IntrospectionResponse, error) {
+	token, credentials, werr := wire.ParseIntrospectionRequest(r)
+	if werr != nil {
+		return wire.IntrospectionResponse{}, werr
+	}
+	ctx, c := r.Context(), protocol.Credentials(credentials)
+	client, err := s.identify(ctx, c)
+	if err != nil {
+		return wire.IntrospectionResponse{}, err
+	}
+	if perr := protocol.ValidateIntrospectionRequest(client, token, c, s.config.SecretHasher.Verify); perr != nil {
+		return wire.IntrospectionResponse{}, oauthError(perr)
+	}
+	_, access, err := load(ctx, token, s.config.Tokens.Token, protocolToken)
+	if err != nil {
+		return wire.IntrospectionResponse{}, err
+	}
+	active := protocol.Introspect(access, client.ID, s.config.Clock())
+	if active == nil {
+		return wire.IntrospectionResponse{}, nil
+	}
+	return wire.IntrospectionResponse{
+		Active:    true,
+		Scope:     strings.Join(active.Scopes, " "),
+		ClientID:  active.ClientID,
+		Subject:   active.Subject,
+		ExpiresAt: active.ExpiresAt.Unix(),
+		Audience:  active.Audience,
+	}, nil
+}
+
 // apply applies effect to the Grant grantID or the access token with tokenHash and returns perr, protocol's decision with it, as an error response.
 func (s *Server) apply(ctx context.Context, effect protocol.Effect, grantID string, tokenHash []byte, perr *protocol.Error) error {
 	var err error
@@ -580,6 +626,7 @@ func protocolClient(c store.Client) protocol.Client {
 		AllowedScopes: c.AllowedScopes,
 		DefaultScopes: c.DefaultScopes,
 		GrantTypes:    c.GrantTypes,
+		Introspect:    c.Introspect,
 	}
 }
 
@@ -632,7 +679,13 @@ func protocolRefreshToken(t store.RefreshToken) protocol.RefreshToken {
 }
 
 func protocolToken(t store.Token) protocol.Token {
-	return protocol.Token{ClientID: t.Grant.ClientID, ExpiresAt: t.ExpiresAt}
+	return protocol.Token{
+		ClientID:  t.Grant.ClientID,
+		Subject:   t.Grant.Subject,
+		Scopes:    t.Scopes,
+		Audience:  t.Audience,
+		ExpiresAt: t.ExpiresAt,
+	}
 }
 
 func storeRefreshToken(hash []byte, grant store.Grant, t protocol.RefreshToken) store.RefreshToken {

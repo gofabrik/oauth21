@@ -34,6 +34,8 @@ type Client struct {
 	DefaultScopes []string
 	// GrantTypes are the grant types the Client may use, authorization_code and refresh_token when empty.
 	GrantTypes []string
+	// Introspect lets a confidential Client call the introspection endpoint.
+	Introspect bool
 }
 
 // AuthorizationRequest is a validated request waiting for the Host Application.

@@ -78,6 +78,19 @@ func TestParseRejects(t *testing.T) {
 			_, _, err := ParseRevocationRequest(r)
 			return err
 		},
+		"repeated introspection parameter": func() *Error { _, _, err := ParseIntrospectionRequest(post("token=a&token=b")); return err },
+		"repeated introspection token_type_hint": func() *Error {
+			_, _, err := ParseIntrospectionRequest(post("token=a&token_type_hint=a&token_type_hint=b"))
+			return err
+		},
+		"malformed introspection form": func() *Error { _, _, err := ParseIntrospectionRequest(post("token=%zz")); return err },
+		"introspection method":         func() *Error { _, _, err := ParseIntrospectionRequest(get("token=a")); return err },
+		"repeated introspection Authorization": func() *Error {
+			r := post("token=a")
+			r.Header["Authorization"] = []string{"Basic eDp5", "Bearer abc"}
+			_, _, err := ParseIntrospectionRequest(r)
+			return err
+		},
 	}
 	for name, parse := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -151,21 +164,35 @@ func TestParseTokenRequestRejectsMalformedBasic(t *testing.T) {
 	}
 }
 
-func TestParseRevocationRequest(t *testing.T) {
-	r := post("token=t&token_type_hint=refresh_token&client_id=c&client_secret=s")
-	r.Header.Set("Authorization", "Basic YSUyMGIrYzpwJTNBJTI1Kw==")
-	token, got, err := ParseRevocationRequest(r)
-	want := Credentials{ClientID: "c", ClientSecret: "s", AuthScheme: "Basic", BasicID: "a b c", BasicSecret: "p:% "}
-	if err != nil || token != "t" || got != want {
-		t.Fatalf("got token %q, %+v and error %v, want t and %+v", token, got, err, want)
+// tokenParamParsers are the parsers of requests that carry a token and token_type_hint.
+var tokenParamParsers = map[string]func(*http.Request) (string, Credentials, *Error){
+	"revocation":    ParseRevocationRequest,
+	"introspection": ParseIntrospectionRequest,
+}
+
+func TestParseTokenParamRequest(t *testing.T) {
+	for name, parse := range tokenParamParsers {
+		t.Run(name, func(t *testing.T) {
+			r := post("token=t&token_type_hint=refresh_token&client_id=c&client_secret=s")
+			r.Header.Set("Authorization", "Basic YSUyMGIrYzpwJTNBJTI1Kw==")
+			token, got, err := parse(r)
+			want := Credentials{ClientID: "c", ClientSecret: "s", AuthScheme: "Basic", BasicID: "a b c", BasicSecret: "p:% "}
+			if err != nil || token != "t" || got != want {
+				t.Fatalf("got token %q, %+v and error %v, want t and %+v", token, got, err, want)
+			}
+		})
 	}
 }
 
-func TestParseRevocationRequestRejectsMalformedBasic(t *testing.T) {
-	r := post("token=t")
-	r.Header.Set("Authorization", "Basic eHk=")
-	if _, _, err := ParseRevocationRequest(r); err == nil || err.Code != "invalid_client" {
-		t.Fatalf("got error %v, want invalid_client", err)
+func TestParseTokenParamRequestRejectsMalformedBasic(t *testing.T) {
+	for name, parse := range tokenParamParsers {
+		t.Run(name, func(t *testing.T) {
+			r := post("token=t")
+			r.Header.Set("Authorization", "Basic eHk=")
+			if _, _, err := parse(r); err == nil || err.Code != "invalid_client" {
+				t.Fatalf("got error %v, want invalid_client", err)
+			}
+		})
 	}
 }
 
@@ -201,6 +228,19 @@ func TestWriteErrorChallengesUnauthorized(t *testing.T) {
 	}
 }
 
+func TestWriteIntrospectionError(t *testing.T) {
+	w := httptest.NewRecorder()
+	WriteIntrospectionError(w, &Error{Code: "invalid_client"})
+	if w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") != `Basic realm="oauth21"` {
+		t.Fatalf("got status %d and WWW-Authenticate %q, want 401 and a Basic challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+	}
+	w = httptest.NewRecorder()
+	WriteIntrospectionError(w, &Error{Code: "invalid_request"})
+	if w.Code != http.StatusBadRequest || w.Header().Get("WWW-Authenticate") != "" {
+		t.Fatalf("got status %d and WWW-Authenticate %q, want 400 without a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+	}
+}
+
 func TestChallenge(t *testing.T) {
 	for header, want := range map[string]string{"": "", "Bearer abc": "Bearer", "Basic eDp5": "Basic", "Foo: x": "Basic", "a\tb": "Basic"} {
 		r := post("")
@@ -219,6 +259,26 @@ func TestWriteError(t *testing.T) {
 	if w.Code != http.StatusBadRequest || w.Header().Get("Cache-Control") != "no-store" ||
 		w.Body.String() != `{"error":"invalid_grant","error_description":"bad code"}`+"\n" {
 		t.Fatalf("got status %d, headers %v and body %q", w.Code, w.Header(), w.Body.String())
+	}
+}
+
+func TestWriteIntrospection(t *testing.T) {
+	tests := []struct {
+		resp IntrospectionResponse
+		want string
+	}{
+		{IntrospectionResponse{}, `{"active":false}`},
+		{
+			IntrospectionResponse{Active: true, Scope: "a b", ClientID: "c", Subject: "s", ExpiresAt: 1419356238, Audience: []string{"https://rs.example"}},
+			`{"active":true,"scope":"a b","client_id":"c","sub":"s","exp":1419356238,"aud":["https://rs.example"]}`,
+		},
+	}
+	for _, tt := range tests {
+		w := httptest.NewRecorder()
+		WriteIntrospection(w, tt.resp)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || w.Header().Get("Cache-Control") != "no-store" || w.Body.String() != tt.want+"\n" {
+			t.Errorf("got status %d, headers %v and body %q, want 200 and %s", w.Code, w.Header(), w.Body.String(), tt.want)
+		}
 	}
 }
 
@@ -313,6 +373,15 @@ func FuzzParseTokenRequestAuthorization(f *testing.F) {
 }
 
 func FuzzParseRevocationRequest(f *testing.F) {
+	fuzzTokenParamRequest(f, ParseRevocationRequest)
+}
+
+func FuzzParseIntrospectionRequest(f *testing.F) {
+	fuzzTokenParamRequest(f, ParseIntrospectionRequest)
+}
+
+// fuzzTokenParamRequest fuzzes parse, a parser of requests that carry a token and token_type_hint.
+func fuzzTokenParamRequest(f *testing.F, parse func(*http.Request) (string, Credentials, *Error)) {
 	f.Add("token=t&token_type_hint=access_token&client_id=c", "")
 	f.Add("token=t", "Basic eDp5")
 	f.Add("token=a&token=b", "")
@@ -320,7 +389,7 @@ func FuzzParseRevocationRequest(f *testing.F) {
 	f.Fuzz(func(t *testing.T, body, header string) {
 		r := post(body)
 		r.Header["Authorization"] = []string{header}
-		token, c, err := ParseRevocationRequest(r)
+		token, c, err := parse(r)
 		if err != nil {
 			if err.Code != "invalid_request" && err.Code != "invalid_client" {
 				t.Fatalf("got error %v, want invalid_request or invalid_client", err)
@@ -337,7 +406,7 @@ func FuzzParseRevocationRequest(f *testing.F) {
 		default:
 			r.Header.Set("Authorization", c.AuthScheme)
 		}
-		again, againCredentials, err := ParseRevocationRequest(r)
+		again, againCredentials, err := parse(r)
 		if err != nil || again != token || againCredentials != c {
 			t.Fatalf("got token %q, %+v and error %v after a round trip, want %q and %+v", again, againCredentials, err, token, c)
 		}

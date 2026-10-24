@@ -154,6 +154,16 @@ func ParseTokenRequest(r *http.Request) (TokenRequest, Credentials, *Error) {
 
 // ParseRevocationRequest reads the token of a revocation request from the form body of a POST, ignoring the value of token_type_hint, and the Client credentials of its Authorization header.
 func ParseRevocationRequest(r *http.Request) (string, Credentials, *Error) {
+	return parseTokenParam(r)
+}
+
+// ParseIntrospectionRequest reads the token of an introspection request from the form body of a POST, ignoring the value of token_type_hint, and the Client credentials of its Authorization header.
+func ParseIntrospectionRequest(r *http.Request) (string, Credentials, *Error) {
+	return parseTokenParam(r)
+}
+
+// parseTokenParam reads token and token_type_hint from the form body of a POST and returns the token and the Client credentials.
+func parseTokenParam(r *http.Request) (string, Credentials, *Error) {
 	var token, hint string
 	c, err := parseClientRequest(r, map[string]*string{"token": &token, "token_type_hint": &hint})
 	if err != nil {
@@ -242,6 +252,26 @@ type TokenResponse struct {
 // WriteToken writes a successful token response.
 func WriteToken(w http.ResponseWriter, resp TokenResponse) {
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// IntrospectionResponse is an introspection response; for an inactive token it is the zero value, which encodes as active false only.
+type IntrospectionResponse struct {
+	Active    bool     `json:"active"`
+	Scope     string   `json:"scope,omitempty"`
+	ClientID  string   `json:"client_id,omitempty"`
+	Subject   string   `json:"sub,omitempty"`
+	ExpiresAt int64    `json:"exp,omitempty"`
+	Audience  []string `json:"aud,omitempty"`
+}
+
+// WriteIntrospection writes an introspection response.
+func WriteIntrospection(w http.ResponseWriter, resp IntrospectionResponse) {
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// WriteIntrospectionError writes an introspection endpoint error, as a 401 with a Basic challenge for invalid_client.
+func WriteIntrospectionError(w http.ResponseWriter, e *Error) {
+	WriteError(w, e, "Basic")
 }
 
 // WriteError writes a token or revocation endpoint error, as a 401 with challenge for invalid_client when challenge is set.

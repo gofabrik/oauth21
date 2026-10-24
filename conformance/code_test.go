@@ -142,14 +142,15 @@ func TestConcurrentRedemptionIssuesAtMostOneToken(t *testing.T) {
 	}
 }
 
-// TestStoresOnlyReceiveHashes checks that the code and token Stores receive the SHA-256 hashes of codes, access tokens and refresh tokens, never their values, also on revocation.
+// TestStoresOnlyReceiveHashes checks that the code and token Stores receive the SHA-256 hashes of codes, access tokens and refresh tokens, never their values, also on revocation and introspection.
 //
 //conformance:covers INV-0002
 func TestStoresOnlyReceiveHashes(t *testing.T) {
-	a := newAuthorizationServer(t)
+	a := newIntrospectionServer(t)
 	code := a.code(authorizeParams())
 	token, refresh := a.tokens(tokenParams(code), nil)
 	refreshed, next := a.tokens(refreshParams(refresh), nil)
+	a.introspect(token)
 	a.revoke(revocationParams(refreshed), nil)
 	hashes := map[string]bool{}
 	for _, v := range []string{code, token, refresh, refreshed, next} {
