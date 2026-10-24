@@ -160,10 +160,12 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 		t.Fatal(err)
 	}
 	a.srv = srv
-	mux.Handle("/authorize", srv.AuthorizationHandler())
-	mux.Handle("/token", srv.TokenHandler())
-	mux.Handle("/revoke", srv.RevocationHandler())
-	mux.Handle("/introspect", srv.IntrospectionHandler())
+	paths := srv.Paths()
+	mux.Handle(paths.Authorization, srv.AuthorizationHandler())
+	mux.Handle(paths.Token, srv.TokenHandler())
+	mux.Handle(paths.Revocation, srv.RevocationHandler())
+	mux.Handle(paths.Introspection, srv.IntrospectionHandler())
+	mux.Handle(srv.MetadataPath(), srv.MetadataHandler())
 	return a
 }
 

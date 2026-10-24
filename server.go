@@ -1,6 +1,7 @@
 package oauth21
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,9 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gofabrik/oauth21/internal/protocol"
 	"github.com/gofabrik/oauth21/internal/wire"
@@ -31,6 +34,8 @@ type Config struct {
 	Issuer string
 	// LoginURL is the Host Application's login page, which receives a request_id parameter.
 	LoginURL string
+	// Paths are where the Host Application mounts the endpoints under the Issuer.
+	Paths Paths
 
 	Clients               store.Clients
 	AuthorizationRequests store.AuthorizationRequests
@@ -59,18 +64,46 @@ type Config struct {
 	Random io.Reader
 }
 
+// Paths are endpoint paths relative to the Issuer, each starting with a slash.
+type Paths struct {
+	// Authorization defaults to /authorize.
+	Authorization string
+	// Token defaults to /token.
+	Token string
+	// Revocation defaults to /revoke.
+	Revocation string
+	// Introspection defaults to /introspect.
+	Introspection string
+}
+
 // Server is an Authorization Server.
 type Server struct {
 	config Config
+	// origin is the scheme and host of the Issuer.
+	origin string
+	// issuerPath is the path of the Issuer without its trailing slash.
+	issuerPath string
 }
 
 // New returns an Authorization Server built from c.
 func New(c Config) (*Server, error) {
-	if u, err := url.Parse(c.Issuer); err != nil || u.Scheme != "https" || u.Host == "" || strings.ContainsAny(c.Issuer, "?#") {
-		return nil, errors.New("oauth21: Issuer must be an https URL without query or fragment")
+	u, err := url.Parse(c.Issuer)
+	if err != nil || u.Scheme != "https" || u.User != nil || strings.ContainsFunc(c.Issuer, func(r rune) bool { return r > unicode.MaxASCII }) || u.Hostname() == "" || strings.HasSuffix(u.Host, ":") || strings.ContainsAny(c.Issuer, "?#") {
+		return nil, errors.New("oauth21: Issuer must be an ASCII https URL with a host and without userinfo, query or fragment")
+	}
+	issuerPath := strings.TrimSuffix(u.EscapedPath(), "/")
+	if issuerPath != "" && !canonicalPath(issuerPath) {
+		return nil, errors.New("oauth21: the path of Issuer must be clean and need no escaping")
 	}
 	if _, err := url.Parse(c.LoginURL); c.LoginURL == "" || err != nil {
 		return nil, errors.New("oauth21: LoginURL must be a URL")
+	}
+	c.Paths.Authorization = cmp.Or(c.Paths.Authorization, "/authorize")
+	c.Paths.Token = cmp.Or(c.Paths.Token, "/token")
+	c.Paths.Revocation = cmp.Or(c.Paths.Revocation, "/revoke")
+	c.Paths.Introspection = cmp.Or(c.Paths.Introspection, "/introspect")
+	if slices.ContainsFunc([]string{c.Paths.Authorization, c.Paths.Token, c.Paths.Revocation, c.Paths.Introspection}, func(p string) bool { return !canonicalPath(p) }) {
+		return nil, errors.New("oauth21: Paths must be clean paths below the root that need no escaping")
 	}
 	if c.Clients == nil || c.AuthorizationRequests == nil || c.Codes == nil || c.Tokens == nil {
 		return nil, errors.New("oauth21: every Store is required")
@@ -106,7 +139,19 @@ func New(c Config) (*Server, error) {
 	if c.Random == nil {
 		c.Random = rand.Reader
 	}
-	return &Server{c}, nil
+	s := &Server{config: c, origin: u.Scheme + "://" + u.Host, issuerPath: issuerPath}
+	p := s.Paths()
+	mounts := []string{p.Authorization, p.Token, p.Revocation, p.Introspection, s.MetadataPath()}
+	if len(slices.Compact(slices.Sorted(slices.Values(mounts)))) != len(mounts) {
+		return nil, errors.New("oauth21: Paths must be distinct and differ from the metadata path")
+	}
+	return s, nil
+}
+
+// canonicalPath reports whether p is a clean path below the root that needs no escaping.
+func canonicalPath(p string) bool {
+	u, err := url.Parse(p)
+	return err == nil && strings.HasPrefix(p, "/") && p != "/" && u.Path == p && u.EscapedPath() == p && path.Clean(p) == p
 }
 
 // validLifetime reports whether d is unset or at least one second.
@@ -486,6 +531,50 @@ func (s *Server) introspection(r *http.Request) (wire.IntrospectionResponse, err
 		ExpiresAt: active.ExpiresAt.Unix(),
 		Audience:  active.Audience,
 	}, nil
+}
+
+// Paths returns the paths to mount the endpoints at: the path of the Issuer followed by each configured path.
+func (s *Server) Paths() Paths {
+	p := s.config.Paths
+	return Paths{
+		Authorization: s.issuerPath + p.Authorization,
+		Token:         s.issuerPath + p.Token,
+		Revocation:    s.issuerPath + p.Revocation,
+		Introspection: s.issuerPath + p.Introspection,
+	}
+}
+
+// MetadataPath returns the path to mount the metadata endpoint at (RFC 8414 3).
+func (s *Server) MetadataPath() string {
+	return "/.well-known/oauth-authorization-server" + s.issuerPath
+}
+
+// MetadataHandler returns the metadata endpoint of the Authorization Server, to be mounted at MetadataPath.
+func (s *Server) MetadataHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wire.WriteMetadata(w, r, s.metadata())
+	})
+}
+
+// metadata returns the metadata document derived from the Config.
+func (s *Server) metadata() wire.Metadata {
+	p := s.Paths()
+	return wire.Metadata{
+		Issuer:                                     s.config.Issuer,
+		AuthorizationEndpoint:                      s.origin + p.Authorization,
+		TokenEndpoint:                              s.origin + p.Token,
+		RevocationEndpoint:                         s.origin + p.Revocation,
+		IntrospectionEndpoint:                      s.origin + p.Introspection,
+		ScopesSupported:                            s.config.Scopes,
+		ResponseTypesSupported:                     []string{"code"},
+		ResponseModesSupported:                     []string{"query"},
+		GrantTypesSupported:                        []string{protocol.AuthorizationCodeGrant, protocol.RefreshTokenGrant, protocol.ClientCredentialsGrant},
+		TokenEndpointAuthMethodsSupported:          []string{"none", "client_secret_basic", "client_secret_post"},
+		RevocationEndpointAuthMethodsSupported:     []string{"none", "client_secret_basic", "client_secret_post"},
+		IntrospectionEndpointAuthMethodsSupported:  []string{"client_secret_basic", "client_secret_post"},
+		CodeChallengeMethodsSupported:              []string{"S256"},
+		AuthorizationResponseIssParameterSupported: true,
+	}
 }
 
 // apply applies effect to the Grant grantID or the access token with tokenHash and returns perr, protocol's decision with it, as an error response.

@@ -282,6 +282,30 @@ func TestWriteIntrospection(t *testing.T) {
 	}
 }
 
+func TestWriteMetadata(t *testing.T) {
+	m := Metadata{
+		Issuer:                        "https://as.example",
+		AuthorizationEndpoint:         "https://as.example/authorize",
+		ScopesSupported:               []string{"read"},
+		ResponseTypesSupported:        []string{"code"},
+		CodeChallengeMethodsSupported: []string{"S256"},
+		AuthorizationResponseIssParameterSupported: true,
+	}
+	want := `{"issuer":"https://as.example","authorization_endpoint":"https://as.example/authorize","scopes_supported":["read"],"response_types_supported":["code"],"code_challenge_methods_supported":["S256"],"authorization_response_iss_parameter_supported":true}` + "\n"
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		w := httptest.NewRecorder()
+		WriteMetadata(w, httptest.NewRequestWithContext(context.Background(), method, "/.well-known/oauth-authorization-server", nil), m)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || w.Header().Get("Cache-Control") != "" || w.Body.String() != want {
+			t.Errorf("%s: got status %d, headers %v and body %q, want 200 and %s", method, w.Code, w.Header(), w.Body.String(), want)
+		}
+	}
+	w := httptest.NewRecorder()
+	WriteMetadata(w, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/.well-known/oauth-authorization-server", nil), m)
+	if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("got status %d and headers %v for a POST, want 405 with Allow", w.Code, w.Header())
+	}
+}
+
 func TestAuthorizationResponse(t *testing.T) {
 	a := AuthorizationResponse{RedirectURI: "https://c.example/cb", Issuer: "https://as.example"}
 	got, err := a.Code("c")

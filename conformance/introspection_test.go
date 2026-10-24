@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/gofabrik/oauth21/store"
 )
 
 const resourceServerID = "Resource Server"
@@ -12,11 +14,17 @@ const resourceServerID = "Resource Server"
 // newIntrospectionServer starts an Authorization Server with the confidential Client and the Resource Server Client, which may introspect.
 func newIntrospectionServer(t *testing.T) *authorizationServer {
 	t.Helper()
+	return newAuthorizationServer(t, newIntrospectionClients(t)...)
+}
+
+// newIntrospectionClients returns the confidential Client and the Resource Server Client, which may introspect.
+func newIntrospectionClients(t *testing.T) []store.Client {
+	t.Helper()
 	resourceServer := confidentialClient(t)
 	resourceServer.ID = resourceServerID
 	resourceServer.RedirectURIs = nil
 	resourceServer.Introspect = true
-	return newAuthorizationServer(t, confidentialClient(t), resourceServer)
+	return []store.Client{confidentialClient(t), resourceServer}
 }
 
 // introspect sends an introspection request of the Resource Server Client for token that must succeed, and returns its decoded JSON body.

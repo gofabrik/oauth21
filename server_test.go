@@ -393,26 +393,50 @@ func TestNewRequiresConfig(t *testing.T) {
 		Scopes:                readScope,
 	}
 	for name, change := range map[string]func(*oauth21.Config){
-		"issuer":                      func(c *oauth21.Config) { c.Issuer = "" },
-		"http issuer":                 func(c *oauth21.Config) { c.Issuer = "http://as.example" },
-		"relative issuer":             func(c *oauth21.Config) { c.Issuer = "as.example" },
-		"issuer with query":           func(c *oauth21.Config) { c.Issuer = "https://as.example?tenant=a" },
-		"issuer with fragment":        func(c *oauth21.Config) { c.Issuer = "https://as.example#a" },
-		"short request lifetime":      func(c *oauth21.Config) { c.AuthorizationRequestLifetime = time.Millisecond },
-		"negative code lifetime":      func(c *oauth21.Config) { c.CodeLifetime = -time.Second },
-		"long code lifetime":          func(c *oauth21.Config) { c.CodeLifetime = 11 * time.Minute },
-		"negative token lifetime":     func(c *oauth21.Config) { c.AccessTokenLifetime = -time.Second },
-		"short refresh lifetime":      func(c *oauth21.Config) { c.RefreshTokenLifetime = time.Millisecond },
-		"short code lifetime":         func(c *oauth21.Config) { c.CodeLifetime = time.Millisecond },
-		"short token lifetime":        func(c *oauth21.Config) { c.AccessTokenLifetime = 500 * time.Millisecond },
-		"malformed login URL":         func(c *oauth21.Config) { c.LoginURL = "%zz" },
-		"login URL":                   func(c *oauth21.Config) { c.LoginURL = "" },
-		"client Store":                func(c *oauth21.Config) { c.Clients = nil },
-		"Authorization Request Store": func(c *oauth21.Config) { c.AuthorizationRequests = nil },
-		"code Store":                  func(c *oauth21.Config) { c.Codes = nil },
-		"token Store":                 func(c *oauth21.Config) { c.Tokens = nil },
-		"scopes":                      func(c *oauth21.Config) { c.Scopes = nil },
-		"malformed scope":             func(c *oauth21.Config) { c.Scopes = []string{"read", "read write"} },
+		"issuer":                         func(c *oauth21.Config) { c.Issuer = "" },
+		"http issuer":                    func(c *oauth21.Config) { c.Issuer = "http://as.example" },
+		"relative issuer":                func(c *oauth21.Config) { c.Issuer = "as.example" },
+		"issuer with query":              func(c *oauth21.Config) { c.Issuer = "https://as.example?tenant=a" },
+		"issuer with userinfo":           func(c *oauth21.Config) { c.Issuer = "https://user:pw@as.example" },
+		"issuer without hostname":        func(c *oauth21.Config) { c.Issuer = "https://:443" },
+		"issuer with non-ASCII host":     func(c *oauth21.Config) { c.Issuer = "https://bücher.example" },
+		"issuer with empty port":         func(c *oauth21.Config) { c.Issuer = "https://as.example:" },
+		"issuer with fragment":           func(c *oauth21.Config) { c.Issuer = "https://as.example#a" },
+		"short request lifetime":         func(c *oauth21.Config) { c.AuthorizationRequestLifetime = time.Millisecond },
+		"negative code lifetime":         func(c *oauth21.Config) { c.CodeLifetime = -time.Second },
+		"long code lifetime":             func(c *oauth21.Config) { c.CodeLifetime = 11 * time.Minute },
+		"negative token lifetime":        func(c *oauth21.Config) { c.AccessTokenLifetime = -time.Second },
+		"short refresh lifetime":         func(c *oauth21.Config) { c.RefreshTokenLifetime = time.Millisecond },
+		"short code lifetime":            func(c *oauth21.Config) { c.CodeLifetime = time.Millisecond },
+		"short token lifetime":           func(c *oauth21.Config) { c.AccessTokenLifetime = 500 * time.Millisecond },
+		"malformed login URL":            func(c *oauth21.Config) { c.LoginURL = "%zz" },
+		"login URL":                      func(c *oauth21.Config) { c.LoginURL = "" },
+		"client Store":                   func(c *oauth21.Config) { c.Clients = nil },
+		"Authorization Request Store":    func(c *oauth21.Config) { c.AuthorizationRequests = nil },
+		"code Store":                     func(c *oauth21.Config) { c.Codes = nil },
+		"token Store":                    func(c *oauth21.Config) { c.Tokens = nil },
+		"scopes":                         func(c *oauth21.Config) { c.Scopes = nil },
+		"malformed scope":                func(c *oauth21.Config) { c.Scopes = []string{"read", "read write"} },
+		"relative path":                  func(c *oauth21.Config) { c.Paths.Token = "token" },
+		"path with query":                func(c *oauth21.Config) { c.Paths.Authorization = "/authorize?a=b" },
+		"path with fragment":             func(c *oauth21.Config) { c.Paths.Revocation = "/revoke#a" },
+		"malformed path":                 func(c *oauth21.Config) { c.Paths.Introspection = "/%zz" },
+		"path with space":                func(c *oauth21.Config) { c.Paths.Token = "/oauth token" },
+		"path with empty segment":        func(c *oauth21.Config) { c.Paths.Token = "//oauth/token" },
+		"path with dot segment":          func(c *oauth21.Config) { c.Paths.Token = "/oauth/../token" },
+		"path with trailing slash":       func(c *oauth21.Config) { c.Paths.Token = "/oauth/" },
+		"escaped path":                   func(c *oauth21.Config) { c.Paths.Token = "/oauth%20token" },
+		"path with wildcard":             func(c *oauth21.Config) { c.Paths.Token = "/{token}" },
+		"duplicate path":                 func(c *oauth21.Config) { c.Paths.Token, c.Paths.Revocation = "/oauth", "/oauth" },
+		"path of another default":        func(c *oauth21.Config) { c.Paths.Token = "/authorize" },
+		"root path":                      func(c *oauth21.Config) { c.Paths.Token = "/" },
+		"metadata path":                  func(c *oauth21.Config) { c.Paths.Token = "/.well-known/oauth-authorization-server" },
+		"issuer path with space":         func(c *oauth21.Config) { c.Issuer = "https://as.example/a b" },
+		"issuer path with wildcard":      func(c *oauth21.Config) { c.Issuer = "https://as.example/{t}" },
+		"issuer path with empty segment": func(c *oauth21.Config) { c.Issuer = "https://as.example//x" },
+		"issuer path with dot segment":   func(c *oauth21.Config) { c.Issuer = "https://as.example/a/../b" },
+		"escaped issuer path":            func(c *oauth21.Config) { c.Issuer = "https://as.example/a%2Fb" },
+		"issuer with empty path":         func(c *oauth21.Config) { c.Issuer = "https://as.example//" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := valid
@@ -424,6 +448,31 @@ func TestNewRequiresConfig(t *testing.T) {
 	}
 	if _, err := oauth21.New(valid); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPaths(t *testing.T) {
+	m := memstore.New()
+	for _, tt := range []struct {
+		issuer       string
+		paths        oauth21.Paths
+		want         oauth21.Paths
+		wantMetadata string
+	}{
+		{issuer, oauth21.Paths{}, oauth21.Paths{Authorization: "/authorize", Token: "/token", Revocation: "/revoke", Introspection: "/introspect"}, "/.well-known/oauth-authorization-server"},
+		{issuer + "/", oauth21.Paths{Token: "/oauth/token"}, oauth21.Paths{Authorization: "/authorize", Token: "/oauth/token", Revocation: "/revoke", Introspection: "/introspect"}, "/.well-known/oauth-authorization-server"},                                           // #nosec G101 -- endpoint paths, not credentials
+		{issuer + "/tenant/", oauth21.Paths{Token: "/oauth/token"}, oauth21.Paths{Authorization: "/tenant/authorize", Token: "/tenant/oauth/token", Revocation: "/tenant/revoke", Introspection: "/tenant/introspect"}, "/.well-known/oauth-authorization-server/tenant"}, // #nosec G101 -- endpoint paths, not credentials
+	} {
+		srv, err := oauth21.New(oauth21.Config{Issuer: tt.issuer, Paths: tt.paths, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := srv.Paths(); got != tt.want {
+			t.Errorf("%s: got paths %+v, want %+v", tt.issuer, got, tt.want)
+		}
+		if got := srv.MetadataPath(); got != tt.wantMetadata {
+			t.Errorf("%s: got metadata path %q, want %q", tt.issuer, got, tt.wantMetadata)
+		}
 	}
 }
 
@@ -1026,6 +1075,63 @@ func FuzzIntrospectionHandler(f *testing.F) {
 			t.Fatalf("got status %d and body %v", w.Code, resp)
 		case resp["error"] == "invalid_client" && (w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") == ""):
 			t.Fatalf("got status %d and WWW-Authenticate %q for invalid_client, want 401 with a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+		}
+	})
+}
+
+func FuzzMetadataHandler(f *testing.F) {
+	f.Add(http.MethodGet)
+	f.Add(http.MethodHead)
+	f.Add(http.MethodPost)
+	f.Add("BREW")
+	f.Fuzz(func(t *testing.T, method string) {
+		m := memstore.New()
+		srv := newServer(t, m, m, m)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+		r.Method = method
+		w := do(srv.MetadataHandler(), r)
+		switch {
+		case method == http.MethodGet || method == http.MethodHead:
+			var doc map[string]any
+			if w.Code != http.StatusOK || json.NewDecoder(w.Body).Decode(&doc) != nil || doc["issuer"] != issuer || doc["token_endpoint"] != issuer+"/token" {
+				t.Fatalf("got status %d and body %q, want the metadata of %s", w.Code, w.Body.String(), issuer)
+			}
+		case w.Code != http.StatusMethodNotAllowed:
+			t.Fatalf("got status %d for %s, want 405", w.Code, method)
+		}
+	})
+}
+
+func FuzzNewAcceptsOnlyMountablePaths(f *testing.F) {
+	for _, p := range []string{"/token", "/", "/oauth token", "//oauth/token", "/a/../b", "/a/", "/a%20b", "/{a}", "/a?b", "/a#b", "/.well-known/oauth-authorization-server"} {
+		f.Add("", p)
+		f.Add(p, "/token")
+	}
+	f.Fuzz(func(t *testing.T, issuerPath, token string) {
+		m := memstore.New()
+		srv, err := oauth21.New(oauth21.Config{Issuer: issuer + issuerPath, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope, Paths: oauth21.Paths{Token: token}})
+		if err != nil {
+			return
+		}
+		p := srv.Paths()
+		mux := http.NewServeMux()
+		mounts := map[string]http.Handler{
+			p.Authorization:    srv.AuthorizationHandler(),
+			p.Token:            srv.TokenHandler(),
+			p.Revocation:       srv.RevocationHandler(),
+			p.Introspection:    srv.IntrospectionHandler(),
+			srv.MetadataPath(): srv.MetadataHandler(),
+		}
+		if len(mounts) != 5 {
+			t.Fatalf("got paths %+v and metadata path %q, want them distinct", p, srv.MetadataPath())
+		}
+		for path, h := range mounts {
+			mux.Handle(path, h)
+		}
+		for path := range mounts {
+			if _, pattern := mux.Handler(httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://as.example"+path, nil)); pattern != path {
+				t.Fatalf("got pattern %q for a request to %q, want it to reach its handler", pattern, path)
+			}
 		}
 	})
 }

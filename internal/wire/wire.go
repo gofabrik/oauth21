@@ -251,7 +251,7 @@ type TokenResponse struct {
 
 // WriteToken writes a successful token response.
 func WriteToken(w http.ResponseWriter, resp TokenResponse) {
-	writeJSON(w, http.StatusOK, resp)
+	writeNoStoreJSON(w, http.StatusOK, resp)
 }
 
 // IntrospectionResponse is an introspection response; for an inactive token it is the zero value, which encodes as active false only.
@@ -266,12 +266,40 @@ type IntrospectionResponse struct {
 
 // WriteIntrospection writes an introspection response.
 func WriteIntrospection(w http.ResponseWriter, resp IntrospectionResponse) {
-	writeJSON(w, http.StatusOK, resp)
+	writeNoStoreJSON(w, http.StatusOK, resp)
 }
 
 // WriteIntrospectionError writes an introspection endpoint error, as a 401 with a Basic challenge for invalid_client.
 func WriteIntrospectionError(w http.ResponseWriter, e *Error) {
 	WriteError(w, e, "Basic")
+}
+
+// Metadata is an authorization server metadata document (RFC 8414 2).
+type Metadata struct {
+	Issuer                                     string   `json:"issuer"`
+	AuthorizationEndpoint                      string   `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint                              string   `json:"token_endpoint,omitempty"`
+	RevocationEndpoint                         string   `json:"revocation_endpoint,omitempty"`
+	IntrospectionEndpoint                      string   `json:"introspection_endpoint,omitempty"`
+	ScopesSupported                            []string `json:"scopes_supported,omitempty"`
+	ResponseTypesSupported                     []string `json:"response_types_supported"`
+	ResponseModesSupported                     []string `json:"response_modes_supported,omitempty"`
+	GrantTypesSupported                        []string `json:"grant_types_supported,omitempty"`
+	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+	RevocationEndpointAuthMethodsSupported     []string `json:"revocation_endpoint_auth_methods_supported,omitempty"`
+	IntrospectionEndpointAuthMethodsSupported  []string `json:"introspection_endpoint_auth_methods_supported,omitempty"`
+	CodeChallengeMethodsSupported              []string `json:"code_challenge_methods_supported,omitempty"`
+	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported,omitempty"`
+}
+
+// WriteMetadata writes the metadata document m, which Clients may cache, in answer to a GET or HEAD, and 405 otherwise.
+func WriteMetadata(w http.ResponseWriter, r *http.Request, m Metadata) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	encodeJSON(w, http.StatusOK, m)
 }
 
 // WriteError writes a token or revocation endpoint error, as a 401 with challenge for invalid_client when challenge is set.
@@ -284,15 +312,19 @@ func WriteError(w http.ResponseWriter, e *Error, challenge string) {
 		}
 		w.Header().Set("WWW-Authenticate", challenge)
 	}
-	writeJSON(w, status, struct {
+	writeNoStoreJSON(w, status, struct {
 		Error       string `json:"error"`
 		Description string `json:"error_description,omitempty"`
 	}{e.Code, e.Description})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
+func writeNoStoreJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
+	encodeJSON(w, status, v)
+}
+
+func encodeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
