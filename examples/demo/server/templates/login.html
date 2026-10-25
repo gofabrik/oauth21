@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Log in</title>
+</head>
+<body>
+<h1>Log in</h1>
+{{if .Error}}<p>{{.Error}}</p>{{end}}
+<form method="post">
+<input type="hidden" name="request_id" value="{{.RequestID}}">
+<p><label>Username <input name="username" value="demo"></label></p>
+<p><label>Password <input name="password" type="password"></label></p>
+<p><button>Log in</button></p>
+</form>
+</body>
+</html>

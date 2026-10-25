@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  MODULES: . conformance tools
+  MODULES: . conformance tools examples
   GOLANGCI_LINT: github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
   GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
   FUZZTIME: 10s
@@ -53,6 +53,11 @@ tasks:
     cmds:
       - for: { var: MODULES }
         cmd: cd {{.ITEM}} && go run {{.GOVULNCHECK}} ./...
+
+  example:run:
+    desc: Run the example Authorization Server, Client and Resource Server
+    cmds:
+      - cd tools && go run ./example ../examples
 
   archlint:
     desc: Check the architecture rules of the core module

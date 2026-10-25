@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consent</title>
+</head>
+<body>
+<h1>Consent</h1>
+<p>{{.ClientID}} asks {{.Subject}} for the scopes {{range .Scopes}}<code>{{.}}</code> {{end}}</p>
+<form method="post">
+<input type="hidden" name="request_id" value="{{.RequestID}}">
+<button name="decision" value="allow">Allow</button>
+<button name="decision" value="deny">Deny</button>
+</form>
+</body>
+</html>

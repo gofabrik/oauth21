@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Client</title>
+</head>
+<body>
+<h1>Client</h1>
+{{if .Token}}
+<dl>
+<dt>Access token</dt><dd><code id="access-token">{{.Token.AccessToken}}</code></dd>
+<dt>Refresh token</dt><dd><code id="refresh-token">{{.Token.RefreshToken}}</code></dd>
+<dt>Expires</dt><dd>{{.Token.Expiry.Format "2006-01-02 15:04:05 MST"}}</dd>
+<dt>Scope</dt><dd><code id="scope">{{.Token.Extra "scope"}}</code></dd>
+</dl>
+<form method="post" action="/refresh"><button>Refresh the tokens</button></form>
+<form method="post" action="/call"><button>Call the Resource Server</button></form>
+{{if .Answer}}<p>The Resource Server answered: <code id="resource">{{.Answer}}</code></p>{{end}}
+{{else}}
+<p><a href="/login">Log in with the Authorization Server</a></p>
+{{end}}
+</body>
+</html>
