@@ -1,8 +1,13 @@
 package wire
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -262,7 +267,7 @@ type IntrospectionResponse struct {
 	ClientID  string   `json:"client_id,omitempty"`
 	Subject   string   `json:"sub,omitempty"`
 	ExpiresAt int64    `json:"exp,omitempty"`
-	Audience  []string `json:"aud,omitempty"`
+	Audience  audience `json:"aud,omitempty"`
 }
 
 // WriteIntrospection writes an introspection response.
@@ -273,6 +278,109 @@ func WriteIntrospection(w http.ResponseWriter, resp IntrospectionResponse) {
 // WriteIntrospectionError writes an introspection endpoint error, as a 401 with a Basic challenge for invalid_client.
 func WriteIntrospectionError(w http.ResponseWriter, e *Error) {
 	WriteError(w, e, "Basic")
+}
+
+// maxIntrospectionResponseSize is the largest response body ParseIntrospectionResponse reads.
+const maxIntrospectionResponseSize = 1 << 20
+
+// NewIntrospectionRequest returns an introspection request for token to endpoint, authenticated with client_secret_basic.
+func NewIntrospectionRequest(ctx context.Context, endpoint, token, clientID, clientSecret string) (*http.Request, error) {
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(url.Values{"token": {token}}.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(clientID)+":"+url.QueryEscape(clientSecret))))
+	return r, nil
+}
+
+// ParseIntrospectionResponse reads a successful introspection response, leaving ExpiresAt zero, as the zero value for an inactive token, and fails for any other response.
+func ParseIntrospectionResponse(resp *http.Response) (IntrospectionResponse, error) {
+	if resp.StatusCode != http.StatusOK {
+		return IntrospectionResponse{}, fmt.Errorf("introspection failed with status %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIntrospectionResponseSize+1))
+	if err != nil {
+		return IntrospectionResponse{}, err
+	}
+	if len(raw) > maxIntrospectionResponseSize {
+		return IntrospectionResponse{}, errors.New("introspection response too large")
+	}
+	members, err := objectMembers(raw)
+	if err != nil {
+		return IntrospectionResponse{}, fmt.Errorf("malformed introspection response: %w", err)
+	}
+	active, ok := members["active"]
+	if !ok || string(active) == "null" {
+		return IntrospectionResponse{}, errors.New("malformed introspection response: no active")
+	}
+	var ir IntrospectionResponse
+	if err := json.Unmarshal(active, &ir.Active); err != nil {
+		return IntrospectionResponse{}, fmt.Errorf("malformed introspection response: %w", err)
+	}
+	if !ir.Active {
+		return IntrospectionResponse{}, nil
+	}
+	fields := map[string]any{"scope": &ir.Scope, "client_id": &ir.ClientID, "sub": &ir.Subject, "aud": &ir.Audience}
+	for name, field := range fields {
+		if m, ok := members[name]; ok {
+			if err := json.Unmarshal(m, field); err != nil {
+				return IntrospectionResponse{}, fmt.Errorf("malformed introspection response: %w", err)
+			}
+		}
+	}
+	return ir, nil
+}
+
+// objectMembers returns the members of the JSON object raw, and fails for anything else, including a repeated member name.
+func objectMembers(raw []byte) (map[string]json.RawMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil, errors.New("not a JSON object")
+	}
+	members := map[string]json.RawMessage{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		name := t.(string)
+		if _, ok := members[name]; ok {
+			return nil, fmt.Errorf("repeated member %q", name)
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, err
+		}
+		members[name] = value
+	}
+	if _, err := dec.Token(); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("data after the JSON object")
+	}
+	return members, nil
+}
+
+// audience is an aud value, which is a string or an array of strings (RFC 7519 4.1.3).
+type audience []string
+
+func (a *audience) UnmarshalJSON(data []byte) error {
+	var many []string
+	if json.Unmarshal(data, &many) == nil {
+		if len(many) == 0 {
+			many = nil
+		}
+		*a = many
+		return nil
+	}
+	var one string
+	if err := json.Unmarshal(data, &one); err != nil {
+		return err
+	}
+	*a = audience{one}
+	return nil
 }
 
 // Metadata is an authorization server metadata document (RFC 8414 2).

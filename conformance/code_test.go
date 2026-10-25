@@ -147,7 +147,7 @@ func TestConcurrentRedemptionIssuesAtMostOneToken(t *testing.T) {
 //conformance:covers INV-0002
 func TestStoresOnlyReceiveHashes(t *testing.T) {
 	a := newIntrospectionServer(t)
-	a.resource()
+	a.resource(a.local())
 	code := a.code(authorizeParams())
 	token, refresh := a.tokens(tokenParams(code), nil)
 	refreshed, next := a.tokens(refreshParams(refresh), nil)

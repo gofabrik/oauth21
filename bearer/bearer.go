@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -60,6 +61,46 @@ func (l Local) Validate(ctx context.Context, token string) (Token, error) {
 		return Token{}, ErrInvalidToken
 	}
 	return Token{Subject: p.Subject, ClientID: p.ClientID, Scopes: p.Scopes, Audience: p.Audience}, nil
+}
+
+// Remote validates access tokens through the introspection endpoint of an Authorization Server (RFC 7662).
+type Remote struct {
+	// Endpoint is the URL of the introspection endpoint.
+	Endpoint string
+	// ClientID and ClientSecret authenticate the Resource Server as a Client allowed to introspect.
+	ClientID     string
+	ClientSecret string
+	// Client defaults to an HTTP client with a timeout of 10 seconds. Redirects are never followed.
+	Client *http.Client
+}
+
+// defaultTimeout is the timeout of introspection requests when Remote has no Client.
+const defaultTimeout = 10 * time.Second
+
+// Validate returns the access token with value token while the introspection endpoint answers that it is active for the Resource Server.
+func (r Remote) Validate(ctx context.Context, token string) (Token, error) {
+	req, err := wire.NewIntrospectionRequest(ctx, r.Endpoint, token, r.ClientID, r.ClientSecret)
+	if err != nil {
+		return Token{}, fmt.Errorf("bearer: %w", err)
+	}
+	client := http.Client{Timeout: defaultTimeout}
+	if r.Client != nil {
+		client = *r.Client
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		return Token{}, fmt.Errorf("bearer: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	ir, err := wire.ParseIntrospectionResponse(resp)
+	if err != nil {
+		return Token{}, fmt.Errorf("bearer: %w", err)
+	}
+	if !ir.Active {
+		return Token{}, ErrInvalidToken
+	}
+	return Token{Subject: ir.Subject, ClientID: ir.ClientID, Scopes: strings.Fields(ir.Scope), Audience: ir.Audience}, nil
 }
 
 type contextKey struct{}

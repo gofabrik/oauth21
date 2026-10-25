@@ -3,10 +3,13 @@ package wire
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -280,6 +283,130 @@ func TestWriteIntrospection(t *testing.T) {
 			t.Errorf("got status %d, headers %v and body %q, want 200 and %s", w.Code, w.Header(), w.Body.String(), tt.want)
 		}
 	}
+}
+
+func TestNewIntrospectionRequest(t *testing.T) {
+	r, err := NewIntrospectionRequest(context.Background(), "https://as.example/introspect", "t+/=", "Resource Server", "a:b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, c, perr := ParseIntrospectionRequest(r)
+	if perr != nil || r.URL.String() != "https://as.example/introspect" || token != "t+/=" || c != (Credentials{AuthScheme: "Basic", BasicID: "Resource Server", BasicSecret: "a:b"}) {
+		t.Fatalf("got URL %s, token %q, %+v and error %v, want the token with client_secret_basic", r.URL, token, c, perr)
+	}
+}
+
+func FuzzNewIntrospectionRequest(f *testing.F) {
+	f.Add("token", "Resource Server", "secret")
+	f.Add("", "", "")
+	f.Add("a&b=c", "id:%", "+ =")
+	f.Fuzz(func(t *testing.T, token, id, secret string) {
+		r, err := NewIntrospectionRequest(context.Background(), "https://as.example/introspect", token, id, secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, c, perr := ParseIntrospectionRequest(r)
+		if perr != nil || got != token || c != (Credentials{AuthScheme: "Basic", BasicID: id, BasicSecret: secret}) {
+			t.Fatalf("got token %q, %+v and error %v, want %q with client_secret_basic as %q and %q", got, c, perr, token, id, secret)
+		}
+	})
+}
+
+// parseResponse parses an introspection response with status and body.
+func parseResponse(status int, body string) (IntrospectionResponse, error) {
+	resp := &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body))}
+	defer func() { _ = resp.Body.Close() }()
+	return ParseIntrospectionResponse(resp)
+}
+
+func TestParseIntrospectionResponse(t *testing.T) {
+	tests := []struct {
+		body string
+		want IntrospectionResponse
+	}{
+		{
+			`{"active":true,"scope":"a b","client_id":"c","sub":"s","exp":1419356238,"aud":["https://rs.example"],"iss":"https://as.example"}`,
+			IntrospectionResponse{Active: true, Scope: "a b", ClientID: "c", Subject: "s", Audience: []string{"https://rs.example"}},
+		},
+		{`{"active":true,"aud":"https://rs.example"}`, IntrospectionResponse{Active: true, Audience: []string{"https://rs.example"}}},
+		{`{"active":true,"aud":null}`, IntrospectionResponse{Active: true}},
+		{`{"active":true,"aud":[]}`, IntrospectionResponse{Active: true}},
+		{`{"active":false,"sub":"s"}`, IntrospectionResponse{}},
+		{`{"active":false,"aud":1,"exp":"x"}`, IntrospectionResponse{}},
+		{`{"active":true,"exp":"x"}`, IntrospectionResponse{Active: true}},
+		{`{"active":true,"Sub":"s","SCOPE":"a"}`, IntrospectionResponse{Active: true}},
+	}
+	for _, tt := range tests {
+		got, err := parseResponse(http.StatusOK, tt.body)
+		if err != nil || !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: got %+v and error %v, want %+v", tt.body, got, err, tt.want)
+		}
+	}
+}
+
+func TestParseIntrospectionResponseRejects(t *testing.T) {
+	tests := []struct {
+		status int
+		body   string
+	}{
+		{http.StatusOK, `{"active":"true"}`},
+		{http.StatusOK, `not json`},
+		{http.StatusOK, `{"active":true,"aud":1}`},
+		{http.StatusOK, `{"active":true,"aud":[1]}`},
+		{http.StatusOK, `{"active":true}garbage`},
+		{http.StatusOK, `{"active":true}{"active":false}`},
+		{http.StatusOK, `{"active":true,"sub":"` + strings.Repeat("a", maxIntrospectionResponseSize) + `"}`},
+		{http.StatusOK, `{"active":true}` + strings.Repeat(" ", maxIntrospectionResponseSize) + `garbage`},
+		{http.StatusOK, `{}`},
+		{http.StatusOK, `null`},
+		{http.StatusOK, `{"active":null}`},
+		{http.StatusOK, `{"sub":"s"}`},
+		{http.StatusOK, `{"ACtive":true}`},
+		{http.StatusOK, `{"active":"false"}`},
+		{http.StatusOK, `{"active":false,"active":true}`},
+		{http.StatusOK, `{"active":true,"sub":"a","sub":"b"}`},
+		{http.StatusUnauthorized, `{"error":"invalid_client","error_description":"bad secret"}`},
+		{http.StatusBadRequest, `{"error":"unauthorized_client"}`},
+		{http.StatusNotFound, `404 page not found`},
+		{http.StatusInternalServerError, ``},
+	}
+	for _, tt := range tests {
+		got, err := parseResponse(tt.status, tt.body)
+		var e *Error
+		if err == nil || errors.As(err, &e) || strings.Contains(err.Error(), "bad secret") || !reflect.DeepEqual(got, IntrospectionResponse{}) {
+			t.Errorf("%d %.80s: got %+v and error %.80v, want an error that is not an OAuth error and leaves out the error description of an error response", tt.status, tt.body, got, err)
+		}
+	}
+}
+
+func FuzzParseIntrospectionResponse(f *testing.F) {
+	f.Add(http.StatusOK, `{"active":true,"scope":"a b","client_id":"c","sub":"s","exp":1,"aud":["rs"]}`)
+	f.Add(http.StatusOK, `{"active":true,"aud":"rs"}`)
+	f.Add(http.StatusOK, `{"active":false}`)
+	f.Add(http.StatusUnauthorized, `{"error":"invalid_client"}`)
+	f.Add(http.StatusInternalServerError, `oops`)
+	f.Fuzz(func(t *testing.T, status int, body string) {
+		got, err := parseResponse(status, body)
+		switch {
+		case err != nil:
+			if !reflect.DeepEqual(got, IntrospectionResponse{}) {
+				t.Fatalf("got %+v and error %v for status %d, want the zero value", got, err, status)
+			}
+		case status != http.StatusOK:
+			t.Fatalf("got %+v for status %d, want an error", got, status)
+		case !got.Active:
+			if !reflect.DeepEqual(got, IntrospectionResponse{}) {
+				t.Fatalf("got %+v for an inactive token, want the zero value", got)
+			}
+		default:
+			w := httptest.NewRecorder()
+			WriteIntrospection(w, got)
+			again, err := parseResponse(http.StatusOK, w.Body.String())
+			if err != nil || !reflect.DeepEqual(again, got) {
+				t.Fatalf("got %+v and error %v after a round trip, want %+v", again, err, got)
+			}
+		}
+	})
 }
 
 func TestWriteMetadata(t *testing.T) {

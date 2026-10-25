@@ -2,7 +2,7 @@ module github.com/gofabrik/oauth21
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	go.uber.org/goleak v1.3.0

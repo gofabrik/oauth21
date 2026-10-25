@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -88,6 +89,55 @@ func TestHandlerGetsAudience(t *testing.T) {
 	if w.Code != http.StatusOK || got.Subject != "alice" || !slices.Equal(got.Audience, []string{"rs-a"}) {
 		t.Fatalf("got status %d and token %+v, want 200 and the token of alice with audience rs-a", w.Code, got)
 	}
+}
+
+// remote returns a Remote for an introspection endpoint that answers every request with status and body.
+func remote(t *testing.T, status int, body string) bearer.Remote {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(ts.Close)
+	return bearer.Remote{Endpoint: ts.URL, ClientID: "rs-a", ClientSecret: "secret", Client: ts.Client()}
+}
+
+func TestRemoteReturnsToken(t *testing.T) {
+	r := remote(t, http.StatusOK, `{"active":true,"scope":"read write","client_id":"client","sub":"alice","exp":1419356238,"aud":["rs-a"]}`)
+	got, err := r.Validate(t.Context(), "token")
+	want := bearer.Token{Subject: "alice", ClientID: "client", Scopes: []string{"read", "write"}, Audience: []string{"rs-a"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v and error %v, want %+v", got, err, want)
+	}
+}
+
+func TestRemoteMalformedResponseIsServerError(t *testing.T) {
+	for _, body := range []string{`{"active":"true"}`, `[]`, ``} {
+		w := httptest.NewRecorder()
+		protected(remote(t, http.StatusOK, body)).ServeHTTP(w, request("Bearer token"))
+		if w.Code != http.StatusInternalServerError || w.Header().Get("WWW-Authenticate") != "" {
+			t.Errorf("%q: got status %d and WWW-Authenticate %q, want 500 without a challenge", body, w.Code, w.Header().Get("WWW-Authenticate"))
+		}
+	}
+}
+
+// blockingTransport answers no request until it is canceled.
+type blockingTransport struct{}
+
+func (blockingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+
+func TestRemoteTimesOut(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client := &http.Client{Transport: blockingTransport{}, Timeout: time.Second}
+		w := httptest.NewRecorder()
+		protected(bearer.Remote{Endpoint: "https://as.example/introspect", Client: client}).ServeHTTP(w, request("Bearer token"))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("got status %d, want 500 when introspection times out", w.Code)
+		}
+	})
 }
 
 type failingTokens struct{ store.Tokens }
