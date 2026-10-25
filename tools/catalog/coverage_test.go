@@ -46,14 +46,20 @@ import "testing"
 
 // TestS256 checks the S256 method.
 //
-//conformance:covers RFC7636-4.4-01 INV-0001
+//conformance:covers RFC7636-4.4-01
 func TestS256(t *testing.T) {}
 
 //conformance:covers RFC7636-4.4-01
 func TestS256Again(t *testing.T) {}
 
+//conformance:covers INV-0001
+func TestInvariant(t *testing.T) {}
+
 func TestUncovering(t *testing.T) {}
 `
+
+// withoutInvariant is coverageTests without the directive that covers INV-0001.
+var withoutInvariant = strings.Replace(coverageTests, "//conformance:covers INV-0001\n", "", 1)
 
 // bothListed is a known-uncovered list with RFC7636-4.4-02 and INV-0001.
 const bothListed = "# 01: t\nRFC7636-4.4-02\nINV-0001\n"
@@ -90,7 +96,7 @@ func TestCoverFindsDirectives(t *testing.T) {
 	}
 	want := map[string][]string{
 		"RFC7636-4.4-01": {"TestS256", "TestS256Again"},
-		"INV-0001":       {"TestS256"},
+		"INV-0001":       {"TestInvariant"},
 	}
 	for id, tests := range want {
 		if got := c.Tests(id); !slices.Equal(got, tests) {
@@ -172,6 +178,16 @@ func TestCoverInvalid(t *testing.T) {
 			name:  "without IDs",
 			files: map[string]string{"conformance/x_test.go": testFile("\n//conformance:covers\nfunc TestX(t *testing.T) {}\n")},
 			want:  "conformance/x_test.go:5: malformed directive",
+		},
+		{
+			name:  "with several IDs",
+			files: map[string]string{"conformance/x_test.go": testFile("\n//conformance:covers RFC7636-4.4-02 INV-0001\nfunc TestX(t *testing.T) {}\n")},
+			want:  "conformance/x_test.go:5: directive with more than one ID",
+		},
+		{
+			name:  "several directives on a test",
+			files: map[string]string{"conformance/x_test.go": testFile("\n//conformance:covers RFC7636-4.4-02\n//conformance:covers INV-0001\nfunc TestX(t *testing.T) {}\n")},
+			want:  "conformance/x_test.go:6: TestX has more than one directive",
 		},
 		{
 			name:  "misspelled",
@@ -317,20 +333,20 @@ func TestGateFails(t *testing.T) {
 		},
 		{
 			name:  "invariant uncovered",
-			files: map[string]string{"conformance/pkce_test.go": strings.Replace(coverageTests, " INV-0001", "", 1)},
+			files: map[string]string{"conformance/pkce_test.go": withoutInvariant},
 			want:  "INV-0001: uncovered and not on the known-uncovered list",
 		},
 		{
 			name: "invariant uncovered whatever its status",
 			files: map[string]string{
-				"conformance/pkce_test.go":            strings.Replace(coverageTests, " INV-0001", "", 1),
+				"conformance/pkce_test.go":            withoutInvariant,
 				"conformance/catalog/invariants.yaml": strings.Replace(invariants, "status: applicable", "status: out-of-scope\n    reason: client-requirement", 1),
 			},
 			want: "INV-0001: uncovered and not on the known-uncovered list",
 		},
 		{
 			name:  "listed but covered",
-			files: map[string]string{"conformance/pkce_test.go": strings.Replace(coverageTests, " INV-0001", " INV-0001 RFC7636-4.4-02", 1)},
+			files: map[string]string{"conformance/x_test.go": testFile("\n//conformance:covers RFC7636-4.4-02\nfunc TestX(t *testing.T) {}\n")},
 			want:  "RFC7636-4.4-02: covered but on the known-uncovered list",
 		},
 	}
@@ -348,8 +364,8 @@ func TestGateFails(t *testing.T) {
 }
 
 func TestGateRatchet(t *testing.T) {
-	withoutInvariant := map[string]string{
-		"conformance/pkce_test.go":          strings.Replace(coverageTests, " INV-0001", "", 1),
+	uncoveredRepo := map[string]string{
+		"conformance/pkce_test.go":          withoutInvariant,
 		"conformance/catalog/uncovered.txt": bothListed,
 	}
 	tests := []struct {
@@ -383,7 +399,7 @@ func TestGateRatchet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, err := Cover(repo(withoutInvariant), repo(tt.base))
+			c, err := Cover(repo(uncoveredRepo), repo(tt.base))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -513,7 +529,7 @@ func TestRunCoverageFails(t *testing.T) {
 
 func TestRunCoverageAgainstBase(t *testing.T) {
 	dir := writeRepo(t, repo(map[string]string{
-		"conformance/pkce_test.go":          strings.Replace(coverageTests, " INV-0001", "", 1),
+		"conformance/pkce_test.go":          withoutInvariant,
 		"conformance/catalog/uncovered.txt": bothListed,
 	}))
 	base := writeRepo(t, repo(nil))
@@ -534,20 +550,24 @@ func TestRunCoverageUsage(t *testing.T) {
 func FuzzDirectives(f *testing.F) {
 	f.Add(coverageTests)
 	f.Add("package x\n\nfunc TestX() {\n\t//conformance:covers\n}\n/*\n//conformance:covers A\n*/")
+	f.Add("package x\n\nimport \"testing\"\n\n//conformance:covers A B\n//conformance:covers C\n//conformance:covers D\nfunc TestX(t *testing.T) {}\n")
 	f.Fuzz(func(t *testing.T, src string) {
 		ds, _ := directives("x_test.go", []byte(src))
+		tests := map[string]bool{}
 		for _, d := range ds {
-			if len(d.ids) == 0 {
-				t.Errorf("%s: directive without IDs", d.pos)
+			if d.id == "" || strings.ContainsFunc(d.id, unicode.IsSpace) {
+				t.Errorf("%s: invalid ID %q", d.pos, d.id)
 			}
-			if d.test != "" && !strings.HasPrefix(d.test, "Test") {
+			if d.test == "" {
+				continue
+			}
+			if !strings.HasPrefix(d.test, "Test") {
 				t.Errorf("%s: %q is not a test function", d.pos, d.test)
 			}
-			for _, id := range d.ids {
-				if id == "" || strings.ContainsFunc(id, unicode.IsSpace) {
-					t.Errorf("%s: invalid ID %q", d.pos, id)
-				}
+			if tests[d.test] {
+				t.Errorf("%s: second directive on %s", d.pos, d.test)
 			}
+			tests[d.test] = true
 		}
 	})
 }

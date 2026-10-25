@@ -15,7 +15,7 @@ import (
 
 // TestAuthorizationCodeFlow checks that a public Client redeems a code with its verifier for an access token.
 //
-//conformance:covers RFC7636-4.2-02 RFC7636-4.4-01 RFC7636-4.5-02 RFC7636-4.6-01
+//conformance:covers RFC7636-4.6-01
 func TestAuthorizationCodeFlow(t *testing.T) {
 	a := newAuthorizationServer(t)
 	u := a.login(a.authorize(authorizeParams()), "alice")

@@ -36,7 +36,7 @@ type Coverage struct {
 type directive struct {
 	pos  string
 	test string
-	ids  []string
+	id   string
 }
 
 // coverRepo reports the coverage of the repository in dir and gates it, against the repository in base if it is set.
@@ -111,13 +111,11 @@ func Cover(fsys, base fs.FS) (*Coverage, error) {
 				errs = append(errs, fmt.Errorf("%s: directive not on a test function", d.pos))
 				continue
 			}
-			for _, id := range d.ids {
-				if _, ok := c.gate[id]; !ok {
-					errs = append(errs, fmt.Errorf("%s: unknown ID %q", d.pos, id))
-					continue
-				}
-				c.tests[id] = append(c.tests[id], d.test)
+			if _, ok := c.gate[d.id]; !ok {
+				errs = append(errs, fmt.Errorf("%s: unknown ID %q", d.pos, d.id))
+				continue
 			}
+			c.tests[d.id] = append(c.tests[d.id], d.test)
 		}
 		return nil
 	})
@@ -370,6 +368,7 @@ func directives(name string, src []byte) ([]directive, error) {
 	var (
 		out  []directive
 		errs []error
+		seen = map[string]bool{}
 	)
 	for _, g := range f.Comments {
 		for _, c := range g.List {
@@ -382,7 +381,19 @@ func directives(name string, src []byte) ([]directive, error) {
 				errs = append(errs, fmt.Errorf("%s: malformed directive %q", pos, c.Text))
 				continue
 			}
-			out = append(out, directive{pos: pos, test: tests[c], ids: fields[1:]})
+			if len(fields) > 2 {
+				errs = append(errs, fmt.Errorf("%s: directive with more than one ID", pos))
+				continue
+			}
+			test := tests[c]
+			if test != "" {
+				if seen[test] {
+					errs = append(errs, fmt.Errorf("%s: %s has more than one directive", pos, test))
+					continue
+				}
+				seen[test] = true
+			}
+			out = append(out, directive{pos: pos, test: test, id: fields[1]})
 		}
 	}
 	return out, errors.Join(errs...)

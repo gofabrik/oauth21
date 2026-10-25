@@ -10,20 +10,66 @@ import (
 	"github.com/gofabrik/oauth21/store"
 )
 
-// TestAuthorizationRequiresCodeChallenge checks that a request without a code challenge gets invalid_request.
+// TestAuthorizationRequiresCodeChallenge checks that a request without a code challenge gets an error instead of a code.
 //
-//conformance:covers RFC7636-4.3-01 RFC7636-4.4.1-01 RFC7636-4.4.1-02 OAUTH21D16-4.1.1-16
+//conformance:covers RFC7636-4.3-01
 func TestAuthorizationRequiresCodeChallenge(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Del("code_challenge")
+	if q := a.authorize(params).Query(); q.Has("code") || !q.Has("error") {
+		t.Fatalf("got redirect query %v, want an error and no code", q)
+	}
+}
+
+// TestMissingCodeChallengeGetsInvalidRequest checks that a request without a code challenge gets invalid_request.
+//
+//conformance:covers RFC7636-4.4.1-01
+func TestMissingCodeChallengeGetsInvalidRequest(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Del("code_challenge")
+	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
+}
+
+// TestMissingCodeChallengeIsExplained checks that the error_description says a code challenge is required.
+//
+//conformance:covers RFC7636-4.4.1-02
+func TestMissingCodeChallengeIsExplained(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("code_challenge")
 	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
 }
 
+// TestServerEnforcesPKCE checks that neither the code challenge nor the code verifier can be left out.
+//
+//conformance:covers OAUTH21D16-4.1.1-16
+func TestServerEnforcesPKCE(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Del("code_challenge")
+	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
+	a.wantVerifierRequired(tokenParams(a.code(authorizeParams())), nil)
+}
+
 // TestAuthorizationRejectsUnsupportedMethod checks that plain, missing and unknown methods get invalid_request.
 //
-//conformance:covers RFC7636-4.4.1-03 RFC7636-4.4.1-04 OAUTH21D16-4.1.1-06
+//conformance:covers RFC7636-4.4.1-03
 func TestAuthorizationRejectsUnsupportedMethod(t *testing.T) {
+	wantUnsupportedMethodRejected(t, "")
+}
+
+// TestUnsupportedTransformIsExplained checks that the error_description of plain, missing and unknown methods says the transform algorithm is not supported.
+//
+//conformance:covers RFC7636-4.4.1-04
+func TestUnsupportedTransformIsExplained(t *testing.T) {
+	wantUnsupportedMethodRejected(t, "transform algorithm not supported")
+}
+
+// wantUnsupportedMethodRejected checks that plain, missing and unknown methods get invalid_request with description in the error_description.
+func wantUnsupportedMethodRejected(t *testing.T, description string) {
+	t.Helper()
 	for _, method := range []string{"plain", "", "s256", "S512"} {
 		t.Run(method, func(t *testing.T) {
 			a := newAuthorizationServer(t)
@@ -33,9 +79,19 @@ func TestAuthorizationRejectsUnsupportedMethod(t *testing.T) {
 			if method == "" {
 				params.Del("code_challenge_method")
 			}
-			a.wantAuthorizationError(a.authorize(params), "invalid_request", "transform algorithm not supported")
+			a.wantAuthorizationError(a.authorize(params), "invalid_request", description)
 		})
 	}
+}
+
+// TestAuthorizationRequiresCodeChallengeMethod checks that a request without a code_challenge_method gets invalid_request.
+//
+//conformance:covers OAUTH21D16-4.1.1-06
+func TestAuthorizationRequiresCodeChallengeMethod(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Del("code_challenge_method")
+	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
 }
 
 // TestCodeChallengeNotExposed checks that no redirect carries the code challenge.
@@ -54,7 +110,7 @@ func TestCodeChallengeNotExposed(t *testing.T) {
 
 // TestTokenRequiresCodeVerifier checks that a redemption without a code verifier gets invalid_request.
 //
-//conformance:covers RFC7636-4.5-01 OAUTH21D16-4.1.1-16
+//conformance:covers RFC7636-4.5-01
 func TestTokenRequiresCodeVerifier(t *testing.T) {
 	a := newAuthorizationServer(t)
 	a.wantVerifierRequired(tokenParams(a.code(authorizeParams())), nil)
@@ -69,7 +125,7 @@ func (a *authorizationServer) wantVerifierRequired(params url.Values, header htt
 
 // TestTokenRejectsWrongCodeVerifier checks that a non-matching code verifier gets invalid_grant.
 //
-//conformance:covers RFC7636-4.5-02 RFC7636-4.6-02
+//conformance:covers RFC7636-4.6-02
 func TestTokenRejectsWrongCodeVerifier(t *testing.T) {
 	for name, v := range map[string]string{
 		"other":     strings.Repeat("a", 43),
@@ -83,9 +139,21 @@ func TestTokenRejectsWrongCodeVerifier(t *testing.T) {
 	}
 }
 
+// TestTokenVerifiesWithS256 checks that the code verifier is compared through S256, not as the code challenge itself.
+//
+//conformance:covers RFC7636-4.5-02
+func TestTokenVerifiesWithS256(t *testing.T) {
+	a := newAuthorizationServer(t)
+	status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), challenge), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
 // TestCodeChallengeIsBoundToCode checks that a code redeems only with the verifier of its own request.
 //
-//conformance:covers RFC7636-4.4-01 RFC7636-4.5-02
+//conformance:covers RFC7636-4.4-01
 func TestCodeChallengeIsBoundToCode(t *testing.T) {
 	a := newAuthorizationServer(t)
 	other := strings.Repeat("o", 43)
@@ -107,6 +175,19 @@ func TestCodeChallengeIsBoundToCode(t *testing.T) {
 func TestServerSupportsPKCE(t *testing.T) {
 	a := newAuthorizationServer(t)
 	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
+// TestServerSupportsS256 checks that a code requested with the S256 code challenge of RFC 7636 Appendix B redeems with its code verifier.
+//
+//conformance:covers RFC7636-4.2-02
+func TestServerSupportsS256(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("code_challenge", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+	params.Set("code_challenge_method", "S256")
+	if status, _, body := a.token(withVerifier(tokenParams(a.code(params)), "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), nil); status != http.StatusOK {
 		t.Fatalf("got status %d and body %v, want 200", status, body)
 	}
 }
