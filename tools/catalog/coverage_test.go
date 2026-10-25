@@ -55,6 +55,9 @@ func TestS256Again(t *testing.T) {}
 func TestUncovering(t *testing.T) {}
 `
 
+// bothListed is a known-uncovered list with RFC7636-4.4-02 and INV-0001.
+const bothListed = "# 01: t\nRFC7636-4.4-02\nINV-0001\n"
+
 // testFile returns a conformance test file with body after its imports, which end on line 4.
 func testFile(body string) string {
 	return "package conformance\n\nimport \"testing\"\n" + body
@@ -67,7 +70,7 @@ func repo(files map[string]string) fstest.MapFS {
 		"conformance/go.mod":                  {Data: []byte("module example.com/conformance\n")},
 		"conformance/catalog/rfc7636.yaml":    {Data: []byte(coverageCatalog)},
 		"conformance/catalog/invariants.yaml": {Data: []byte(invariants)},
-		"conformance/catalog/uncovered.txt":   {Data: []byte("RFC7636-4.4-02\n")},
+		"conformance/catalog/uncovered.txt":   {Data: []byte("# 01: t\nRFC7636-4.4-02\n")},
 		"conformance/pkce_test.go":            {Data: []byte(coverageTests)},
 	}
 	for name, data := range files {
@@ -191,6 +194,41 @@ func TestCoverInvalid(t *testing.T) {
 			want:  "conformance/x_test.go:1",
 		},
 		{
+			name:  "ID outside a group",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\n"},
+			want:  "conformance/catalog/uncovered.txt:1: RFC7636-4.4-02 outside a ticket group",
+		},
+		{
+			name:  "ID under a comment",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "# Known uncovered.\nRFC7636-4.4-02\n"},
+			want:  "conformance/catalog/uncovered.txt:2: RFC7636-4.4-02 outside a ticket group",
+		},
+		{
+			name:  "ID under a heading without a title",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "# 25:\nRFC7636-4.4-02\n"},
+			want:  "conformance/catalog/uncovered.txt:2: RFC7636-4.4-02 outside a ticket group",
+		},
+		{
+			name:  "ID under a heading without a number",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "# 25a: title\nRFC7636-4.4-02\n"},
+			want:  "conformance/catalog/uncovered.txt:2: RFC7636-4.4-02 outside a ticket group",
+		},
+		{
+			name:  "heading without a title after a group",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "# 25: title\nRFC7636-4.4-01\n# 26:\nRFC7636-4.4-02\n"},
+			want:  `conformance/catalog/uncovered.txt:3: malformed ticket heading "# 26:"`,
+		},
+		{
+			name:  "heading without a number after a group",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "# 25: title\nRFC7636-4.4-01\n# 26a: title\nRFC7636-4.4-02\n"},
+			want:  `conformance/catalog/uncovered.txt:3: malformed ticket heading "# 26a: title"`,
+		},
+		{
+			name:  "heading with one digit",
+			files: map[string]string{"conformance/catalog/uncovered.txt": "# 3: title\nRFC7636-4.4-02\n"},
+			want:  `conformance/catalog/uncovered.txt:1: malformed ticket heading "# 3: title"`,
+		},
+		{
 			name:  "invalid catalog",
 			files: map[string]string{"conformance/catalog/invariants.yaml": "document: inv\n"},
 			want:  "invalid document ID",
@@ -256,7 +294,7 @@ func TestCoverSkipsIgnoredFiles(t *testing.T) {
 
 func TestGatePasses(t *testing.T) {
 	c, err := Cover(repo(map[string]string{
-		"conformance/catalog/uncovered.txt": "# Known uncovered.\n\nRFC7636-4.4-02\n",
+		"conformance/catalog/uncovered.txt": "# Known uncovered.\n\n# 25: authenticate first\n# 2 more to come.\nRFC7636-4.4-02\n",
 	}), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +350,7 @@ func TestGateFails(t *testing.T) {
 func TestGateRatchet(t *testing.T) {
 	withoutInvariant := map[string]string{
 		"conformance/pkce_test.go":          strings.Replace(coverageTests, " INV-0001", "", 1),
-		"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\nINV-0001\n",
+		"conformance/catalog/uncovered.txt": bothListed,
 	}
 	tests := []struct {
 		name string
@@ -321,7 +359,7 @@ func TestGateRatchet(t *testing.T) {
 	}{
 		{
 			name: "listed at the base",
-			base: map[string]string{"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\nINV-0001\n"},
+			base: map[string]string{"conformance/catalog/uncovered.txt": bothListed},
 		},
 		{
 			name: "added to the list",
@@ -363,7 +401,7 @@ func TestGateRatchet(t *testing.T) {
 func TestGateRatchetNewlyGated(t *testing.T) {
 	head := repo(map[string]string{
 		"conformance/catalog/rfc7636.yaml":  strings.Replace(coverageCatalog, "status: out-of-scope\n    reason: client-requirement", "status: applicable", 1),
-		"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\nRFC7636-4.6-01\n",
+		"conformance/catalog/uncovered.txt": "# 01: t\nRFC7636-4.4-02\nRFC7636-4.6-01\n",
 	})
 	tests := []struct {
 		name   string
@@ -476,7 +514,7 @@ func TestRunCoverageFails(t *testing.T) {
 func TestRunCoverageAgainstBase(t *testing.T) {
 	dir := writeRepo(t, repo(map[string]string{
 		"conformance/pkce_test.go":          strings.Replace(coverageTests, " INV-0001", "", 1),
-		"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\nINV-0001\n",
+		"conformance/catalog/uncovered.txt": bothListed,
 	}))
 	base := writeRepo(t, repo(nil))
 	err := run([]string{"coverage", dir, base}, &bytes.Buffer{})

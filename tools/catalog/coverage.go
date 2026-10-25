@@ -65,7 +65,10 @@ func Cover(fsys, base fs.FS) (*Coverage, error) {
 	if err := cat.Validate(); err != nil {
 		return nil, err
 	}
-	c := &Coverage{catalog: cat, gate: map[string]bool{}, tests: map[string][]string{}, uncovered: list}
+	if err := checkGroups(list); err != nil {
+		return nil, err
+	}
+	c := &Coverage{catalog: cat, gate: map[string]bool{}, tests: map[string][]string{}, uncovered: parseUncovered(list)}
 	for _, d := range cat.Documents {
 		for _, r := range d.Requirements {
 			c.gate[r.ID] = gated(d.ID, r)
@@ -202,7 +205,7 @@ func gated(doc string, r Requirement) bool {
 }
 
 // loadCatalog reads the catalog, unvalidated, and the known-uncovered list of the repository in fsys.
-func loadCatalog(fsys fs.FS) (*Catalog, []string, error) {
+func loadCatalog(fsys fs.FS) (*Catalog, []byte, error) {
 	sub, err := fs.Sub(fsys, catalogDir)
 	if err != nil {
 		return nil, nil, err
@@ -215,7 +218,7 @@ func loadCatalog(fsys fs.FS) (*Catalog, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return cat, parseUncovered(list), nil
+	return cat, list, nil
 }
 
 // baseListed maps the IDs of the base catalog, except those out-of-scope for an excluded feature, to whether they are on its known-uncovered list.
@@ -242,7 +245,7 @@ func baseListed(base fs.FS) (map[string]bool, error) {
 			}
 		}
 	}
-	for _, id := range list {
+	for _, id := range parseUncovered(list) {
 		if _, ok := m[id]; ok {
 			m[id] = true
 		}
@@ -260,6 +263,47 @@ func parseUncovered(data []byte) []string {
 		}
 	}
 	return ids
+}
+
+// checkGroups returns an error for each ID of a known-uncovered list that is not under a "# NN: <title>" ticket heading.
+func checkGroups(data []byte) error {
+	var (
+		errs  []error
+		group bool
+		n     int
+	)
+	for line := range strings.Lines(string(data)) {
+		n++
+		line = strings.TrimSpace(line)
+		switch {
+		case ticketHeading(line):
+			group = true
+		case numberedComment(line):
+			group = false
+			errs = append(errs, fmt.Errorf("%s:%d: malformed ticket heading %q", uncoveredFile, n, line))
+		case line == "" || strings.HasPrefix(line, "#"):
+		case !group:
+			errs = append(errs, fmt.Errorf("%s:%d: %s outside a ticket group", uncoveredFile, n, line))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ticketHeading reports whether line is a "# NN: <title>" ticket heading, with at least two digits.
+func ticketHeading(line string) bool {
+	rest, ok := strings.CutPrefix(line, "# ")
+	if !ok {
+		return false
+	}
+	num, title, ok := strings.Cut(rest, ": ")
+	return ok && len(num) >= 2 && strings.Trim(num, "0123456789") == "" && title != ""
+}
+
+// numberedComment reports whether line is a comment whose first word starts with a digit and has a colon, as a ticket heading does.
+func numberedComment(line string) bool {
+	rest, ok := strings.CutPrefix(line, "#")
+	fields := strings.Fields(rest)
+	return ok && len(fields) > 0 && fields[0][0] >= '0' && fields[0][0] <= '9' && strings.Contains(fields[0], ":")
 }
 
 // ignored reports whether the go command always ignores a file or directory with this name.
