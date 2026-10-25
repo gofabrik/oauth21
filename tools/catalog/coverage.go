@@ -62,6 +62,9 @@ func Cover(fsys, base fs.FS) (*Coverage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := cat.Validate(); err != nil {
+		return nil, err
+	}
 	c := &Coverage{catalog: cat, gate: map[string]bool{}, tests: map[string][]string{}, uncovered: list}
 	for _, d := range cat.Documents {
 		for _, r := range d.Requirements {
@@ -198,13 +201,13 @@ func gated(doc string, r Requirement) bool {
 	return doc == InvariantsDocument || (r.Status == Applicable && r.Keyword.Absolute())
 }
 
-// loadCatalog reads the catalog and the known-uncovered list of the repository in fsys.
+// loadCatalog reads the catalog, unvalidated, and the known-uncovered list of the repository in fsys.
 func loadCatalog(fsys fs.FS) (*Catalog, []string, error) {
 	sub, err := fs.Sub(fsys, catalogDir)
 	if err != nil {
 		return nil, nil, err
 	}
-	cat, err := Load(sub)
+	cat, err := read(sub)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,7 +218,7 @@ func loadCatalog(fsys fs.FS) (*Catalog, []string, error) {
 	return cat, parseUncovered(list), nil
 }
 
-// baseListed maps the IDs of the base catalog to whether they are on its known-uncovered list.
+// baseListed maps the IDs of the base catalog, except those out-of-scope for an excluded feature, to whether they are on its known-uncovered list.
 // It is nil when there is no base or the base has no list.
 func baseListed(base fs.FS) (map[string]bool, error) {
 	if base == nil {
@@ -234,7 +237,9 @@ func baseListed(base fs.FS) (map[string]bool, error) {
 	m := map[string]bool{}
 	for _, d := range cat.Documents {
 		for _, r := range d.Requirements {
-			m[r.ID] = false
+			if r.Reason != Excluded {
+				m[r.ID] = false
+			}
 		}
 	}
 	for _, id := range list {

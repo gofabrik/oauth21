@@ -53,11 +53,31 @@ const (
 
 var statuses = []Status{Applicable, Superseded, OutOfScope, Informative}
 
+// Reason is why a Requirement is out-of-scope.
+type Reason string
+
+const (
+	// ClientRequirement is a Requirement on a Client or an external Resource Server.
+	ClientRequirement Reason = "client-requirement"
+	// Excluded is a Requirement on a feature spec.md excludes.
+	Excluded Reason = "excluded"
+)
+
+var reasons = []Reason{ClientRequirement, Excluded}
+
+// excludedFile lists the features spec.md excludes.
+const excludedFile = "excluded.yaml"
+
 // InvariantsDocument is the document ID of the Security Invariants.
 const InvariantsDocument = "INV"
 
 type Catalog struct {
 	Documents []Document
+	Excluded  []string
+}
+
+type excludedList struct {
+	Features []string `yaml:"features"`
 }
 
 type Document struct {
@@ -74,6 +94,8 @@ type Requirement struct {
 	Text         string   `yaml:"text"`
 	Statement    string   `yaml:"statement,omitempty"`
 	Status       Status   `yaml:"status"`
+	Reason       Reason   `yaml:"reason,omitempty"`
+	Feature      string   `yaml:"feature,omitempty"`
 	SupersededBy []string `yaml:"superseded_by,omitempty"`
 	Note         string   `yaml:"note,omitempty"`
 }
@@ -82,11 +104,24 @@ var (
 	documentID  = regexp.MustCompile(`^[A-Z][A-Z0-9]*$`)
 	sectionID   = regexp.MustCompile(`^[0-9A-Z]+(\.[0-9]+)*$`)
 	invariantID = regexp.MustCompile(`^INV-[0-9]{4}$`)
+	featureName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	sequence    = regexp.MustCompile(`^[0-9]{2,}$`)
 )
 
-// Load reads every *.yaml file in the root of fsys and validates the result.
+// Load reads the catalog in the root of fsys and validates it.
 func Load(fsys fs.FS) (*Catalog, error) {
+	c, err := read(fsys)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// read reads the excluded features and every other *.yaml document in the root of fsys.
+func read(fsys fs.FS) (*Catalog, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err
@@ -96,14 +131,19 @@ func Load(fsys fs.FS) (*Catalog, error) {
 		if e.IsDir() || path.Ext(e.Name()) != ".yaml" {
 			continue
 		}
-		d, err := decode(fsys, e.Name())
+		if e.Name() == excludedFile {
+			l, err := decode[excludedList](fsys, e.Name())
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", e.Name(), err)
+			}
+			c.Excluded = l.Features
+			continue
+		}
+		d, err := decode[Document](fsys, e.Name())
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
 		c.Documents = append(c.Documents, d)
-	}
-	if err := c.Validate(); err != nil {
-		return nil, err
 	}
 	return &c, nil
 }
@@ -113,6 +153,17 @@ func (c *Catalog) Validate() error {
 	var errs []error
 	fail := func(format string, args ...any) {
 		errs = append(errs, fmt.Errorf(format, args...))
+	}
+
+	features := map[string]bool{}
+	for _, f := range c.Excluded {
+		if !featureName.MatchString(f) {
+			fail("excluded feature %q: invalid name", f)
+		}
+		if features[f] {
+			fail("excluded feature %q: duplicate", f)
+		}
+		features[f] = true
 	}
 
 	docs := map[string]bool{}
@@ -152,6 +203,18 @@ func (c *Catalog) Validate() error {
 			if (r.Status == Superseded) != (len(r.SupersededBy) > 0) {
 				fail("%s: superseded_by must be set exactly when status is %q", r.ID, Superseded)
 			}
+			if (r.Status == OutOfScope) != (r.Reason != "") {
+				fail("%s: reason must be set exactly when status is %q", r.ID, OutOfScope)
+			}
+			if r.Reason != "" && !slices.Contains(reasons, r.Reason) {
+				fail("%s: unknown reason %q", r.ID, r.Reason)
+			}
+			if (r.Reason == Excluded) != (r.Feature != "") {
+				fail("%s: feature must be set exactly when reason is %q", r.ID, Excluded)
+			}
+			if r.Reason == Excluded && r.Feature != "" && !features[r.Feature] {
+				fail("%s: feature %q is not in %s", r.ID, r.Feature, excludedFile)
+			}
 		}
 	}
 
@@ -175,29 +238,30 @@ func (c *Catalog) Validate() error {
 }
 
 // decode reads a file that must hold exactly one YAML document.
-func decode(fsys fs.FS, name string) (Document, error) {
+func decode[T any](fsys fs.FS, name string) (T, error) {
 	f, err := fsys.Open(name)
 	if err != nil {
-		return Document{}, err
+		var zero T
+		return zero, err
 	}
 	defer func() { _ = f.Close() }()
-	return parse(f)
+	return parse[T](f)
 }
 
 // parse reads exactly one YAML document from r.
-func parse(r io.Reader) (Document, error) {
-	var d Document
+func parse[T any](r io.Reader) (T, error) {
+	var v, zero T
 	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true)
-	if err := dec.Decode(&d); errors.Is(err, io.EOF) {
-		return Document{}, errors.New("empty file")
+	if err := dec.Decode(&v); errors.Is(err, io.EOF) {
+		return zero, errors.New("empty file")
 	} else if err != nil {
-		return Document{}, err
+		return zero, err
 	}
 	if err := dec.Decode(new(yaml.Node)); !errors.Is(err, io.EOF) {
-		return Document{}, errors.New("more than one YAML document")
+		return zero, errors.New("more than one YAML document")
 	}
-	return d, nil
+	return v, nil
 }
 
 // validID checks that r.ID is "<document>-<section>-<NN>", or "INV-NNNN" for

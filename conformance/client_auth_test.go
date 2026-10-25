@@ -149,6 +149,8 @@ func TestRepeatedAuthorizationHeader(t *testing.T) {
 }
 
 // TestPublicClientCannotUseBasic checks that a public Client presenting its own identifier with Basic gets invalid_client.
+//
+//conformance:covers OAUTH21D16-2.4.2-02
 func TestPublicClientCannotUseBasic(t *testing.T) {
 	a := newConfidentialServer(t)
 	params := tokenParams(a.code(authorizeParams()))

@@ -7,20 +7,20 @@ requirements:
     keyword: SHOULD
     text: 'NOTE: The code verifier SHOULD have enough entropy to make it impractical to guess the value.'
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-4.1-02
     section: "4.1"
     keyword: RECOMMENDED
     text: It is RECOMMENDED that the output of a suitable random number generator be used to create a 32-octet sequence.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-4.2-01
     section: "4.2"
     keyword: MUST
     text: If the client is capable of using "S256", it MUST use "S256", as "S256" is Mandatory To Implement (MTI) on the server.
     statement: A client capable of using S256 MUST use S256.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-4.2-02
     section: "4.2"
     keyword: MUST
@@ -105,7 +105,7 @@ requirements:
     keyword: SHOULD
     text: As the OAuth 2.0 [RFC6749] server responses are unchanged by this specification, client implementations of this specification do not need to know if the server has implemented this specification or not and SHOULD send the additional parameters as defined in Section 4 to all servers.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-6.2.1-01
     section: 6.2.1
     keyword: RECOMMENDED
@@ -117,13 +117,13 @@ requirements:
     keyword: SHOULD
     text: The client SHOULD create a "code_verifier" with a minimum of 256 bits of entropy.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-7.2-01
     section: "7.2"
     keyword: MUST NOT
     text: Clients MUST NOT downgrade to "plain" after trying the "S256" method.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-7.2-02
     section: "7.2"
     keyword: SHOULD NOT
@@ -145,13 +145,14 @@ requirements:
     keyword: SHOULD
     text: The "S256" code challenge method or other cryptographically secure code challenge method extension SHOULD be used.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: RFC7636-7.2-05
     section: "7.2"
     keyword: MUST
     text: If the code challenge method is "plain" and the code challenge is to be returned inside authorization "code" to achieve a stateless server, it MUST be encrypted in such a manner that only the server can decrypt and extract it.
-    status: out-of-scope
-    note: The plain method is not supported, and codes are opaque values that do not carry the code challenge.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-06
   - id: RFC7636-7.4-01
     section: "7.4"
     keyword: SHOULD

@@ -198,7 +198,7 @@ func extractFile(name string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	d, err := parse(bytes.NewReader(data))
+	d, err := parse[Document](bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
@@ -237,7 +237,7 @@ func appendRequirements(data []byte, d Document, rs []Requirement) ([]byte, erro
 	}
 	out = append(append(out, '\n'), items...)
 
-	got, err := parse(bytes.NewReader(out))
+	got, err := parse[Document](bytes.NewReader(out))
 	if err != nil || !reflect.DeepEqual(got.Requirements, append(d.Requirements, rs...)) {
 		return nil, errors.New("cannot append; the requirements block list must come last")
 	}

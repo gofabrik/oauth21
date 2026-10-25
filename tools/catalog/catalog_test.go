@@ -48,6 +48,32 @@ requirements:
     status: applicable
 `
 
+const outOfScope = `
+document: OAUTH21D16
+title: The OAuth 2.1 Authorization Framework
+source: specs/draft-ietf-oauth-v2-1-16.txt
+requirements:
+  - id: OAUTH21D16-5.1-01
+    section: "5.1"
+    keyword: MUST
+    text: Clients MUST NOT send the access token in a URI query parameter.
+    status: out-of-scope
+    reason: client-requirement
+  - id: OAUTH21D16-7.9-01
+    section: "7.9"
+    keyword: SHOULD
+    text: Authorization servers SHOULD restrict tokens to one audience.
+    status: out-of-scope
+    reason: excluded
+    feature: resource-indicators
+`
+
+const excluded = `
+features:
+  - resource-indicators
+  - dpop
+`
+
 func load(files map[string]string) error {
 	fsys := fstest.MapFS{}
 	for name, data := range files {
@@ -70,6 +96,12 @@ func TestLoadValid(t *testing.T) {
 	}
 	if len(c.Documents) != 3 {
 		t.Fatalf("got %d documents, want 3", len(c.Documents))
+	}
+}
+
+func TestLoadOutOfScope(t *testing.T) {
+	if err := load(map[string]string{"oauth21d16.yaml": outOfScope, "excluded.yaml": excluded}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -158,6 +190,61 @@ func TestLoadInvalid(t *testing.T) {
 			name:  "shared text without statement",
 			files: map[string]string{"a.yaml": invariants + "  - id: INV-0002\n    keyword: MUST\n    text: An authorization code issues tokens at most once.\n    statement: Tokens are issued once.\n    status: applicable\n"},
 			want:  "INV-0001: shares its text with another requirement and has no statement",
+		},
+		{
+			name:  "out-of-scope without reason",
+			files: map[string]string{"a.yaml": strings.Replace(outOfScope, "    reason: client-requirement\n", "", 1), "excluded.yaml": excluded},
+			want:  "OAUTH21D16-5.1-01: reason must be set exactly when status is \"out-of-scope\"",
+		},
+		{
+			name:  "reason without out-of-scope status",
+			files: map[string]string{"a.yaml": invariants + "    reason: client-requirement\n"},
+			want:  "INV-0001: reason must be set exactly when status is \"out-of-scope\"",
+		},
+		{
+			name:  "unknown reason",
+			files: map[string]string{"a.yaml": strings.Replace(outOfScope, "reason: client-requirement", "reason: host", 1), "excluded.yaml": excluded},
+			want:  `OAUTH21D16-5.1-01: unknown reason "host"`,
+		},
+		{
+			name:  "excluded without feature",
+			files: map[string]string{"a.yaml": strings.Replace(outOfScope, "    feature: resource-indicators\n", "", 1), "excluded.yaml": excluded},
+			want:  "OAUTH21D16-7.9-01: feature must be set exactly when reason is \"excluded\"",
+		},
+		{
+			name:  "feature with client reason",
+			files: map[string]string{"a.yaml": strings.Replace(outOfScope, "reason: client-requirement\n", "reason: client-requirement\n    feature: dpop\n", 1), "excluded.yaml": excluded},
+			want:  "OAUTH21D16-5.1-01: feature must be set exactly when reason is \"excluded\"",
+		},
+		{
+			name:  "feature not excluded",
+			files: map[string]string{"a.yaml": strings.Replace(outOfScope, "feature: resource-indicators", "feature: logging", 1), "excluded.yaml": excluded},
+			want:  `OAUTH21D16-7.9-01: feature "logging" is not in excluded.yaml`,
+		},
+		{
+			name:  "feature without excluded file",
+			files: map[string]string{"a.yaml": outOfScope},
+			want:  `OAUTH21D16-7.9-01: feature "resource-indicators" is not in excluded.yaml`,
+		},
+		{
+			name:  "duplicate excluded feature",
+			files: map[string]string{"excluded.yaml": excluded + "  - dpop\n"},
+			want:  `excluded feature "dpop": duplicate`,
+		},
+		{
+			name:  "empty excluded feature",
+			files: map[string]string{"excluded.yaml": excluded + "  - \"\"\n"},
+			want:  `excluded feature "": invalid name`,
+		},
+		{
+			name:  "unknown field in excluded file",
+			files: map[string]string{"excluded.yaml": "featurez: []\n"},
+			want:  "excluded.yaml: yaml: unmarshal errors",
+		},
+		{
+			name:  "empty excluded file",
+			files: map[string]string{"excluded.yaml": ""},
+			want:  "excluded.yaml: empty file",
 		},
 		{
 			name:  "dangling successor",

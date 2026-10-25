@@ -7,7 +7,7 @@ requirements:
     keyword: MUST NOT
     text: The client MUST NOT expect to be able to parse the access token value.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-1.4-02
     section: "1.4"
     keyword: MUST
@@ -93,7 +93,8 @@ requirements:
     keyword: SHOULD
     text: Authorization and resource servers SHOULD use mechanisms for sender-constraining access tokens, such as OAuth Demonstration of Proof of Possession (DPoP) [RFC9449] or Mutual TLS for OAuth 2.0 [RFC8705].
     status: out-of-scope
-    note: DPoP and mTLS are not implemented.
+    reason: excluded
+    feature: dpop
   - id: OAUTH21D16-1.4.3-02
     section: 1.4.3
     keyword: RECOMMENDED
@@ -170,7 +171,7 @@ requirements:
     keyword: MUST
     text: Any clients with credentials MUST take precautions to prevent leakage and abuse of their credentials.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.1-02
     section: "2.1"
     keyword: SHOULD
@@ -193,7 +194,8 @@ requirements:
     keyword: SHOULD
     text: If the authorization server supports clients with client identifiers issued by parties other than the authorization server, the authorization server SHOULD take precautions to avoid clients impersonating resource owners as described in Section 7.4.
     status: out-of-scope
-    note: Client ID Metadata Documents are out of scope (M2).
+    reason: excluded
+    feature: client-id-metadata-documents
   - id: OAUTH21D16-2.3-01
     section: "2.3"
     keyword: MUST
@@ -247,49 +249,49 @@ requirements:
     keyword: MUST NOT
     text: Clients MUST NOT expose URLs that forward the user's browser to arbitrary URIs obtained from a query parameter ("open redirector"), as described in Section 7.13.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.1-07
     section: 2.3.1
     keyword: MAY
     text: The client MAY use the state request parameter to achieve per-request customization if needed rather than varying the redirect URI per request.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.2-01
     section: 2.3.2
     keyword: MUST
     text: If multiple redirect URIs have been registered to a client, the client MUST include a redirect URI with the authorization request using the redirect_uri request parameter (Section 4.1.1).
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.3-01
     section: 2.3.3
     keyword: MUST
     text: Clients MUST prevent Cross-Site Request Forgery (CSRF) attacks.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.3-02
     section: 2.3.3
     keyword: MAY
     text: Clients that have ensured that the authorization server supports the code_challenge parameter MAY rely on the CSRF protection provided by that mechanism.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.3-03
     section: 2.3.3
     keyword: MUST
     text: Otherwise, one-time use CSRF tokens carried in the state parameter that are securely bound to the user agent MUST be used for CSRF protection (see Section 7.10).
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.4-01
     section: 2.3.4
     keyword: MUST
     text: In scenarios where an OAuth client interacts with two or more authorization servers, however, clients MUST prevent mix-up attacks.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.4-02
     section: 2.3.4
     keyword: MUST
     text: In order to prevent mix-up attacks, clients MUST only process redirect responses of the issuer they sent the respective request to and from the same user agent this authorization request was initiated with.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.5-01
     section: 2.3.5
     keyword: SHOULD
@@ -307,19 +309,19 @@ requirements:
     keyword: SHOULD NOT
     text: The client SHOULD NOT include any third-party scripts (e.g., third-party analytics, social plug-ins, ad networks) in the redirect URI endpoint response.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.6-02
     section: 2.3.6
     keyword: SHOULD
     text: Instead, it SHOULD extract the artifacts from the URI and redirect the user agent again to another endpoint without exposing the artifacts (in the URI or elsewhere).
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.3.6-03
     section: 2.3.6
     keyword: MUST
     text: If third-party scripts are included, the client MUST ensure that its own scripts (used to extract and remove the credentials from the URI) will execute first.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-2.4-01
     section: "2.4"
     keyword: MUST
@@ -335,13 +337,15 @@ requirements:
     keyword: RECOMMENDED
     text: It is RECOMMENDED to use asymmetric (public-key based) methods for client authentication such as mTLS [RFC8705] or using signed JWTs ("Private Key JWT") in accordance with [RFC7521], [RFC7523], and their update [I-D.ietf-oauth-rfc7523bis] (defined in [OpenID.Connect] as the client authentication method private_key_jwt).
     status: out-of-scope
-    note: private_key_jwt and mTLS are not implemented.
+    reason: excluded
+    feature: private-key-jwt
   - id: OAUTH21D16-2.4-04
     section: "2.4"
     keyword: MUST
     text: When using JWT-based client authentication, clients and authorization servers MUST follow the updated guidance around aud values in [I-D.ietf-oauth-rfc7523bis].
     status: out-of-scope
-    note: private_key_jwt and mTLS are not implemented.
+    reason: excluded
+    feature: private-key-jwt
   - id: OAUTH21D16-2.4-05
     section: "2.4"
     keyword: SHOULD
@@ -353,7 +357,8 @@ requirements:
     keyword: MUST NOT
     text: The client MUST NOT use more than one authentication method in each request to prevent a conflict of which authentication mechanism is authoritative for the request.
     status: out-of-scope
-    note: Client requirement; INV-0005 states what the server does.
+    reason: client-requirement
+    note: INV-0005 states what the server does.
   - id: OAUTH21D16-2.4-07
     section: "2.4"
     keyword: MUST
@@ -405,8 +410,8 @@ requirements:
     section: 2.4.2
     keyword: MUST
     text: When using other authentication methods, the authorization server MUST define a mapping between the client identifier (registration record) and authentication scheme.
-    status: out-of-scope
-    note: The other methods spec.md names, private_key_jwt and mTLS, are out of scope.
+    status: applicable
+    note: The Client type of the registration record maps to none or the client secret methods.
   - id: OAUTH21D16-3-01
     section: "3"
     keyword: MAY
@@ -497,7 +502,8 @@ requirements:
     keyword: MUST
     text: The client MUST use the HTTP POST method when making requests to the token endpoint.
     status: out-of-scope
-    note: Client requirement; INV-0006 states what the server does.
+    reason: client-requirement
+    note: INV-0006 states what the server does.
   - id: OAUTH21D16-3.2-04
     section: "3.2"
     keyword: MUST
@@ -525,7 +531,7 @@ requirements:
     keyword: MUST
     text: Confidential clients MUST authenticate with the authorization server as described in Section 2.4 when making requests to the token endpoint.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-3.2.2-01
     section: 3.2.2
     keyword: REQUIRED
@@ -541,7 +547,7 @@ requirements:
     keyword: MUST
     text: Confidential clients MUST authenticate with the authorization server as described in Section 3.2.1.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-3.2.2-04
     section: 3.2.2
     keyword: MUST
@@ -580,7 +586,7 @@ requirements:
     keyword: MUST NOT
     text: Note that the authorization server may prematurely expire an access token and clients MUST NOT expect an access token to be valid for the provided lifetime.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-3.2.3-06
     section: 3.2.3
     keyword: RECOMMENDED
@@ -609,7 +615,7 @@ requirements:
     keyword: MAY
     text: If the authorization server decides not to issue refresh tokens, the client MAY obtain new access tokens by starting the OAuth flow over, for example initiating a new authorization code request.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-3.2.3-11
     section: 3.2.3
     keyword: MUST
@@ -632,7 +638,7 @@ requirements:
     keyword: MUST
     text: The client MUST ignore unrecognized value names in the response.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-3.2.4-01
     section: 3.2.4
     keyword: REQUIRED
@@ -743,19 +749,19 @@ requirements:
     keyword: MUST
     text: Clients MUST use code challenge methods that do not expose the code_verifier in the authorization request.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.1-12
     section: 4.1.1
     keyword: SHOULD
     text: 'NOTE: The code verifier SHOULD have enough entropy to make it impractical to guess the value.'
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.1-13
     section: 4.1.1
     keyword: RECOMMENDED
     text: It is RECOMMENDED that the output of a suitable random number generator be used to create a 32-octet sequence.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.1-14
     section: 4.1.1
     keyword: MUST
@@ -767,7 +773,7 @@ requirements:
     text: Clients MUST use code_challenge and code_verifier and authorization servers MUST enforce their use except under the conditions described in Section 7.5.1.
     statement: Clients MUST use code_challenge and code_verifier except under the conditions described in Section 7.5.1.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.1-16
     section: 4.1.1
     keyword: MUST
@@ -786,7 +792,7 @@ requirements:
     keyword: SHOULD NOT
     text: The state and scope parameters SHOULD NOT include sensitive client or resource owner information in plain text, as they can be transmitted over insecure channels or stored insecurely.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.1-19
     section: 4.1.1
     keyword: MUST
@@ -834,7 +840,7 @@ requirements:
     keyword: MUST
     text: The client MUST ignore unrecognized response parameters.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.2-07
     section: 4.1.2
     keyword: MUST
@@ -851,7 +857,7 @@ requirements:
     keyword: MUST
     text: Clients MUST prevent injection (replay) of authorization codes into the authorization response by attackers.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.2.1-01
     section: 4.1.2.1
     keyword: MUST NOT
@@ -959,7 +965,7 @@ requirements:
     keyword: MUST NOT
     text: MUST NOT be used otherwise.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.1.3-04
     section: 4.1.3
     keyword: REQUIRED
@@ -1101,7 +1107,7 @@ requirements:
     keyword: MUST
     text: Confidential clients MUST authenticate with the authorization server as described in Section 3.2.1.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.3.1-05
     section: 4.3.1
     keyword: MUST
@@ -1143,7 +1149,7 @@ requirements:
     text: The authorization server MAY issue a new refresh token, in which case the client MUST discard the old refresh token and replace it with the new refresh token.
     statement: When the authorization server issues a new refresh token, the client MUST discard the old refresh token and replace it with the new refresh token.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-4.3.3-01
     section: 4.3.3
     keyword: MAY
@@ -1189,21 +1195,21 @@ requirements:
     text: Clients MUST use one of the two methods defined below, and MUST NOT use more than one method to transmit the token in each request.
     statement: Clients MUST use one of the two methods defined below to transmit the token.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1-02
     section: "5.1"
     keyword: MUST NOT
     text: Clients MUST use one of the two methods defined below, and MUST NOT use more than one method to transmit the token in each request.
     statement: Clients MUST NOT use more than one method to transmit the token in each request.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1-03
     section: "5.1"
     keyword: MUST NOT
     text: In particular, clients MUST NOT send the access token in a URI query parameter, and resource servers MUST ignore access tokens in a URI query parameter.
     statement: Clients MUST NOT send the access token in a URI query parameter.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1-04
     section: "5.1"
     keyword: MUST
@@ -1215,7 +1221,7 @@ requirements:
     keyword: SHOULD
     text: Clients SHOULD make authenticated requests with a bearer token using the Authorization request header field with the Bearer HTTP authorization scheme.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.1-02
     section: 5.1.1
     keyword: MUST
@@ -1227,41 +1233,41 @@ requirements:
     text: 'The client MUST NOT use this method unless all of the following conditions are met: The HTTP request includes the Content-Type header field set to application/x-www-form-urlencoded. The content follows the encoding requirements of the application/ x-www-form-urlencoded content-type as defined by the URL Living Standard [WHATWG.URL]. The HTTP request content is single-part. The content to be encoded in the request MUST consist entirely of ASCII [USASCII] characters. The HTTP request method is one for which the content has defined semantics. In particular, this means that the GET method MUST NOT be used.'
     statement: The client MUST NOT use the form-encoded body parameter method unless all of the conditions are met.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.2-02
     section: 5.1.2
     keyword: MUST
     text: 'The client MUST NOT use this method unless all of the following conditions are met: The HTTP request includes the Content-Type header field set to application/x-www-form-urlencoded. The content follows the encoding requirements of the application/ x-www-form-urlencoded content-type as defined by the URL Living Standard [WHATWG.URL]. The HTTP request content is single-part. The content to be encoded in the request MUST consist entirely of ASCII [USASCII] characters. The HTTP request method is one for which the content has defined semantics. In particular, this means that the GET method MUST NOT be used.'
     statement: The content to be encoded in the request MUST consist entirely of ASCII characters.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.2-03
     section: 5.1.2
     keyword: MUST NOT
     text: 'The client MUST NOT use this method unless all of the following conditions are met: The HTTP request includes the Content-Type header field set to application/x-www-form-urlencoded. The content follows the encoding requirements of the application/ x-www-form-urlencoded content-type as defined by the URL Living Standard [WHATWG.URL]. The HTTP request content is single-part. The content to be encoded in the request MUST consist entirely of ASCII [USASCII] characters. The HTTP request method is one for which the content has defined semantics. In particular, this means that the GET method MUST NOT be used.'
     statement: The GET method MUST NOT be used with the form-encoded body parameter method.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.2-04
     section: 5.1.2
     keyword: MAY
     text: The content MAY include other request-specific parameters, in which case the access_token parameter MUST be properly separated from the request-specific parameters using & character(s) (ASCII code 38).
     statement: The content MAY include other request-specific parameters.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.2-05
     section: 5.1.2
     keyword: MUST
     text: The content MAY include other request-specific parameters, in which case the access_token parameter MUST be properly separated from the request-specific parameters using & character(s) (ASCII code 38).
     statement: The access_token parameter MUST be properly separated from the request-specific parameters using & characters.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.2-06
     section: 5.1.2
     keyword: SHOULD NOT
     text: The application/x-www-form-urlencoded method SHOULD NOT be used except in application contexts where participating clients do not have access to the Authorization request header field.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.1.2-07
     section: 5.1.2
     keyword: MAY
@@ -1401,7 +1407,7 @@ requirements:
     keyword: MAY
     text: The client MAY request a new access token and retry the protected resource request.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-5.3.2-04
     section: 5.3.2
     keyword: SHOULD
@@ -1563,19 +1569,19 @@ requirements:
     keyword: MUST
     text: Client implementations MUST ensure that bearer tokens are not leaked to unintended parties, as they will be able to use them to gain access to protected resources.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.1.3.2-01
     section: 7.1.3.2
     keyword: MUST
     text: The client MUST validate the TLS certificate chain when making requests to protected resources.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.1.3.3-01
     section: 7.1.3.3
     keyword: MUST
     text: Clients MUST always use TLS (https) or equivalent transport security when making requests with bearer tokens.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.1.3.4-01
     section: 7.1.3.4
     keyword: MUST NOT
@@ -1596,7 +1602,9 @@ requirements:
     keyword: SHOULD
     text: Authorization servers SHOULD issue bearer tokens that contain an audience restriction, scoping their use to the intended resource server or set of resource servers.
     status: out-of-scope
-    note: Audience restriction comes with Resource Indicators, which are not implemented.
+    reason: excluded
+    feature: resource-indicators
+    note: Audience restriction comes with Resource Indicators.
   - id: OAUTH21D16-7.1.3.7-01
     section: 7.1.3.7
     keyword: MUST NOT
@@ -1608,7 +1616,7 @@ requirements:
     keyword: SHOULD
     text: Instead, bearer tokens SHOULD be passed in HTTP message headers or message bodies for which confidentiality measures are taken.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.1.4-01
     section: 7.1.4
     keyword: SHOULD
@@ -1619,7 +1627,9 @@ requirements:
     keyword: SHOULD
     text: In particular, access tokens SHOULD be restricted to certain resource servers (audience restriction), preferably to a single resource server.
     status: out-of-scope
-    note: Audience restriction comes with Resource Indicators, which are not implemented.
+    reason: excluded
+    feature: resource-indicators
+    note: Audience restriction comes with Resource Indicators.
   - id: OAUTH21D16-7.1.4-03
     section: 7.1.4
     keyword: MUST
@@ -1689,7 +1699,7 @@ requirements:
     keyword: SHOULD
     text: The client SHOULD request access tokens with the minimal scope necessary.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.3.2-02
     section: 7.3.2
     keyword: SHOULD
@@ -1712,7 +1722,9 @@ requirements:
     keyword: SHOULD
     text: In particular, access tokens SHOULD be restricted to certain resource servers (audience restriction), preferably to a single resource server.
     status: out-of-scope
-    note: Audience restriction comes with Resource Indicators, which are not implemented.
+    reason: excluded
+    feature: resource-indicators
+    note: Audience restriction comes with Resource Indicators.
   - id: OAUTH21D16-7.3.2-06
     section: 7.3.2
     keyword: MUST
@@ -1739,7 +1751,7 @@ requirements:
     text: 'To prevent injection of authorization codes into the client, using code_challenge and code_verifier is REQUIRED for clients, and authorization servers MUST enforce their use, unless both of the following criteria are met: The client is a confidential client. In the specific deployment and the specific request, there is reasonable assurance by the authorization server that the client implements the OpenID Connect nonce mechanism properly.'
     statement: Using code_challenge and code_verifier is REQUIRED for clients, unless the client is a confidential client and the authorization server has reasonable assurance in the specific deployment and request that the client implements the OpenID Connect nonce mechanism properly.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.5.1.1-02
     section: 7.5.1.1
     keyword: MUST
@@ -1758,13 +1770,13 @@ requirements:
     keyword: MUST
     text: The code_challenge or OpenID Connect nonce value MUST be transaction-specific and securely bound to the client and the user agent in which the transaction was started.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.5.1.1-05
     section: 7.5.1.1
     keyword: MUST
     text: If a transaction leads to an error, fresh values for code_challenge or nonce MUST be chosen.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.5.2-01
     section: 7.5.2
     keyword: SHOULD
@@ -1852,7 +1864,8 @@ requirements:
     keyword: SHOULD
     text: In scenarios where client pre-registration is not possible, such as when using Dynamic Client Registration [RFC7591], or when the client metadata may be provided by an outside party such as when using Client ID Metadata Document [I-D.ietf-oauth-client-id-metadata-document], authorization servers SHOULD take additional measures to verify that the user understands the client they are authorizing.
     status: out-of-scope
-    note: Dynamic Client Registration and Client ID Metadata Documents are not implemented.
+    reason: excluded
+    feature: dynamic-client-registration
   - id: OAUTH21D16-7.9-05
     section: "7.9"
     keyword: SHOULD
@@ -1864,21 +1877,21 @@ requirements:
     text: 'When using code_verifier instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client. If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead. If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or signed/encrypted state values [I-D.bradley-oauth-jwt-encoded-state].'
     statement: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.10-02
     section: "7.10"
     keyword: MUST
     text: 'When using code_verifier instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client. If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead. If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or signed/encrypted state values [I-D.bradley-oauth-jwt-encoded-state].'
     statement: If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.10-03
     section: "7.10"
     keyword: MUST
     text: 'When using code_verifier instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client. If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead. If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or signed/encrypted state values [I-D.bradley-oauth-jwt-encoded-state].'
     statement: If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.10-04
     section: "7.10"
     keyword: MUST
@@ -1899,7 +1912,7 @@ requirements:
     keyword: MAY
     text: The client MAY permit being framed by some other origin than the one used in its redirection endpoint.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.11-04
     section: "7.11"
     keyword: SHOULD
@@ -1927,13 +1940,13 @@ requirements:
     text: The authorization server and client MUST treat parameters received as potentially malicious external input and apply appropriate protections, in particular, the values of the state and redirect_uri parameters.
     statement: The client MUST treat parameters received as potentially malicious external input and apply appropriate protections.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.13.1-01
     section: 7.13.1
     keyword: MUST NOT
     text: Clients MUST NOT expose open redirectors.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.13.2-01
     section: 7.13.2
     keyword: MUST NOT
@@ -1971,61 +1984,61 @@ requirements:
     keyword: MUST
     text: In scenarios where an OAuth client interacts with two or more authorization servers, however, clients MUST prevent mix-up attacks.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15-02
     section: "7.15"
     keyword: MUST
     text: For both defenses, clients MUST store, for each authorization request, the issuer they sent the authorization request to, bind this information to the user agent, and check that the authorization response was received from the correct issuer.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15-03
     section: "7.15"
     keyword: MUST
     text: Clients MUST ensure that the subsequent access token request, if applicable, is sent to the same issuer.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.1-01
     section: 7.15.1
     keyword: MUST
     text: When receiving the authorization response, the client MUST compare the received issuer identifier to the stored issuer identifier.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.1-02
     section: 7.15.1
     keyword: MUST
     text: If there is a mismatch, the client MUST abort the interaction.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.1-03
     section: 7.15.1
     keyword: MUST
     text: In both cases, the iss value MUST be evaluated according to [RFC9207].
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.2-01
     section: 7.15.2
     keyword: MUST
     text: For this defense, clients MUST use a distinct redirect URI for each issuer they interact with.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.2-02
     section: 7.15.2
     keyword: MUST
     text: Clients MUST check that the authorization response was received from the correct issuer by comparing the distinct redirect URI for the issuer to the URI where the authorization response was received on.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.2-03
     section: 7.15.2
     keyword: MUST
     text: If there is a mismatch, the client MUST abort the flow.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-7.15.2-04
     section: 7.15.2
     keyword: SHOULD
     text: This defense SHOULD therefore only be used if other options are not available.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.1-01
     section: "8.1"
     keyword: MUST NOT
@@ -2052,31 +2065,31 @@ requirements:
     keyword: MUST
     text: Native apps MUST use an external user agent to perform OAuth authorization requests.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.3-01
     section: "8.3"
     keyword: MAY
     text: Typically, the external user agent used is the default browser, that is, the application configured for handling http and https scheme URIs on the system; however, different browser selection criteria and other categories of external user agents MAY be used.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.3-02
     section: "8.3"
     keyword: RECOMMENDED
     text: This best practice focuses on the browser as the RECOMMENDED external user agent for native apps.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.3-03
     section: "8.3"
     keyword: MAY
     text: An external user agent designed specifically for user authorization and capable of processing authorization requests and responses like a browser MAY also be used.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.3-04
     section: "8.3"
     keyword: RECOMMENDED
     text: On platforms where they are supported, it is RECOMMENDED, for usability reasons, that apps use in-app browser tabs for the authorization request.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.4.1-01
     section: 8.4.1
     keyword: REQUIRED
@@ -2088,13 +2101,13 @@ requirements:
     keyword: SHOULD
     text: For this reason, native apps SHOULD use them over the other options where possible.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.4.2-01
     section: 8.4.2
     keyword: NOT RECOMMENDED
     text: While redirect URIs using the name localhost (i.e., http://localhost:{port}/{path}) function similarly to loopback IP redirects, the use of localhost is NOT RECOMMENDED.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.4.2-02
     section: 8.4.2
     keyword: MUST
@@ -2105,19 +2118,19 @@ requirements:
     keyword: SHOULD NOT
     text: Clients SHOULD NOT assume that the device supports a particular version of the Internet Protocol.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.4.2-04
     section: 8.4.2
     keyword: RECOMMENDED
     text: It is RECOMMENDED that clients attempt to bind to the loopback interface using both IPv4 and IPv6 and use whichever is available.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.4.3-01
     section: 8.4.3
     keyword: MUST
     text: When choosing a URI scheme to associate with the app, apps MUST use a URI scheme based on a domain name under their control, expressed in reverse order, as recommended by Section 3.8 of [RFC7595] for private-use URI schemes.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.5.4-01
     section: 8.5.4
     keyword: MAY
@@ -2128,19 +2141,19 @@ requirements:
     keyword: SHOULD
     text: Clients SHOULD open the network port only when starting the authorization request and close it once the response is returned.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.5.4-03
     section: 8.5.4
     keyword: SHOULD
     text: Clients SHOULD listen on the loopback network interface only, in order to avoid interference by other network actors.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-8.5.4-04
     section: 8.5.4
     keyword: SHOULD
     text: Clients SHOULD use loopback IP literals rather than the string localhost as described in Section 8.4.2.
     status: out-of-scope
-    note: Client requirement.
+    reason: client-requirement
   - id: OAUTH21D16-10.2-01
     section: "10.2"
     keyword: MUST

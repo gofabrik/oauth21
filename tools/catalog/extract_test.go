@@ -241,6 +241,7 @@ requirements:
     text: It SHOULD log the attempt and MAY drop the connection.
     statement: It MAY drop the connection.
     status: out-of-scope
+    reason: client-requirement
   - id: RFC9999-4.1-05
     section: "4.1"
     keyword: MUST

@@ -37,6 +37,7 @@ requirements:
     keyword: MUST
     text: The client MUST send a verifier.
     status: out-of-scope
+    reason: client-requirement
 `
 
 const coverageTests = `package conformance
@@ -285,7 +286,7 @@ func TestGateFails(t *testing.T) {
 			name: "invariant uncovered whatever its status",
 			files: map[string]string{
 				"conformance/pkce_test.go":            strings.Replace(coverageTests, " INV-0001", "", 1),
-				"conformance/catalog/invariants.yaml": strings.Replace(invariants, "status: applicable", "status: out-of-scope", 1),
+				"conformance/catalog/invariants.yaml": strings.Replace(invariants, "status: applicable", "status: out-of-scope\n    reason: client-requirement", 1),
 			},
 			want: "INV-0001: uncovered and not on the known-uncovered list",
 		},
@@ -334,6 +335,13 @@ func TestGateRatchet(t *testing.T) {
 			name: "base without a list",
 			base: map[string]string{"conformance/catalog/uncovered.txt": ""},
 		},
+		{
+			name: "base written before a catalog rule",
+			base: map[string]string{
+				"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\nINV-0001\n",
+				"conformance/catalog/rfc7636.yaml":  strings.Replace(coverageCatalog, "    reason: client-requirement\n", "", 1),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -352,9 +360,41 @@ func TestGateRatchet(t *testing.T) {
 	}
 }
 
+func TestGateRatchetNewlyGated(t *testing.T) {
+	head := repo(map[string]string{
+		"conformance/catalog/rfc7636.yaml":  strings.Replace(coverageCatalog, "status: out-of-scope\n    reason: client-requirement", "status: applicable", 1),
+		"conformance/catalog/uncovered.txt": "RFC7636-4.4-02\nRFC7636-4.6-01\n",
+	})
+	tests := []struct {
+		name   string
+		reason string
+		want   string
+	}{
+		{name: "excluded at the base", reason: "reason: excluded\n    feature: dpop"},
+		{name: "client-requirement at the base", reason: "reason: client-requirement", want: "RFC7636-4.6-01: added to the known-uncovered list"},
+		{name: "no reason at the base", reason: "", want: "RFC7636-4.6-01: added to the known-uncovered list"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := repo(map[string]string{"conformance/catalog/rfc7636.yaml": strings.Replace(coverageCatalog, "reason: client-requirement", tt.reason, 1)})
+			c, err := Cover(head, base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = c.Gate()
+			if tt.want == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+				t.Fatalf("got error %v, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestCoverInvalidBase(t *testing.T) {
 	bases := map[string]fstest.MapFS{
-		"invalid catalog": repo(map[string]string{"conformance/catalog/invariants.yaml": "document: inv\n"}),
+		"invalid catalog": repo(map[string]string{"conformance/catalog/invariants.yaml": "documentz: INV\n"}),
 		"empty":           {},
 	}
 	for name, base := range bases {

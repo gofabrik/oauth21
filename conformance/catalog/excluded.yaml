@@ -1,0 +1,22 @@
+# Features spec.md's Out of Scope section excludes, except the superseded ones catalogued as superseded.
+features:
+  - resource-indicators
+  - protected-resource-metadata
+  - client-id-metadata-documents
+  - mcp-interop
+  - par
+  - dpop
+  - jwt-access-tokens
+  - private-key-jwt
+  - device-grant
+  - dynamic-client-registration
+  - token-exchange
+  - mtls
+  - jar
+  - rar
+  - openid-connect
+  - persistent-stores
+  - admin-ui
+  - client-management-api
+  - remembered-consent
+  - router-adapters
