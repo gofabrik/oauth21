@@ -95,3 +95,73 @@ func TestMetadataFollowsConfiguredPaths(t *testing.T) {
 		t.Fatalf("got status %d and body %v after revocation, want only active false", status, body)
 	}
 }
+
+// TestMetadataNamesCodeChallengeMethods checks that the metadata document names S256 as the only code challenge method.
+//
+//conformance:covers OAUTH21D16-7.10-04
+func TestMetadataNamesCodeChallengeMethods(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if got := a.metadata(a.url)["code_challenge_methods_supported"]; !reflect.DeepEqual(got, []any{"S256"}) {
+		t.Fatalf("got code_challenge_methods_supported %v, want [S256]", got)
+	}
+}
+
+// endpointURLs returns the issuer and the endpoint URLs in the metadata of an Authorization Server with an issuer path and configured endpoint paths.
+func endpointURLs(t *testing.T) []string {
+	t.Helper()
+	a := newConfiguredServer(t, func(c *oauth21.Config) {
+		c.Issuer += "/tenant"
+		c.Paths = oauth21.Paths{Authorization: "/oauth/authorize", Token: "/oauth/token", Revocation: "/oauth/revoke", Introspection: "/oauth/introspect"} // #nosec G101 -- endpoint paths, not credentials
+	})
+	m := a.metadata(a.url + "/tenant")
+	urls := []string{a.url + "/.well-known/oauth-authorization-server/tenant"}
+	for name, v := range m {
+		if s, ok := v.(string); ok && (name == "issuer" || strings.HasSuffix(name, "_endpoint")) {
+			urls = append(urls, s)
+		}
+	}
+	return urls
+}
+
+// TestEndpointURLsAreHTTPS checks that the issuer, the metadata URL and every endpoint URL of the metadata use the https scheme.
+//
+//conformance:covers OAUTH21D16-1.5-02
+func TestEndpointURLsAreHTTPS(t *testing.T) {
+	for _, u := range endpointURLs(t) {
+		if !strings.HasPrefix(u, "https://") {
+			t.Fatalf("got URL %q, want https", u)
+		}
+	}
+}
+
+// metadataURL returns the URL the metadata of an Authorization Server with configured endpoint paths names under name.
+func metadataURL(t *testing.T, name string) *url.URL {
+	t.Helper()
+	a := newConfiguredServer(t, func(c *oauth21.Config) {
+		c.Paths = oauth21.Paths{Authorization: "/oauth/authorize", Token: "/oauth/token"} // #nosec G101 -- endpoint paths, not credentials
+	})
+	s, _ := a.metadata(a.url)[name].(string)
+	u, err := url.Parse(s)
+	if err != nil || s == "" {
+		t.Fatalf("got %s %q, want a URL", name, s)
+	}
+	return u
+}
+
+// TestAuthorizationEndpointHasNoFragment checks that the authorization endpoint URL in the metadata has no fragment.
+//
+//conformance:covers OAUTH21D16-3.1-02
+func TestAuthorizationEndpointHasNoFragment(t *testing.T) {
+	if u := metadataURL(t, "authorization_endpoint"); u.Fragment != "" || strings.Contains(u.String(), "#") {
+		t.Fatalf("got authorization_endpoint %s, want no fragment", u)
+	}
+}
+
+// TestTokenEndpointHasNoFragment checks that the token endpoint URL in the metadata has no fragment.
+//
+//conformance:covers OAUTH21D16-3.2-01
+func TestTokenEndpointHasNoFragment(t *testing.T) {
+	if u := metadataURL(t, "token_endpoint"); u.Fragment != "" || strings.Contains(u.String(), "#") {
+		t.Fatalf("got token_endpoint %s, want no fragment", u)
+	}
+}

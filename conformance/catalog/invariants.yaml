@@ -17,3 +17,11 @@ requirements:
     keyword: MUST
     text: A refresh token that rotates issues tokens at most once, also when it is used concurrently, and presenting it after its rotation revokes its Grant while any token of the Grant is valid.
     status: applicable
+  - id: INV-0005
+    keyword: MUST
+    text: A token, revocation or introspection request in which a Client uses more than one authentication method is rejected with invalid_request.
+    status: applicable
+  - id: INV-0006
+    keyword: MUST
+    text: The token, revocation and introspection endpoints reject requests that do not use POST.
+    status: applicable

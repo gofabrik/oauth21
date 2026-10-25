@@ -48,15 +48,8 @@ func basic(id, secret string) http.Header {
 	return header
 }
 
-// TestConfidentialClientAuthenticates checks that a confidential Client redeems a code with client_secret_basic or client_secret_post.
+// TestConfidentialClientAuthenticates checks that client_secret_basic accepts several spaces after the scheme and a client_id in the request content.
 func TestConfidentialClientAuthenticates(t *testing.T) {
-	t.Run("client_secret_basic", func(t *testing.T) {
-		a := newConfidentialServer(t)
-		status, _, body := a.token(a.confidentialCode(), basic(confidentialID, secret))
-		if status != http.StatusOK {
-			t.Fatalf("got status %d and body %v, want 200", status, body)
-		}
-	})
 	t.Run("client_secret_basic with several spaces", func(t *testing.T) {
 		a := newConfidentialServer(t)
 		header := basic(confidentialID, secret)
@@ -75,19 +68,11 @@ func TestConfidentialClientAuthenticates(t *testing.T) {
 			t.Fatalf("got status %d and body %v, want 200", status, body)
 		}
 	})
-	t.Run("client_secret_post", func(t *testing.T) {
-		a := newConfidentialServer(t)
-		params := a.confidentialCode()
-		params.Set("client_id", confidentialID)
-		params.Set("client_secret", secret)
-		status, _, body := a.token(params, nil)
-		if status != http.StatusOK {
-			t.Fatalf("got status %d and body %v, want 200", status, body)
-		}
-	})
 }
 
 // TestFailedClientAuthentication checks that failed authentication gets invalid_client, as a 401 with a Basic challenge when the Authorization header was used.
+//
+//conformance:covers OAUTH21D16-3.2.2-05
 func TestFailedClientAuthentication(t *testing.T) {
 	tests := map[string]struct {
 		header    http.Header
@@ -133,13 +118,25 @@ func TestFailedClientAuthenticationKeepsCode(t *testing.T) {
 	}
 }
 
-// TestMoreThanOneAuthenticationMethod checks that a request using both client_secret_basic and client_secret_post gets invalid_request.
+// TestMoreThanOneAuthenticationMethod checks that token, revocation and introspection requests using both client_secret_basic and client_secret_post get invalid_request.
+//
+//conformance:covers INV-0005
 func TestMoreThanOneAuthenticationMethod(t *testing.T) {
-	a := newConfidentialServer(t)
-	params := a.confidentialCode()
-	params.Set("client_secret", secret)
-	status, _, body := a.token(params, basic(confidentialID, secret))
-	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+	a := newIntrospectionServer(t)
+	_, refresh := a.tokens(a.confidentialCode(), basic(confidentialID, secret))
+	for _, r := range []struct {
+		path, id string
+		params   url.Values
+	}{
+		{"/token", confidentialID, a.confidentialCode()},
+		{"/revoke", confidentialID, url.Values{"token": {refresh}}},
+		{"/introspect", resourceServerID, url.Values{"token": {refresh}}},
+	} {
+		r.params.Set("client_id", r.id)
+		r.params.Set("client_secret", secret)
+		status, _, body := a.sendJSON(http.MethodPost, r.path, r.params.Encode(), basic(r.id, secret))
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+	}
 }
 
 // TestRepeatedAuthorizationHeader checks that a request with more than one Authorization header gets invalid_request.
@@ -163,10 +160,140 @@ func TestPublicClientCannotUseBasic(t *testing.T) {
 }
 
 // TestCodeOfAnotherClient checks that a confidential Client cannot redeem a code issued to another Client.
+//
+//conformance:covers OAUTH21D16-4.1.3-08
 func TestCodeOfAnotherClient(t *testing.T) {
 	a := newConfidentialServer(t)
 	params := tokenParams(a.code(authorizeParams()))
 	params.Del("client_id")
 	status, _, body := a.token(params, basic(confidentialID, secret))
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestClientSecretPost checks that a confidential Client authenticates with client_id and client_secret in the request content.
+//
+//conformance:covers OAUTH21D16-2.4.1-01
+func TestClientSecretPost(t *testing.T) {
+	a := newConfidentialServer(t)
+	params := a.confidentialCode()
+	params.Set("client_id", confidentialID)
+	params.Set("client_secret", secret)
+	if status, _, body := a.token(params, nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
+// TestClientSecretBasic checks that a confidential Client authenticates with HTTP Basic.
+//
+//conformance:covers OAUTH21D16-2.4.1-05
+func TestClientSecretBasic(t *testing.T) {
+	a := newConfidentialServer(t)
+	if status, _, body := a.token(a.confidentialCode(), basic(confidentialID, secret)); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
+// TestClientIDAloneDoesNotAuthenticate checks that a client credentials request carrying only the client_id of a confidential Client gets invalid_client.
+//
+//conformance:covers OAUTH21D16-2.2-01
+func TestClientIDAloneDoesNotAuthenticate(t *testing.T) {
+	a := newServiceServer(t)
+	params := clientCredentialsParams("")
+	params.Set("client_id", serviceID)
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+}
+
+// TestClientSecretIsRequired checks that a confidential Client sending its client_id with an empty client_secret gets invalid_client.
+//
+//conformance:covers OAUTH21D16-2.4.1-03
+func TestClientSecretIsRequired(t *testing.T) {
+	a := newConfidentialServer(t)
+	params := a.confidentialCode()
+	params.Set("client_id", confidentialID)
+	params.Set("client_secret", "")
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+}
+
+// TestEmptyBasicSecretDoesNotAuthenticate checks that a confidential Client using Basic with an empty secret gets invalid_client.
+//
+//conformance:covers OAUTH21D16-3.2.2-04
+func TestEmptyBasicSecretDoesNotAuthenticate(t *testing.T) {
+	a := newConfidentialServer(t)
+	status, _, body := a.token(a.confidentialCode(), basic(confidentialID, ""))
+	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
+}
+
+// TestPublicRedemptionRequiresClientID checks that redeeming a public Client's code without client_id fails.
+//
+//conformance:covers OAUTH21D16-4.1.3-04
+func TestPublicRedemptionRequiresClientID(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := tokenParams(a.code(authorizeParams()))
+	params.Del("client_id")
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+}
+
+// TestRequestsFollowClientType checks that a public Client redeems its code without credentials while a confidential Client cannot.
+//
+//conformance:covers OAUTH21D16-8.1.1-02
+func TestRequestsFollowClientType(t *testing.T) {
+	a := newConfidentialServer(t)
+	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v for the public Client, want 200", status, body)
+	}
+	params := a.confidentialCode()
+	params.Set("client_id", confidentialID)
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+}
+
+// headerFailure is the status and the challenge scheme of a token response to failing Authorization header credentials.
+type headerFailure struct {
+	status int
+	scheme string
+}
+
+// headerAuthenticationFailures sends a code redemption of the confidential Client with failing Basic and Bearer credentials and returns the response per scheme.
+func (a *authorizationServer) headerAuthenticationFailures() map[string]headerFailure {
+	a.t.Helper()
+	got := map[string]headerFailure{}
+	for scheme, header := range map[string]http.Header{
+		"Basic":  basic(confidentialID, "wrong"),
+		"Bearer": {"Authorization": {"Bearer abc"}},
+	} {
+		status, respHeader, body := a.token(a.confidentialCode(), header)
+		if body["error"] != "invalid_client" {
+			a.t.Fatalf("%s: got body %v, want invalid_client", scheme, body)
+		}
+		challenge, _, _ := strings.Cut(respHeader.Get("WWW-Authenticate"), " ")
+		got[scheme] = headerFailure{status, challenge}
+	}
+	return got
+}
+
+// TestHeaderAuthenticationFailureIs401 checks that failed authentication with the Authorization header gets 401, for Basic and for another scheme.
+//
+//conformance:covers OAUTH21D16-3.2.4-03
+func TestHeaderAuthenticationFailureIs401(t *testing.T) {
+	a := newConfidentialServer(t)
+	for scheme, got := range a.headerAuthenticationFailures() {
+		if got.status != http.StatusUnauthorized {
+			t.Fatalf("%s: got status %d, want 401", scheme, got.status)
+		}
+	}
+}
+
+// TestHeaderAuthenticationFailureChallengesScheme checks that failed authentication with the Authorization header gets a challenge with the scheme the Client used.
+//
+//conformance:covers OAUTH21D16-3.2.4-10
+func TestHeaderAuthenticationFailureChallengesScheme(t *testing.T) {
+	a := newConfidentialServer(t)
+	for scheme, got := range a.headerAuthenticationFailures() {
+		if got.scheme != scheme {
+			t.Fatalf("got a %q challenge, want the %s scheme", got.scheme, scheme)
+		}
+	}
 }

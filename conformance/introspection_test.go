@@ -134,3 +134,26 @@ func TestIntrospectionRequestErrors(t *testing.T) {
 	status, _, body := a.sendJSON(http.MethodGet, "/introspect?token=unknown", "", basic(resourceServerID, secret))
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
+
+// TestOnlyAuthorizedClientsIntrospectAccessTokens checks that a Client not allowed to introspect learns nothing about an access token issued to another Client.
+//
+//conformance:covers OAUTH21D16-1.4-05
+func TestOnlyAuthorizedClientsIntrospectAccessTokens(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	status, _, body := a.sendJSON(http.MethodPost, "/introspect", url.Values{"token": {access}}.Encode(), basic(confidentialID, secret))
+	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
+	if len(body) != 2 || body["error_description"] == nil {
+		t.Fatalf("got body %v, want only error and error_description", body)
+	}
+}
+
+// TestRefreshTokenIsNotIntrospected checks that the Resource Server Client gets a refresh token only as inactive, while the refresh token still refreshes.
+//
+//conformance:covers OAUTH21D16-4.3-07
+func TestRefreshTokenIsNotIntrospected(t *testing.T) {
+	a := newIntrospectionServer(t)
+	refresh := a.publicRefreshToken()
+	a.wantInactive(refresh)
+	a.tokens(refreshParams(refresh), nil)
+}

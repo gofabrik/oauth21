@@ -45,6 +45,8 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 }
 
 // TestErrorsAfterRedirectURIAreRedirected checks that errors found once the Client and redirect URI are trusted are redirected with error, state and iss.
+//
+//conformance:covers OAUTH21D16-4.1.1-03
 func TestErrorsAfterRedirectURIAreRedirected(t *testing.T) {
 	for responseType, code := range map[string]string{"": "invalid_request", "token": "unsupported_response_type"} {
 		t.Run(code, func(t *testing.T) {

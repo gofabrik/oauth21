@@ -3,10 +3,12 @@ package conformance
 import (
 	"net/http"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/gofabrik/oauth21"
+	"github.com/gofabrik/oauth21/store"
 )
 
 // refreshParams returns a refresh request of the public Client for refreshToken.
@@ -61,6 +63,8 @@ func (a *authorizationServer) wantReuseRevokesGrant(token string, request func(s
 }
 
 // TestPublicClientRefreshes checks that a public Client gets a new access token and a new refresh token for its refresh token.
+//
+//conformance:covers OAUTH21D16-4.3-04
 func TestPublicClientRefreshes(t *testing.T) {
 	a := newAuthorizationServer(t)
 	first := a.publicRefreshToken()
@@ -169,6 +173,8 @@ func TestConfidentialRefreshRequiresAuthentication(t *testing.T) {
 }
 
 // TestRefreshTokenIsBoundToClient checks that a refresh token issued to one Client cannot be used by another.
+//
+//conformance:covers OAUTH21D16-4.3-03
 func TestRefreshTokenIsBoundToClient(t *testing.T) {
 	a := newConfidentialServer(t)
 	status, _, body := a.token(confidentialRefreshParams(a.publicRefreshToken()), basic(confidentialID, secret))
@@ -217,6 +223,8 @@ func TestRefreshCannotWidenScopes(t *testing.T) {
 }
 
 // TestRefreshTokenExpires checks that a Refresh Token Family expires as a whole, and that no access token outlives it.
+//
+//conformance:covers OAUTH21D16-4.3.3-04
 func TestRefreshTokenExpires(t *testing.T) {
 	a := newConfiguredServer(t, func(c *oauth21.Config) { c.RefreshTokenLifetime = 2 * time.Hour })
 	refresh := a.publicRefreshToken()
@@ -243,11 +251,127 @@ func TestRedeemedAccessTokenExpiresWithRefreshToken(t *testing.T) {
 }
 
 // TestCodeRedemptionWithoutRefreshGrant checks that a Client not allowed the refresh_token grant type gets no refresh token for its code.
+//
+//conformance:covers OAUTH21D16-3.2.3-09
 func TestCodeRedemptionWithoutRefreshGrant(t *testing.T) {
 	client := confidentialClient(t)
 	client.GrantTypes = []string{"authorization_code"}
 	a := newAuthorizationServer(t, client)
 	if _, refresh := a.tokens(a.confidentialCode(), basic(confidentialID, secret)); refresh != "" {
 		t.Fatal("got a refresh token, want none")
+	}
+}
+
+// TestUnauthenticatedClientRefreshTokenIsSingleUse checks that a public Client's refresh token no longer refreshes once used, also when confidential Clients may reuse theirs.
+//
+//conformance:covers OAUTH21D16-2.4-07
+func TestUnauthenticatedClientRefreshTokenIsSingleUse(t *testing.T) {
+	a := newReusingServer(t)
+	refresh := a.publicRefreshToken()
+	a.tokens(refreshParams(refresh), nil)
+	status, _, body := a.token(refreshParams(refresh), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestRefreshTokenReplayIsDetected checks that presenting a public Client's refresh token after two rotations fails and revokes the active refresh token.
+//
+//conformance:covers OAUTH21D16-4.3.1-06
+func TestRefreshTokenReplayIsDetected(t *testing.T) {
+	a := newAuthorizationServer(t)
+	first := a.publicRefreshToken()
+	second := a.refreshToken(refreshParams(first), nil)
+	active := a.refreshToken(refreshParams(second), nil)
+	status, _, body := a.token(refreshParams(first), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	status, _, body = a.token(refreshParams(active), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestRefreshKeepsClient checks that an access token from a refresh belongs to the Client the refresh token was issued to.
+//
+//conformance:covers OAUTH21D16-4.3-02
+func TestRefreshKeepsClient(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(confidentialRefreshParams(a.confidentialRefreshToken()), basic(confidentialID, secret))
+	if body := a.introspect(access); body["client_id"] != confidentialID {
+		t.Fatalf("got %v, want client_id %s", body, confidentialID)
+	}
+}
+
+// TestRefreshTokenOfAnotherPublicClient checks that a public Client cannot refresh with a refresh token issued to another public Client.
+//
+//conformance:covers OAUTH21D16-4.3.1-05
+func TestRefreshTokenOfAnotherPublicClient(t *testing.T) {
+	a := newAuthorizationServer(t, store.Client{ID: "other", Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope})
+	params := refreshParams(a.publicRefreshToken())
+	params.Set("client_id", "other")
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestRefreshCannotAddScope checks that a refresh request for a scope the authorization request did not ask for fails with invalid_scope.
+//
+//conformance:covers OAUTH21D16-4.3.1-03
+func TestRefreshCannotAddScope(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := refreshParams(a.publicRefreshToken())
+	params.Set("scope", "read write")
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
+}
+
+// TestRotatedRefreshTokenKeepsScope checks that the refresh token issued by a narrowed refresh keeps the scope of the presented one.
+//
+//conformance:covers OAUTH21D16-4.3.3-02
+func TestRotatedRefreshTokenKeepsScope(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("scope", "read write")
+	_, refresh := a.tokens(tokenParams(a.code(params)), nil)
+	narrow := refreshParams(refresh)
+	narrow.Set("scope", "read")
+	_, next := a.tokens(narrow, nil)
+	if _, _, body := a.token(refreshParams(next), nil); body["scope"] != "read write" {
+		t.Fatalf("got body %v, want scope read write", body)
+	}
+}
+
+// TestRefreshTokenIsBoundToGrantedScope checks that a refresh token cannot obtain a requested scope the Host Application did not grant.
+//
+//conformance:covers OAUTH21D16-3.2.3-11
+func TestRefreshTokenIsBoundToGrantedScope(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("scope", "read write")
+	req := a.pending(a.authorize(params))
+	u := a.complete(req.ID, oauth21.Completion{Subject: "alice", Scopes: readScope})
+	_, refresh := a.tokens(tokenParams(u.Query().Get("code")), nil)
+	wide := refreshParams(refresh)
+	wide.Set("scope", "write")
+	status, _, body := a.token(wide, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
+}
+
+// TestUnknownRefreshTokenIsRejected checks that a refresh token the server did not issue gets invalid_grant.
+//
+//conformance:covers OAUTH21D16-4.3.1-09
+func TestUnknownRefreshTokenIsRejected(t *testing.T) {
+	a := newAuthorizationServer(t)
+	status, _, body := a.token(refreshParams("unknown"), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestRefreshKeepsAudience checks that the access token from a refresh has the audience of the refresh token's Grant.
+//
+//conformance:covers OAUTH21D16-3.2.3-14
+func TestRefreshKeepsAudience(t *testing.T) {
+	a := newIntrospectionServer(t)
+	refresh, hash := randomWithHash(t)
+	if err := a.recorder.Store.CreateRefreshToken(t.Context(), store.RefreshToken{Hash: hash, Grant: aliceGrant("audience-grant", resourceServerID), ExpiresAt: a.now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	access, _ := a.tokens(refreshParams(refresh), nil)
+	if body := a.introspect(access); body["active"] != true || !reflect.DeepEqual(body["aud"], resourceServerID) && !reflect.DeepEqual(body["aud"], []any{resourceServerID}) {
+		t.Fatalf("got %v, want an active token with audience %s", body, resourceServerID)
 	}
 }

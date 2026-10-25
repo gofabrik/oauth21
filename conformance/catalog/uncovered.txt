@@ -1,1 +1,36 @@
 # Gated Requirements and Security Invariants that no conformance test covers yet.
+# 25: authenticate the Resource Owner before redirecting errors
+OAUTH21D16-3.1-01
+OAUTH21D16-7.13.2-02
+OAUTH21D16-7.13.2-03
+# 26: enforce redirect_uri at the token endpoint as RFC 6749 does
+OAUTH21D16-10.2-02
+# 28: brute-force protection for Client authentication
+OAUTH21D16-2.4.1-06
+OAUTH21D16-7.7-06
+# 29: clickjacking protection
+OAUTH21D16-7.11-01
+# 30: validate registered Client data
+OAUTH21D16-1.5-07
+OAUTH21D16-2-01
+OAUTH21D16-2.3-01
+OAUTH21D16-2.3-04
+# 31: Client policy and the Host Application's duties
+OAUTH21D16-1.4-08
+OAUTH21D16-2.4-01
+OAUTH21D16-2.4-08
+OAUTH21D16-7.4-02
+OAUTH21D16-7.7-04
+OAUTH21D16-7.7-05
+OAUTH21D16-8.1-01
+OAUTH21D16-8.1-02
+OAUTH21D16-8.1.1-01
+# 39: transport security
+OAUTH21D16-1.4-04
+OAUTH21D16-1.4.2-01
+OAUTH21D16-1.5-01
+OAUTH21D16-1.5-06
+OAUTH21D16-4.3-06
+OAUTH21D16-7.14-01
+# 40: endpoint URLs with a query component
+OAUTH21D16-3.1-04

@@ -2,10 +2,741 @@ document: OAUTH21D16
 title: The OAuth 2.1 Authorization Framework
 source: ../specs/draft-ietf-oauth-v2-1-16.txt
 requirements:
+  - id: OAUTH21D16-1.4-01
+    section: "1.4"
+    keyword: MUST NOT
+    text: The client MUST NOT expect to be able to parse the access token value.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-1.4-02
+    section: "1.4"
+    keyword: MUST
+    text: Access tokens (as well as any confidential access token attributes) MUST be kept confidential in transit and storage, and only shared among the authorization server, the resource servers the access token is valid for, and the client to which the access token is issued.
+    statement: Access tokens MUST be kept confidential in storage.
+    status: applicable
+    note: Stores receive only hashes.
+  - id: OAUTH21D16-1.4-04
+    section: "1.4"
+    keyword: MUST
+    text: Access tokens (as well as any confidential access token attributes) MUST be kept confidential in transit and storage, and only shared among the authorization server, the resource servers the access token is valid for, and the client to which the access token is issued.
+    statement: Access tokens MUST be kept confidential in transit.
+    status: applicable
+  - id: OAUTH21D16-1.4-05
+    section: "1.4"
+    keyword: MUST
+    text: Access tokens (as well as any confidential access token attributes) MUST be kept confidential in transit and storage, and only shared among the authorization server, the resource servers the access token is valid for, and the client to which the access token is issued.
+    statement: Access tokens MUST only be shared among the authorization server, the resource servers the access token is valid for, and the client to which the access token is issued.
+    status: applicable
+  - id: OAUTH21D16-1.4-08
+    section: "1.4"
+    keyword: MUST
+    text: Access tokens (as well as any confidential access token attributes) MUST be kept confidential in transit and storage, and only shared among the authorization server, the resource servers the access token is valid for, and the client to which the access token is issued.
+    statement: Confidential access token attributes MUST be kept confidential in storage.
+    status: applicable
+  - id: OAUTH21D16-1.4-03
+    section: "1.4"
+    keyword: MUST
+    text: The authorization server MUST ensure that access tokens cannot be generated, modified, or guessed to produce valid access tokens by unauthorized parties.
+    statement: The authorization server MUST ensure that access tokens cannot be generated to produce valid access tokens by unauthorized parties.
+    status: applicable
+  - id: OAUTH21D16-1.4-06
+    section: "1.4"
+    keyword: MUST
+    text: The authorization server MUST ensure that access tokens cannot be generated, modified, or guessed to produce valid access tokens by unauthorized parties.
+    statement: The authorization server MUST ensure that access tokens cannot be modified to produce valid access tokens by unauthorized parties.
+    status: applicable
+  - id: OAUTH21D16-1.4-07
+    section: "1.4"
+    keyword: MUST
+    text: The authorization server MUST ensure that access tokens cannot be generated, modified, or guessed to produce valid access tokens by unauthorized parties.
+    statement: The authorization server MUST ensure that access tokens cannot be guessed to produce valid access tokens by unauthorized parties.
+    status: applicable
+  - id: OAUTH21D16-1.4.1-01
+    section: 1.4.1
+    keyword: MAY
+    text: The authorization server MAY fully or partially ignore the scope requested by the client, based on the authorization server policy or the resource owner's instructions.
+    status: applicable
+  - id: OAUTH21D16-1.4.1-02
+    section: 1.4.1
+    keyword: MUST
+    text: If the issued access token scope is different from the one requested by the client, the authorization server MUST include the scope response parameter in the token response (Section 3.2.3) to inform the client of the actual scope granted.
+    status: applicable
+  - id: OAUTH21D16-1.4.1-03
+    section: 1.4.1
+    keyword: MUST
+    text: If the client omits the scope parameter when requesting authorization, the authorization server MUST either process the request using a pre-defined default value or fail the request indicating an invalid scope.
+    status: applicable
+    note: The server uses the Client's default scopes, or fails with invalid_scope when it has none.
+  - id: OAUTH21D16-1.4.1-04
+    section: 1.4.1
+    keyword: SHOULD
+    text: The authorization server SHOULD document its scope requirements and default value (if defined).
+    status: applicable
+  - id: OAUTH21D16-1.4.2-01
+    section: 1.4.2
+    keyword: MUST
+    text: To protect against access token disclosure, the communication interaction between the client and the resource server MUST utilize confidentiality and integrity protection as described in Section 1.5.
+    status: applicable
+  - id: OAUTH21D16-1.4.2-02
+    section: 1.4.2
+    keyword: MUST
+    text: If a bearer token is a reference to authorization information, such references MUST be infeasible for an attacker to guess, such as using a sufficiently long cryptographically random string.
+    status: applicable
+    note: Access tokens are opaque values from a cryptographically secure source.
+  - id: OAUTH21D16-1.4.2-03
+    section: 1.4.2
+    keyword: MUST
+    text: If a bearer token uses an encoding mechanism to contain the authorization information in the token itself, the access token MUST use integrity protection sufficient to prevent the token from being modified.
+    status: applicable
+  - id: OAUTH21D16-1.4.3-01
+    section: 1.4.3
+    keyword: SHOULD
+    text: Authorization and resource servers SHOULD use mechanisms for sender-constraining access tokens, such as OAuth Demonstration of Proof of Possession (DPoP) [RFC9449] or Mutual TLS for OAuth 2.0 [RFC8705].
+    status: out-of-scope
+    note: DPoP and mTLS are not implemented.
+  - id: OAUTH21D16-1.4.3-02
+    section: 1.4.3
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED to use end-to-end TLS between the client and the resource server.
+    status: applicable
+  - id: OAUTH21D16-1.5-01
+    section: "1.5"
+    keyword: MUST
+    text: Implementations MUST use a mechanism to provide communication authentication, integrity and confidentiality such as Transport-Layer Security [RFC9846], to protect the exchange of clear-text credentials and tokens either in the content or in header fields from eavesdropping which enables replay (e.g., see Section 2.4.1, Section 7.5.1, Section 3.2, and Section 1.4.2).
+    status: applicable
+  - id: OAUTH21D16-1.5-02
+    section: "1.5"
+    keyword: MUST
+    text: All the OAuth protocol URLs (URLs exposed by the AS, RS and Client) MUST use the https scheme except for loopback interface redirect URIs, which MAY use the http scheme.
+    statement: The URLs exposed by the authorization server MUST use the https scheme.
+    status: applicable
+  - id: OAUTH21D16-1.5-06
+    section: "1.5"
+    keyword: MUST
+    text: All the OAuth protocol URLs (URLs exposed by the AS, RS and Client) MUST use the https scheme except for loopback interface redirect URIs, which MAY use the http scheme.
+    statement: The URLs exposed by the resource server MUST use the https scheme.
+    status: applicable
+  - id: OAUTH21D16-1.5-07
+    section: "1.5"
+    keyword: MUST
+    text: All the OAuth protocol URLs (URLs exposed by the AS, RS and Client) MUST use the https scheme except for loopback interface redirect URIs, which MAY use the http scheme.
+    statement: The URLs exposed by the client MUST use the https scheme, except for loopback interface redirect URIs.
+    status: applicable
+  - id: OAUTH21D16-1.5-03
+    section: "1.5"
+    keyword: MAY
+    text: All the OAuth protocol URLs (URLs exposed by the AS, RS and Client) MUST use the https scheme except for loopback interface redirect URIs, which MAY use the http scheme.
+    statement: Loopback interface redirect URIs MAY use the http scheme.
+    status: applicable
+  - id: OAUTH21D16-1.5-04
+    section: "1.5"
+    keyword: MUST
+    text: When using https, TLS certificates MUST be checked according to Section 4.3.4 of [RFC9110].
+    status: applicable
+  - id: OAUTH21D16-1.5-05
+    section: "1.5"
+    keyword: MAY
+    text: Implementations MAY also support additional transport-layer security mechanisms that meet their security requirements.
+    status: applicable
+  - id: OAUTH21D16-1.7.1-01
+    section: 1.7.1
+    keyword: MUST NOT
+    text: Implementations MUST NOT assume that a value they receive fits within a particular length.
+    status: applicable
+  - id: OAUTH21D16-1.7.1-02
+    section: 1.7.1
+    keyword: SHOULD
+    text: The party that issues a value SHOULD document its length, and SHOULD take into account the limits of the components that will carry it.
+    statement: The party that issues a value SHOULD document its length.
+    status: applicable
+  - id: OAUTH21D16-1.7.1-03
+    section: 1.7.1
+    keyword: SHOULD
+    text: The party that issues a value SHOULD document its length, and SHOULD take into account the limits of the components that will carry it.
+    statement: The party that issues a value SHOULD take into account the limits of the components that will carry it.
+    status: applicable
+  - id: OAUTH21D16-1.7.1-04
+    section: 1.7.1
+    keyword: SHOULD
+    text: Implementations SHOULD support parameter values long enough that requests remain within the 8000-octet request-line length recommended by Section 3 of [RFC9112].
+    status: applicable
+  - id: OAUTH21D16-2-01
+    section: "2"
+    keyword: MUST
+    text: 'Client registration MUST include: the client type as described in Section 2.1, client details needed by the grant type in use, such as redirect URIs as described in Section 2.3, and any other information required by the authorization server (e.g., application name, website, description, logo image, the acceptance of legal terms).'
+    status: applicable
+  - id: OAUTH21D16-2.1-01
+    section: "2.1"
+    keyword: MUST
+    text: Any clients with credentials MUST take precautions to prevent leakage and abuse of their credentials.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.1-02
+    section: "2.1"
+    keyword: SHOULD
+    text: Authorization servers SHOULD consider the level of confidence in a client's identity when deciding whether they allow a client access to more sensitive resources and operations such as the Client Credentials grant type and how often to prompt the user for consent.
+    status: applicable
+    note: Only confidential Clients may use client credentials.
+  - id: OAUTH21D16-2.1-03
+    section: "2.1"
+    keyword: SHOULD NOT
+    text: A single client_id SHOULD NOT be treated as more than one type of client.
+    status: applicable
+    note: A Client has exactly one type.
+  - id: OAUTH21D16-2.2-01
+    section: "2.2"
+    keyword: MUST NOT
+    text: The client identifier is not a secret; it is exposed to the resource owner and MUST NOT be used alone for client authentication.
+    status: applicable
+  - id: OAUTH21D16-2.2-02
+    section: "2.2"
+    keyword: SHOULD
+    text: If the authorization server supports clients with client identifiers issued by parties other than the authorization server, the authorization server SHOULD take precautions to avoid clients impersonating resource owners as described in Section 7.4.
+    status: out-of-scope
+    note: Client ID Metadata Documents are out of scope (M2).
+  - id: OAUTH21D16-2.3-01
+    section: "2.3"
+    keyword: MUST
+    text: The redirect URI MUST be an absolute URI as defined by Section 4.3 of [RFC3986].
+    status: applicable
+  - id: OAUTH21D16-2.3-02
+    section: "2.3"
+    keyword: MAY
+    text: The redirect URI MAY include a query string component (Appendix C.1), which MUST be retained when adding additional query parameters.
+    statement: The redirect URI MAY include a query string component.
+    status: applicable
+  - id: OAUTH21D16-2.3-03
+    section: "2.3"
+    keyword: MUST
+    text: The redirect URI MAY include a query string component (Appendix C.1), which MUST be retained when adding additional query parameters.
+    statement: A query string component of the redirect URI MUST be retained when adding additional query parameters.
+    status: applicable
+  - id: OAUTH21D16-2.3-04
+    section: "2.3"
+    keyword: MUST NOT
+    text: The redirect URI MUST NOT include a fragment component.
+    status: applicable
+  - id: OAUTH21D16-2.3.1-01
+    section: 2.3.1
+    keyword: MUST
+    text: Authorization servers MUST require clients to register their complete redirect URI (including the path component).
+    status: applicable
+    note: Met by exact matching against the registered redirect URIs.
+  - id: OAUTH21D16-2.3.1-02
+    section: 2.3.1
+    keyword: MUST
+    text: Authorization servers MUST reject authorization requests that specify a redirect URI that doesn't exactly match one that was registered, with an exception for loopback redirects, where an exact match is required except for the port URI component, see Section 4.1.1 for details.
+    status: applicable
+  - id: OAUTH21D16-2.3.1-03
+    section: 2.3.1
+    keyword: MAY
+    text: The authorization server MAY allow the client to register multiple redirect URIs.
+    status: applicable
+  - id: OAUTH21D16-2.3.1-04
+    section: 2.3.1
+    keyword: SHOULD
+    text: For private-use URI scheme-based redirect URIs, authorization servers SHOULD enforce the requirement in Section 8.4.3 that clients use schemes that are reverse domain name based.
+    status: applicable
+  - id: OAUTH21D16-2.3.1-05
+    section: 2.3.1
+    keyword: SHOULD
+    text: At a minimum, any private-use URI scheme that doesn't contain a period character (.) SHOULD be rejected.
+    status: applicable
+  - id: OAUTH21D16-2.3.1-06
+    section: 2.3.1
+    keyword: MUST NOT
+    text: Clients MUST NOT expose URLs that forward the user's browser to arbitrary URIs obtained from a query parameter ("open redirector"), as described in Section 7.13.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.1-07
+    section: 2.3.1
+    keyword: MAY
+    text: The client MAY use the state request parameter to achieve per-request customization if needed rather than varying the redirect URI per request.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.2-01
+    section: 2.3.2
+    keyword: MUST
+    text: If multiple redirect URIs have been registered to a client, the client MUST include a redirect URI with the authorization request using the redirect_uri request parameter (Section 4.1.1).
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.3-01
+    section: 2.3.3
+    keyword: MUST
+    text: Clients MUST prevent Cross-Site Request Forgery (CSRF) attacks.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.3-02
+    section: 2.3.3
+    keyword: MAY
+    text: Clients that have ensured that the authorization server supports the code_challenge parameter MAY rely on the CSRF protection provided by that mechanism.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.3-03
+    section: 2.3.3
+    keyword: MUST
+    text: Otherwise, one-time use CSRF tokens carried in the state parameter that are securely bound to the user agent MUST be used for CSRF protection (see Section 7.10).
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.4-01
+    section: 2.3.4
+    keyword: MUST
+    text: In scenarios where an OAuth client interacts with two or more authorization servers, however, clients MUST prevent mix-up attacks.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.4-02
+    section: 2.3.4
+    keyword: MUST
+    text: In order to prevent mix-up attacks, clients MUST only process redirect responses of the issuer they sent the respective request to and from the same user agent this authorization request was initiated with.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.5-01
+    section: 2.3.5
+    keyword: SHOULD
+    text: If an authorization request fails validation due to a missing, invalid, or mismatching redirect URI, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user agent to the invalid redirect URI.
+    statement: If an authorization request fails validation due to a missing, invalid, or mismatching redirect URI, the authorization server SHOULD inform the resource owner of the error.
+    status: applicable
+  - id: OAUTH21D16-2.3.5-02
+    section: 2.3.5
+    keyword: MUST NOT
+    text: If an authorization request fails validation due to a missing, invalid, or mismatching redirect URI, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user agent to the invalid redirect URI.
+    statement: If an authorization request fails validation due to a missing, invalid, or mismatching redirect URI, the authorization server MUST NOT automatically redirect the user agent to the invalid redirect URI.
+    status: applicable
+  - id: OAUTH21D16-2.3.6-01
+    section: 2.3.6
+    keyword: SHOULD NOT
+    text: The client SHOULD NOT include any third-party scripts (e.g., third-party analytics, social plug-ins, ad networks) in the redirect URI endpoint response.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.6-02
+    section: 2.3.6
+    keyword: SHOULD
+    text: Instead, it SHOULD extract the artifacts from the URI and redirect the user agent again to another endpoint without exposing the artifacts (in the URI or elsewhere).
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.3.6-03
+    section: 2.3.6
+    keyword: MUST
+    text: If third-party scripts are included, the client MUST ensure that its own scripts (used to extract and remove the credentials from the URI) will execute first.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-2.4-01
+    section: "2.4"
+    keyword: MUST
+    text: The authorization server MUST only rely on client authentication if the process of issuance/registration and distribution of the underlying credentials ensures their confidentiality.
+    status: applicable
+  - id: OAUTH21D16-2.4-02
+    section: "2.4"
+    keyword: MAY
+    text: For confidential clients, the authorization server MAY accept any form of client authentication meeting its security requirements (e.g., client secret, public/private key pair).
+    status: applicable
+  - id: OAUTH21D16-2.4-03
+    section: "2.4"
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED to use asymmetric (public-key based) methods for client authentication such as mTLS [RFC8705] or using signed JWTs ("Private Key JWT") in accordance with [RFC7521], [RFC7523], and their update [I-D.ietf-oauth-rfc7523bis] (defined in [OpenID.Connect] as the client authentication method private_key_jwt).
+    status: out-of-scope
+    note: private_key_jwt and mTLS are not implemented.
+  - id: OAUTH21D16-2.4-04
+    section: "2.4"
+    keyword: MUST
+    text: When using JWT-based client authentication, clients and authorization servers MUST follow the updated guidance around aud values in [I-D.ietf-oauth-rfc7523bis].
+    status: out-of-scope
+    note: private_key_jwt and mTLS are not implemented.
+  - id: OAUTH21D16-2.4-05
+    section: "2.4"
+    keyword: SHOULD
+    text: When client authentication is not possible, the authorization server SHOULD employ other means to validate the client's identity -- for example, by requiring the registration of the client redirect URI or enlisting the resource owner to confirm identity.
+    status: applicable
+    note: Public Clients are bound to their registered redirect URIs.
+  - id: OAUTH21D16-2.4-06
+    section: "2.4"
+    keyword: MUST NOT
+    text: The client MUST NOT use more than one authentication method in each request to prevent a conflict of which authentication mechanism is authoritative for the request.
+    status: out-of-scope
+    note: Client requirement; INV-0005 states what the server does.
+  - id: OAUTH21D16-2.4-07
+    section: "2.4"
+    keyword: MUST
+    text: The authorization server MUST consider the security implications of interacting with unauthenticated clients and take measures to limit the potential exposure of tokens issued to such clients, (e.g., limiting the lifetime of refresh tokens).
+    status: applicable
+    note: Refresh tokens of public Clients always rotate.
+  - id: OAUTH21D16-2.4-08
+    section: "2.4"
+    keyword: MUST
+    text: The privileges an authorization server associates with a certain client identity MUST depend on the assessment of the overall process for client identification and client credential lifecycle management.
+    status: applicable
+  - id: OAUTH21D16-2.4.1-01
+    section: 2.4.1
+    keyword: MUST
+    text: 'To support confidential clients in possession of a client secret, the authorization server MUST support the client including the client credentials in the request body content using the following parameters:'
+    status: applicable
+  - id: OAUTH21D16-2.4.1-02
+    section: 2.4.1
+    keyword: REQUIRED
+    text: '"client_id": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-2.4.1-03
+    section: 2.4.1
+    keyword: REQUIRED
+    text: '"client_secret": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-2.4.1-04
+    section: 2.4.1
+    keyword: MUST NOT
+    text: The parameters can only be transmitted in the request content and MUST NOT be included in the request URI.
+    status: applicable
+    note: The server reads Client credentials only from the request content.
+  - id: OAUTH21D16-2.4.1-05
+    section: 2.4.1
+    keyword: MAY
+    text: The authorization server MAY support the HTTP Basic authentication scheme for authenticating clients that were issued a client secret.
+    status: applicable
+  - id: OAUTH21D16-2.4.1-06
+    section: 2.4.1
+    keyword: MUST
+    text: Since the client secret authentication method involves a password, the authorization server MUST protect any endpoint utilizing it against brute force attacks.
+    status: applicable
+  - id: OAUTH21D16-2.4.2-01
+    section: 2.4.2
+    keyword: MAY
+    text: The authorization server MAY support any suitable authentication scheme matching its security requirements.
+    status: applicable
+  - id: OAUTH21D16-2.4.2-02
+    section: 2.4.2
+    keyword: MUST
+    text: When using other authentication methods, the authorization server MUST define a mapping between the client identifier (registration record) and authentication scheme.
+    status: out-of-scope
+    note: The other methods spec.md names, private_key_jwt and mTLS, are out of scope.
+  - id: OAUTH21D16-3-01
+    section: "3"
+    keyword: MAY
+    text: Extension grant types MAY define additional endpoints as needed.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-3.1-01
+    section: "3.1"
+    keyword: MUST
+    text: The authorization server MUST first authenticate the resource owner.
+    status: applicable
+  - id: OAUTH21D16-3.1-02
+    section: "3.1"
+    keyword: MUST NOT
+    text: The authorization endpoint URL MUST NOT include a fragment component, and MAY include a query string component (Appendix C.1), which MUST be retained when adding additional query parameters.
+    statement: The authorization endpoint URL MUST NOT include a fragment component.
+    status: applicable
+  - id: OAUTH21D16-3.1-03
+    section: "3.1"
+    keyword: MAY
+    text: The authorization endpoint URL MUST NOT include a fragment component, and MAY include a query string component (Appendix C.1), which MUST be retained when adding additional query parameters.
+    statement: The authorization endpoint URL MAY include a query string component.
+    status: applicable
+  - id: OAUTH21D16-3.1-04
+    section: "3.1"
+    keyword: MUST
+    text: The authorization endpoint URL MUST NOT include a fragment component, and MAY include a query string component (Appendix C.1), which MUST be retained when adding additional query parameters.
+    statement: A query string component of the authorization endpoint URL MUST be retained when adding additional query parameters.
+    status: applicable
+  - id: OAUTH21D16-3.1-05
+    section: "3.1"
+    keyword: MUST
+    text: The authorization server MUST support the use of the HTTP GET method Section 9.3.1 of [RFC9110] for the authorization endpoint and MAY support the POST method (Section 9.3.3 of [RFC9110]) as well.
+    statement: The authorization server MUST support the use of the HTTP GET method for the authorization endpoint.
+    status: applicable
+  - id: OAUTH21D16-3.1-06
+    section: "3.1"
+    keyword: MAY
+    text: The authorization server MUST support the use of the HTTP GET method Section 9.3.1 of [RFC9110] for the authorization endpoint and MAY support the POST method (Section 9.3.3 of [RFC9110]) as well.
+    statement: The authorization server MAY support the POST method for the authorization endpoint.
+    status: applicable
+  - id: OAUTH21D16-3.1-07
+    section: "3.1"
+    keyword: MUST
+    text: The authorization server MUST ignore unrecognized request parameters sent to the authorization endpoint.
+    status: applicable
+  - id: OAUTH21D16-3.1-08
+    section: "3.1"
+    keyword: MUST NOT
+    text: Request and response parameters defined by this specification MUST NOT be included more than once.
+    statement: Request parameters defined by this specification MUST NOT be included more than once.
+    status: applicable
+  - id: OAUTH21D16-3.1-12
+    section: "3.1"
+    keyword: MUST NOT
+    text: Request and response parameters defined by this specification MUST NOT be included more than once.
+    statement: Response parameters defined by this specification MUST NOT be included more than once.
+    status: applicable
+  - id: OAUTH21D16-3.1-09
+    section: "3.1"
+    keyword: MUST
+    text: Parameters sent without a value MUST be treated as if they were omitted from the request.
+    status: applicable
+  - id: OAUTH21D16-3.1-10
+    section: "3.1"
+    keyword: MUST
+    text: An authorization server that redirects a request potentially containing user credentials MUST avoid forwarding these user credentials accidentally (see Section 7.5.4 for details).
+    status: applicable
+  - id: OAUTH21D16-3.1-11
+    section: "3.1"
+    keyword: MUST NOT
+    text: Cross-Origin Resource Sharing [WHATWG.CORS] MUST NOT be supported at the Authorization Endpoint as the client does not access this endpoint directly, instead the client redirects the user agent to it.
+    status: applicable
+  - id: OAUTH21D16-3.2-01
+    section: "3.2"
+    keyword: MUST NOT
+    text: The token endpoint URL MUST NOT include a fragment component, and MAY include a query string component (Appendix C.1).
+    statement: The token endpoint URL MUST NOT include a fragment component.
+    status: applicable
+  - id: OAUTH21D16-3.2-02
+    section: "3.2"
+    keyword: MAY
+    text: The token endpoint URL MUST NOT include a fragment component, and MAY include a query string component (Appendix C.1).
+    statement: The token endpoint URL MAY include a query string component.
+    status: applicable
+  - id: OAUTH21D16-3.2-03
+    section: "3.2"
+    keyword: MUST
+    text: The client MUST use the HTTP POST method when making requests to the token endpoint.
+    status: out-of-scope
+    note: Client requirement; INV-0006 states what the server does.
+  - id: OAUTH21D16-3.2-04
+    section: "3.2"
+    keyword: MUST
+    text: The authorization server MUST ignore unrecognized request parameters sent to the token endpoint.
+    status: applicable
+  - id: OAUTH21D16-3.2-05
+    section: "3.2"
+    keyword: MUST
+    text: Parameters sent without a value MUST be treated as if they were omitted from the request.
+    status: applicable
+  - id: OAUTH21D16-3.2-06
+    section: "3.2"
+    keyword: MUST NOT
+    text: Request and response parameters defined by this specification MUST NOT be included more than once.
+    statement: Request parameters defined by this specification MUST NOT be included more than once.
+    status: applicable
+  - id: OAUTH21D16-3.2-07
+    section: "3.2"
+    keyword: MUST NOT
+    text: Request and response parameters defined by this specification MUST NOT be included more than once.
+    statement: Response parameters defined by this specification MUST NOT be included more than once.
+    status: applicable
+  - id: OAUTH21D16-3.2.1-01
+    section: 3.2.1
+    keyword: MUST
+    text: Confidential clients MUST authenticate with the authorization server as described in Section 2.4 when making requests to the token endpoint.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-3.2.2-01
+    section: 3.2.2
+    keyword: REQUIRED
+    text: '"grant_type": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-3.2.2-02
+    section: 3.2.2
+    keyword: OPTIONAL
+    text: '"client_id": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-3.2.2-03
+    section: 3.2.2
+    keyword: MUST
+    text: Confidential clients MUST authenticate with the authorization server as described in Section 3.2.1.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-3.2.2-04
+    section: 3.2.2
+    keyword: MUST
+    text: 'The authorization server MUST: require client authentication for confidential clients (or clients with other authentication requirements), authenticate the client if client authentication is included'
+    statement: The authorization server MUST require client authentication for confidential clients (or clients with other authentication requirements).
+    status: applicable
+  - id: OAUTH21D16-3.2.2-05
+    section: 3.2.2
+    keyword: MUST
+    text: 'The authorization server MUST: require client authentication for confidential clients (or clients with other authentication requirements), authenticate the client if client authentication is included'
+    statement: The authorization server MUST authenticate the client if client authentication is included.
+    status: applicable
+  - id: OAUTH21D16-3.2.3-01
+    section: 3.2.3
+    keyword: REQUIRED
+    text: '"access_token": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-3.2.3-02
+    section: 3.2.3
+    keyword: REQUIRED
+    text: '"token_type": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-3.2.3-03
+    section: 3.2.3
+    keyword: RECOMMENDED
+    text: '"expires_in": RECOMMENDED.'
+    status: applicable
+  - id: OAUTH21D16-3.2.3-04
+    section: 3.2.3
+    keyword: SHOULD
+    text: If omitted, the authorization server SHOULD provide the lifetime via other means or document the default value.
+    status: applicable
+    note: expires_in is always included.
+  - id: OAUTH21D16-3.2.3-05
+    section: 3.2.3
+    keyword: MUST NOT
+    text: Note that the authorization server may prematurely expire an access token and clients MUST NOT expect an access token to be valid for the provided lifetime.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-3.2.3-06
+    section: 3.2.3
+    keyword: RECOMMENDED
+    text: '"scope": RECOMMENDED, if identical to the scope requested by the client; otherwise, REQUIRED.'
+    statement: '"scope" is RECOMMENDED in the token response if identical to the scope requested by the client.'
+    status: applicable
+  - id: OAUTH21D16-3.2.3-07
+    section: 3.2.3
+    keyword: REQUIRED
+    text: '"scope": RECOMMENDED, if identical to the scope requested by the client; otherwise, REQUIRED.'
+    statement: '"scope" is REQUIRED in the token response if it differs from the scope requested by the client.'
+    status: applicable
+  - id: OAUTH21D16-3.2.3-08
+    section: 3.2.3
+    keyword: OPTIONAL
+    text: '"refresh_token": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-3.2.3-09
+    section: 3.2.3
+    keyword: SHOULD
+    text: Authorization servers SHOULD determine, based on a risk assessment and their own policies, whether to issue refresh tokens to a certain client.
+    status: applicable
+    note: A Client gets refresh tokens only when it is allowed the refresh_token grant type.
+  - id: OAUTH21D16-3.2.3-10
+    section: 3.2.3
+    keyword: MAY
+    text: If the authorization server decides not to issue refresh tokens, the client MAY obtain new access tokens by starting the OAuth flow over, for example initiating a new authorization code request.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-3.2.3-11
+    section: 3.2.3
+    keyword: MUST
+    text: If refresh tokens are issued, those refresh tokens MUST be bound to the scope and resource servers as consented by the resource owner.
+    statement: If refresh tokens are issued, those refresh tokens MUST be bound to the scope as consented by the resource owner.
+    status: applicable
+  - id: OAUTH21D16-3.2.3-14
+    section: 3.2.3
+    keyword: MUST
+    text: If refresh tokens are issued, those refresh tokens MUST be bound to the scope and resource servers as consented by the resource owner.
+    statement: If refresh tokens are issued, those refresh tokens MUST be bound to the resource servers as consented by the resource owner.
+    status: applicable
+  - id: OAUTH21D16-3.2.3-12
+    section: 3.2.3
+    keyword: MUST
+    text: The authorization server MUST include the HTTP Cache-Control response header field (see Section 5.2 of [RFC9111]) with a value of no-store in any response containing tokens, credentials, or other sensitive information.
+    status: applicable
+  - id: OAUTH21D16-3.2.3-13
+    section: 3.2.3
+    keyword: MUST
+    text: The client MUST ignore unrecognized value names in the response.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-3.2.4-01
+    section: 3.2.4
+    keyword: REQUIRED
+    text: '"error": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-3.2.4-02
+    section: 3.2.4
+    keyword: MAY
+    text: The authorization server MAY return an HTTP 401 (Unauthorized) status code to indicate which HTTP authentication schemes are supported.
+    status: applicable
+  - id: OAUTH21D16-3.2.4-03
+    section: 3.2.4
+    keyword: MUST
+    text: If the client attempted to authenticate via the Authorization request header field, the authorization server MUST respond with an HTTP 401 (Unauthorized) status code and include the WWW-Authenticate response header field matching the authentication scheme used by the client.
+    statement: If the client attempted to authenticate via the Authorization request header field, the authorization server MUST respond with an HTTP 401 (Unauthorized) status code.
+    status: applicable
+  - id: OAUTH21D16-3.2.4-10
+    section: 3.2.4
+    keyword: MUST
+    text: If the client attempted to authenticate via the Authorization request header field, the authorization server MUST respond with an HTTP 401 (Unauthorized) status code and include the WWW-Authenticate response header field matching the authentication scheme used by the client.
+    statement: If the client attempted to authenticate via the Authorization request header field, the authorization server MUST include the WWW-Authenticate response header field matching the authentication scheme used by the client.
+    status: applicable
+  - id: OAUTH21D16-3.2.4-04
+    section: 3.2.4
+    keyword: MUST NOT
+    text: Values for the error parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-3.2.4-05
+    section: 3.2.4
+    keyword: OPTIONAL
+    text: '"error_description": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-3.2.4-06
+    section: 3.2.4
+    keyword: MUST NOT
+    text: Values for the error_description parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-3.2.4-07
+    section: 3.2.4
+    keyword: OPTIONAL
+    text: '"error_uri": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-3.2.4-08
+    section: 3.2.4
+    keyword: MUST
+    text: Values for the error_uri parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST conform to the URI-reference syntax.
+    status: applicable
+  - id: OAUTH21D16-3.2.4-09
+    section: 3.2.4
+    keyword: MUST NOT
+    text: Values for the error_uri parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-4.1.1-01
+    section: 4.1.1
+    keyword: REQUIRED
+    text: '"response_type": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.1-02
+    section: 4.1.1
+    keyword: MAY
+    text: Extension response types MAY contain a space-delimited (%x20) list of values, where the order of values does not matter (e.g., response type a b is the same as b a).
+    status: applicable
+  - id: OAUTH21D16-4.1.1-03
+    section: 4.1.1
+    keyword: MUST
+    text: If an authorization request is missing the response_type parameter, or if the response type is not understood, the authorization server MUST return an error response as described in Section 4.1.2.1.
+    status: applicable
+  - id: OAUTH21D16-4.1.1-04
+    section: 4.1.1
+    keyword: REQUIRED
+    text: '"client_id": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.1-05
+    section: 4.1.1
+    keyword: REQUIRED
+    text: '"code_challenge": REQUIRED unless the specific requirements of Section 7.5.1 are met.'
+    status: applicable
+    note: The server requires PKCE from every Client.
   - id: OAUTH21D16-4.1.1-06
     section: 4.1.1
     keyword: REQUIRED
     text: '"code_challenge_method": REQUIRED, the value S256 or a value defined by a future extension'
+    status: applicable
+  - id: OAUTH21D16-4.1.1-07
+    section: 4.1.1
+    keyword: OPTIONAL
+    text: '"redirect_uri": OPTIONAL if only one redirect URI is registered for this client.'
+    status: applicable
+  - id: OAUTH21D16-4.1.1-08
+    section: 4.1.1
+    keyword: REQUIRED
+    text: REQUIRED if multiple redirect URIs are registered for this client.
+    status: applicable
+  - id: OAUTH21D16-4.1.1-09
+    section: 4.1.1
+    keyword: OPTIONAL
+    text: '"scope": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-4.1.1-10
+    section: 4.1.1
+    keyword: OPTIONAL
+    text: '"state": OPTIONAL.'
     status: applicable
   - id: OAUTH21D16-4.1.1-11
     section: 4.1.1
@@ -13,6 +744,23 @@ requirements:
     text: Clients MUST use code challenge methods that do not expose the code_verifier in the authorization request.
     status: out-of-scope
     note: Client requirement.
+  - id: OAUTH21D16-4.1.1-12
+    section: 4.1.1
+    keyword: SHOULD
+    text: 'NOTE: The code verifier SHOULD have enough entropy to make it impractical to guess the value.'
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.1-13
+    section: 4.1.1
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED that the output of a suitable random number generator be used to create a 32-octet sequence.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.1-14
+    section: 4.1.1
+    keyword: MUST
+    text: Authorization servers MUST support the code_challenge and code_verifier parameters.
+    status: applicable
   - id: OAUTH21D16-4.1.1-15
     section: 4.1.1
     keyword: MUST
@@ -27,3 +775,1397 @@ requirements:
     statement: Authorization servers MUST enforce the use of code_challenge and code_verifier except under the conditions described in Section 7.5.1.
     status: applicable
     note: The server requires PKCE from every Client.
+  - id: OAUTH21D16-4.1.1-17
+    section: 4.1.1
+    keyword: RECOMMENDED
+    text: Even in this case, using and enforcing code_challenge and code_verifier as described above is still RECOMMENDED.
+    status: applicable
+    note: The server requires PKCE from every Client.
+  - id: OAUTH21D16-4.1.1-18
+    section: 4.1.1
+    keyword: SHOULD NOT
+    text: The state and scope parameters SHOULD NOT include sensitive client or resource owner information in plain text, as they can be transmitted over insecure channels or stored insecurely.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.1-19
+    section: 4.1.1
+    keyword: MUST
+    text: In particular, the authorization server MUST validate the redirect_uri in the request if present, ensuring that it matches one of the registered redirect URIs previously established during client registration (Section 2).
+    status: applicable
+  - id: OAUTH21D16-4.1.1-20
+    section: 4.1.1
+    keyword: MUST
+    text: When comparing the two URIs the authorization server MUST ensure that the two URIs are equal, see Section 6.2.1 of [RFC3986], Simple String Comparison, for details.
+    status: applicable
+  - id: OAUTH21D16-4.1.1-21
+    section: 4.1.1
+    keyword: MUST
+    text: 'The only exception is native apps using a localhost URI: In this case, the authorization server MUST allow variable port numbers as described in Section 8.4.2.'
+    status: applicable
+    note: Applies to loopback IP redirect URIs as Section 8.4.2 describes; the name localhost gets no exception.
+  - id: OAUTH21D16-4.1.2-01
+    section: 4.1.2
+    keyword: REQUIRED
+    text: '"code": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2-02
+    section: 4.1.2
+    keyword: MUST
+    text: The authorization code MUST expire shortly after it is issued to mitigate the risk of leaks.
+    status: applicable
+  - id: OAUTH21D16-4.1.2-03
+    section: 4.1.2
+    keyword: RECOMMENDED
+    text: A maximum authorization code lifetime of 10 minutes is RECOMMENDED.
+    status: applicable
+    note: The code lifetime is at most ten minutes.
+  - id: OAUTH21D16-4.1.2-04
+    section: 4.1.2
+    keyword: REQUIRED
+    text: '"state": REQUIRED if the state parameter was present in the client authorization request.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2-05
+    section: 4.1.2
+    keyword: REQUIRED
+    text: '"iss": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2-06
+    section: 4.1.2
+    keyword: MUST
+    text: The client MUST ignore unrecognized response parameters.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.2-07
+    section: 4.1.2
+    keyword: MUST
+    text: The authorization server MUST associate the code_challenge and code_challenge_method values with the issued authorization code so the code challenge can be verified later.
+    status: applicable
+  - id: OAUTH21D16-4.1.2-08
+    section: 4.1.2
+    keyword: MUST NOT
+    text: The code_challenge and code_challenge_method values may be stored in encrypted form in the code itself, but the server MUST NOT include the code_challenge value in a response parameter in a form that entities other than the AS can extract.
+    status: applicable
+    note: Met by opaque codes that do not carry the code challenge.
+  - id: OAUTH21D16-4.1.2-09
+    section: 4.1.2
+    keyword: MUST
+    text: Clients MUST prevent injection (replay) of authorization codes into the authorization response by attackers.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.2.1-01
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: If the request fails due to a missing, invalid, or mismatching redirect URI, or if the client identifier is missing or invalid, the authorization server MUST NOT redirect the user agent to the invalid redirect URI and SHOULD inform the resource owner of the error, for example by displaying a message to the user in their browser.
+    statement: If the request fails due to a missing, invalid, or mismatching redirect URI, or if the client identifier is missing or invalid, the authorization server MUST NOT redirect the user agent to the invalid redirect URI.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-02
+    section: 4.1.2.1
+    keyword: SHOULD
+    text: If the request fails due to a missing, invalid, or mismatching redirect URI, or if the client identifier is missing or invalid, the authorization server MUST NOT redirect the user agent to the invalid redirect URI and SHOULD inform the resource owner of the error, for example by displaying a message to the user in their browser.
+    statement: If the request fails due to a missing, invalid, or mismatching redirect URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-03
+    section: 4.1.2.1
+    keyword: SHOULD
+    text: When returning an error response directly to the user agent, the authorization server SHOULD use the HTTP 400 (Bad Request) status code.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-04
+    section: 4.1.2.1
+    keyword: MUST
+    text: The authorization server MUST validate the client identifier and redirect URI before redirecting an error response to the client.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-05
+    section: 4.1.2.1
+    keyword: MUST
+    text: An authorization server MUST reject requests without a code_challenge from public clients, and MUST reject such requests from other clients unless there is reasonable assurance that the client mitigates authorization code injection in other ways.
+    statement: An authorization server MUST reject requests without a code_challenge from public clients.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-06
+    section: 4.1.2.1
+    keyword: MUST
+    text: An authorization server MUST reject requests without a code_challenge from public clients, and MUST reject such requests from other clients unless there is reasonable assurance that the client mitigates authorization code injection in other ways.
+    statement: An authorization server MUST reject requests without a code_challenge from other clients unless there is reasonable assurance that the client mitigates authorization code injection in other ways.
+    status: applicable
+    note: The server requires PKCE from every Client.
+  - id: OAUTH21D16-4.1.2.1-07
+    section: 4.1.2.1
+    keyword: MUST
+    text: If the server does not support the requested code_challenge_method transformation, the authorization endpoint MUST return the authorization error response with error value set to invalid_request.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-08
+    section: 4.1.2.1
+    keyword: SHOULD
+    text: The error_description or the response of error_uri SHOULD explain the nature of error, e.g., transform algorithm not supported.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-09
+    section: 4.1.2.1
+    keyword: REQUIRED
+    text: '"error": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-10
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: Values for the error parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-11
+    section: 4.1.2.1
+    keyword: OPTIONAL
+    text: '"error_description": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-12
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: Values for the error_description parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-13
+    section: 4.1.2.1
+    keyword: OPTIONAL
+    text: '"error_uri": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-14
+    section: 4.1.2.1
+    keyword: MUST
+    text: Values for the error_uri parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST conform to the URI-reference syntax.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-15
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: Values for the error_uri parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-16
+    section: 4.1.2.1
+    keyword: REQUIRED
+    text: '"state": REQUIRED if a state parameter was present in the client authorization request.'
+    status: applicable
+  - id: OAUTH21D16-4.1.2.1-17
+    section: 4.1.2.1
+    keyword: REQUIRED
+    text: '"iss": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.3-01
+    section: 4.1.3
+    keyword: REQUIRED
+    text: '"code": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.1.3-02
+    section: 4.1.3
+    keyword: REQUIRED
+    text: '"code_verifier": REQUIRED, if the code_challenge parameter was included in the authorization request.'
+    status: applicable
+  - id: OAUTH21D16-4.1.3-03
+    section: 4.1.3
+    keyword: MUST NOT
+    text: MUST NOT be used otherwise.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.1.3-04
+    section: 4.1.3
+    keyword: REQUIRED
+    text: '"client_id": REQUIRED, if the client is not authenticating with the authorization server as described in Section 3.2.1.'
+    status: applicable
+  - id: OAUTH21D16-4.1.3-05
+    section: 4.1.3
+    keyword: MUST
+    text: The authorization server MUST return an access token only once for a given authorization code.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-06
+    section: 4.1.3
+    keyword: MUST
+    text: If a second valid token request is made with the same authorization code as a previously successful token request, the authorization server MUST deny the request and SHOULD revoke (when possible) all access tokens and refresh tokens previously issued based on that authorization code.
+    statement: If a second valid token request is made with the same authorization code as a previously successful token request, the authorization server MUST deny the request.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-07
+    section: 4.1.3
+    keyword: SHOULD
+    text: If a second valid token request is made with the same authorization code as a previously successful token request, the authorization server MUST deny the request and SHOULD revoke (when possible) all access tokens and refresh tokens previously issued based on that authorization code.
+    statement: If a second valid token request is made with the same authorization code as a previously successful token request, the authorization server SHOULD revoke (when possible) all access tokens and refresh tokens previously issued based on that authorization code.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-08
+    section: 4.1.3
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to client_id in the request, verify that the authorization code is valid, verify that the code_verifier parameter is present if and only if a code_challenge parameter was present in the authorization request, if a code_verifier is present, verify the code_verifier by calculating the code challenge from the received code_verifier and comparing it with the previously associated code_challenge, after first transforming it according to the code_challenge_method method specified by the client, and If there was no code_challenge in the authorization request associated with the authorization code in the token request, the authorization server MUST reject the token request.'
+    statement: The authorization server MUST ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to client_id in the request.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-09
+    section: 4.1.3
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to client_id in the request, verify that the authorization code is valid, verify that the code_verifier parameter is present if and only if a code_challenge parameter was present in the authorization request, if a code_verifier is present, verify the code_verifier by calculating the code challenge from the received code_verifier and comparing it with the previously associated code_challenge, after first transforming it according to the code_challenge_method method specified by the client, and If there was no code_challenge in the authorization request associated with the authorization code in the token request, the authorization server MUST reject the token request.'
+    statement: The authorization server MUST verify that the authorization code is valid.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-10
+    section: 4.1.3
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to client_id in the request, verify that the authorization code is valid, verify that the code_verifier parameter is present if and only if a code_challenge parameter was present in the authorization request, if a code_verifier is present, verify the code_verifier by calculating the code challenge from the received code_verifier and comparing it with the previously associated code_challenge, after first transforming it according to the code_challenge_method method specified by the client, and If there was no code_challenge in the authorization request associated with the authorization code in the token request, the authorization server MUST reject the token request.'
+    statement: The authorization server MUST verify that the code_verifier parameter is present if and only if a code_challenge parameter was present in the authorization request.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-11
+    section: 4.1.3
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to client_id in the request, verify that the authorization code is valid, verify that the code_verifier parameter is present if and only if a code_challenge parameter was present in the authorization request, if a code_verifier is present, verify the code_verifier by calculating the code challenge from the received code_verifier and comparing it with the previously associated code_challenge, after first transforming it according to the code_challenge_method method specified by the client, and If there was no code_challenge in the authorization request associated with the authorization code in the token request, the authorization server MUST reject the token request.'
+    statement: If a code_verifier is present, the authorization server MUST verify it by calculating the code challenge from the received code_verifier and comparing it with the previously associated code_challenge, after first transforming it according to the code_challenge_method method specified by the client.
+    status: applicable
+  - id: OAUTH21D16-4.1.3-12
+    section: 4.1.3
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to client_id in the request, verify that the authorization code is valid, verify that the code_verifier parameter is present if and only if a code_challenge parameter was present in the authorization request, if a code_verifier is present, verify the code_verifier by calculating the code challenge from the received code_verifier and comparing it with the previously associated code_challenge, after first transforming it according to the code_challenge_method method specified by the client, and If there was no code_challenge in the authorization request associated with the authorization code in the token request, the authorization server MUST reject the token request.'
+    statement: If there was no code_challenge in the authorization request associated with the authorization code in the token request, the authorization server MUST reject the token request.
+    status: applicable
+    note: Every authorization request must carry a code challenge.
+  - id: OAUTH21D16-4.2-01
+    section: "4.2"
+    keyword: MUST
+    text: The client credentials grant type MUST only be used by confidential clients.
+    status: applicable
+  - id: OAUTH21D16-4.2.1-01
+    section: 4.2.1
+    keyword: OPTIONAL
+    text: '"scope": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-4.2.1-02
+    section: 4.2.1
+    keyword: MUST
+    text: The authorization server MUST authenticate the client.
+    status: applicable
+  - id: OAUTH21D16-4.3-01
+    section: "4.3"
+    keyword: MUST
+    text: Refresh tokens MUST be kept confidential in transit and storage, and shared only among the authorization server and the client to whom the refresh tokens were issued.
+    statement: Refresh tokens MUST be kept confidential in storage.
+    status: applicable
+    note: Stores receive only hashes.
+  - id: OAUTH21D16-4.3-06
+    section: "4.3"
+    keyword: MUST
+    text: Refresh tokens MUST be kept confidential in transit and storage, and shared only among the authorization server and the client to whom the refresh tokens were issued.
+    statement: Refresh tokens MUST be kept confidential in transit.
+    status: applicable
+  - id: OAUTH21D16-4.3-07
+    section: "4.3"
+    keyword: MUST
+    text: Refresh tokens MUST be kept confidential in transit and storage, and shared only among the authorization server and the client to whom the refresh tokens were issued.
+    statement: Refresh tokens MUST be shared only among the authorization server and the client to whom the refresh tokens were issued.
+    status: applicable
+  - id: OAUTH21D16-4.3-02
+    section: "4.3"
+    keyword: MUST
+    text: The authorization server MUST maintain the binding between a refresh token and the client to whom it was issued.
+    status: applicable
+  - id: OAUTH21D16-4.3-03
+    section: "4.3"
+    keyword: MUST
+    text: The authorization server MUST verify the binding between the refresh token and client identity whenever the client identity can be authenticated.
+    status: applicable
+  - id: OAUTH21D16-4.3-04
+    section: "4.3"
+    keyword: SHOULD
+    text: When client authentication is not possible, the authorization server SHOULD issue sender-constrained refresh tokens or use refresh token rotation as described in Section 4.3.1.
+    status: applicable
+    note: Refresh tokens of public Clients always rotate.
+  - id: OAUTH21D16-4.3-05
+    section: "4.3"
+    keyword: MUST
+    text: The authorization server MUST ensure that refresh tokens cannot be generated, modified, or guessed to produce valid refresh tokens by unauthorized parties.
+    statement: The authorization server MUST ensure that refresh tokens cannot be generated to produce valid refresh tokens by unauthorized parties.
+    status: applicable
+  - id: OAUTH21D16-4.3-08
+    section: "4.3"
+    keyword: MUST
+    text: The authorization server MUST ensure that refresh tokens cannot be generated, modified, or guessed to produce valid refresh tokens by unauthorized parties.
+    statement: The authorization server MUST ensure that refresh tokens cannot be modified to produce valid refresh tokens by unauthorized parties.
+    status: applicable
+  - id: OAUTH21D16-4.3-09
+    section: "4.3"
+    keyword: MUST
+    text: The authorization server MUST ensure that refresh tokens cannot be generated, modified, or guessed to produce valid refresh tokens by unauthorized parties.
+    statement: The authorization server MUST ensure that refresh tokens cannot be guessed to produce valid refresh tokens by unauthorized parties.
+    status: applicable
+  - id: OAUTH21D16-4.3.1-01
+    section: 4.3.1
+    keyword: REQUIRED
+    text: '"refresh_token": REQUIRED.'
+    status: applicable
+  - id: OAUTH21D16-4.3.1-02
+    section: 4.3.1
+    keyword: OPTIONAL
+    text: '"scope": OPTIONAL.'
+    status: applicable
+  - id: OAUTH21D16-4.3.1-03
+    section: 4.3.1
+    keyword: MUST NOT
+    text: The requested scope MUST NOT include any scope not originally granted by the resource owner, and if omitted is treated as equal to the scope originally granted by the resource owner.
+    status: applicable
+  - id: OAUTH21D16-4.3.1-04
+    section: 4.3.1
+    keyword: MUST
+    text: Confidential clients MUST authenticate with the authorization server as described in Section 3.2.1.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.3.1-05
+    section: 4.3.1
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: if client authentication is included in the request, ensure that the refresh token was issued to the authenticated client, OR if a client_id is included in the request, ensure the refresh token was issued to the matching client validate that the grant corresponding to this refresh token is still active validate the refresh token'
+    statement: If client authentication is included in the request, the authorization server MUST ensure that the refresh token was issued to the authenticated client, or if a client_id is included in the request, ensure the refresh token was issued to the matching client.
+    status: applicable
+  - id: OAUTH21D16-4.3.1-08
+    section: 4.3.1
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: if client authentication is included in the request, ensure that the refresh token was issued to the authenticated client, OR if a client_id is included in the request, ensure the refresh token was issued to the matching client validate that the grant corresponding to this refresh token is still active validate the refresh token'
+    statement: The authorization server MUST validate that the grant corresponding to this refresh token is still active.
+    status: applicable
+  - id: OAUTH21D16-4.3.1-09
+    section: 4.3.1
+    keyword: MUST
+    text: 'In addition to the processing rules in Section 3.2.2, the authorization server MUST: if client authentication is included in the request, ensure that the refresh token was issued to the authenticated client, OR if a client_id is included in the request, ensure the refresh token was issued to the matching client validate that the grant corresponding to this refresh token is still active validate the refresh token'
+    statement: The authorization server MUST validate the refresh token.
+    status: applicable
+  - id: OAUTH21D16-4.3.1-06
+    section: 4.3.1
+    keyword: MUST
+    text: 'Authorization servers MUST utilize one of these methods to detect refresh token replay by malicious actors for public clients: _Sender-constrained refresh tokens:_ the authorization server cryptographically binds the refresh token to a certain client instance, e.g., by utilizing DPoP [RFC9449] or mTLS [RFC8705]. _Refresh token rotation:_ the authorization server issues a new refresh token with every access token refresh response. The previous refresh token is invalidated but information about the relationship is retained by the authorization server. If a refresh token is compromised and subsequently used by both the attacker and the legitimate client, one of them will present an invalidated refresh token, which will inform the authorization server of the breach. The authorization server cannot determine which party submitted the invalid refresh token, but it will revoke the active refresh token as well as the access authorization grant associated with it. This stops the attack at the cost of forcing the legitimate client to obtain a fresh authorization grant.'
+    status: applicable
+    note: Refresh tokens of public Clients always rotate.
+  - id: OAUTH21D16-4.3.1-07
+    section: 4.3.1
+    keyword: MUST
+    text: Authorization servers MUST ensure the integrity of the refresh token value in this case, for example, using signatures.
+    status: applicable
+  - id: OAUTH21D16-4.3.2-01
+    section: 4.3.2
+    keyword: MAY
+    text: The authorization server MAY issue a new refresh token, in which case the client MUST discard the old refresh token and replace it with the new refresh token.
+    statement: The authorization server MAY issue a new refresh token.
+    status: applicable
+  - id: OAUTH21D16-4.3.2-02
+    section: 4.3.2
+    keyword: MUST
+    text: The authorization server MAY issue a new refresh token, in which case the client MUST discard the old refresh token and replace it with the new refresh token.
+    statement: When the authorization server issues a new refresh token, the client MUST discard the old refresh token and replace it with the new refresh token.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-4.3.3-01
+    section: 4.3.3
+    keyword: MAY
+    text: The authorization server MAY revoke the old refresh token after issuing a new refresh token to the client.
+    status: applicable
+  - id: OAUTH21D16-4.3.3-02
+    section: 4.3.3
+    keyword: MUST
+    text: If a new refresh token is issued, the refresh token scope MUST be identical to that of the refresh token included by the client in the request.
+    status: applicable
+  - id: OAUTH21D16-4.3.3-03
+    section: 4.3.3
+    keyword: MAY
+    text: 'Authorization servers MAY revoke refresh tokens automatically in case of a security event, such as: password change logout at the authorization server'
+    status: applicable
+  - id: OAUTH21D16-4.3.3-04
+    section: 4.3.3
+    keyword: SHOULD
+    text: Refresh tokens SHOULD expire if the client has been inactive for some time, i.e., the refresh token has not been used to obtain new access tokens for some time.
+    status: applicable
+    note: The Refresh Token Family expires as a whole, also while it is used.
+  - id: OAUTH21D16-5-01
+    section: "5"
+    keyword: MUST
+    text: The resource server MUST validate the access token and ensure that it has not expired and that its scope covers the requested resource.
+    statement: The resource server MUST validate the access token.
+    status: applicable
+  - id: OAUTH21D16-5-02
+    section: "5"
+    keyword: MUST
+    text: The resource server MUST validate the access token and ensure that it has not expired and that its scope covers the requested resource.
+    statement: The resource server MUST ensure that the access token has not expired.
+    status: applicable
+  - id: OAUTH21D16-5-03
+    section: "5"
+    keyword: MUST
+    text: The resource server MUST validate the access token and ensure that it has not expired and that its scope covers the requested resource.
+    statement: The resource server MUST ensure that the scope of the access token covers the requested resource.
+    status: applicable
+  - id: OAUTH21D16-5.1-01
+    section: "5.1"
+    keyword: MUST
+    text: Clients MUST use one of the two methods defined below, and MUST NOT use more than one method to transmit the token in each request.
+    statement: Clients MUST use one of the two methods defined below to transmit the token.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1-02
+    section: "5.1"
+    keyword: MUST NOT
+    text: Clients MUST use one of the two methods defined below, and MUST NOT use more than one method to transmit the token in each request.
+    statement: Clients MUST NOT use more than one method to transmit the token in each request.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1-03
+    section: "5.1"
+    keyword: MUST NOT
+    text: In particular, clients MUST NOT send the access token in a URI query parameter, and resource servers MUST ignore access tokens in a URI query parameter.
+    statement: Clients MUST NOT send the access token in a URI query parameter.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1-04
+    section: "5.1"
+    keyword: MUST
+    text: In particular, clients MUST NOT send the access token in a URI query parameter, and resource servers MUST ignore access tokens in a URI query parameter.
+    statement: Resource servers MUST ignore access tokens in a URI query parameter.
+    status: applicable
+  - id: OAUTH21D16-5.1.1-01
+    section: 5.1.1
+    keyword: SHOULD
+    text: Clients SHOULD make authenticated requests with a bearer token using the Authorization request header field with the Bearer HTTP authorization scheme.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.1-02
+    section: 5.1.1
+    keyword: MUST
+    text: Resource servers MUST support this method.
+    status: applicable
+  - id: OAUTH21D16-5.1.2-01
+    section: 5.1.2
+    keyword: MUST NOT
+    text: 'The client MUST NOT use this method unless all of the following conditions are met: The HTTP request includes the Content-Type header field set to application/x-www-form-urlencoded. The content follows the encoding requirements of the application/ x-www-form-urlencoded content-type as defined by the URL Living Standard [WHATWG.URL]. The HTTP request content is single-part. The content to be encoded in the request MUST consist entirely of ASCII [USASCII] characters. The HTTP request method is one for which the content has defined semantics. In particular, this means that the GET method MUST NOT be used.'
+    statement: The client MUST NOT use the form-encoded body parameter method unless all of the conditions are met.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.2-02
+    section: 5.1.2
+    keyword: MUST
+    text: 'The client MUST NOT use this method unless all of the following conditions are met: The HTTP request includes the Content-Type header field set to application/x-www-form-urlencoded. The content follows the encoding requirements of the application/ x-www-form-urlencoded content-type as defined by the URL Living Standard [WHATWG.URL]. The HTTP request content is single-part. The content to be encoded in the request MUST consist entirely of ASCII [USASCII] characters. The HTTP request method is one for which the content has defined semantics. In particular, this means that the GET method MUST NOT be used.'
+    statement: The content to be encoded in the request MUST consist entirely of ASCII characters.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.2-03
+    section: 5.1.2
+    keyword: MUST NOT
+    text: 'The client MUST NOT use this method unless all of the following conditions are met: The HTTP request includes the Content-Type header field set to application/x-www-form-urlencoded. The content follows the encoding requirements of the application/ x-www-form-urlencoded content-type as defined by the URL Living Standard [WHATWG.URL]. The HTTP request content is single-part. The content to be encoded in the request MUST consist entirely of ASCII [USASCII] characters. The HTTP request method is one for which the content has defined semantics. In particular, this means that the GET method MUST NOT be used.'
+    statement: The GET method MUST NOT be used with the form-encoded body parameter method.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.2-04
+    section: 5.1.2
+    keyword: MAY
+    text: The content MAY include other request-specific parameters, in which case the access_token parameter MUST be properly separated from the request-specific parameters using & character(s) (ASCII code 38).
+    statement: The content MAY include other request-specific parameters.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.2-05
+    section: 5.1.2
+    keyword: MUST
+    text: The content MAY include other request-specific parameters, in which case the access_token parameter MUST be properly separated from the request-specific parameters using & character(s) (ASCII code 38).
+    statement: The access_token parameter MUST be properly separated from the request-specific parameters using & characters.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.2-06
+    section: 5.1.2
+    keyword: SHOULD NOT
+    text: The application/x-www-form-urlencoded method SHOULD NOT be used except in application contexts where participating clients do not have access to the Authorization request header field.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.1.2-07
+    section: 5.1.2
+    keyword: MAY
+    text: Resource servers MAY support this method.
+    status: applicable
+  - id: OAUTH21D16-5.2-01
+    section: "5.2"
+    keyword: MUST
+    text: After receiving the access token, the resource server MUST check that the access token is not yet expired, is authorized to access the requested resource, was issued with the appropriate scope, and meets other policy requirements of the resource server to access the protected resource.
+    statement: After receiving the access token, the resource server MUST check that the access token is not yet expired.
+    status: applicable
+  - id: OAUTH21D16-5.2-02
+    section: "5.2"
+    keyword: MUST
+    text: After receiving the access token, the resource server MUST check that the access token is not yet expired, is authorized to access the requested resource, was issued with the appropriate scope, and meets other policy requirements of the resource server to access the protected resource.
+    statement: After receiving the access token, the resource server MUST check that the access token is authorized to access the requested resource.
+    status: applicable
+  - id: OAUTH21D16-5.2-03
+    section: "5.2"
+    keyword: MUST
+    text: After receiving the access token, the resource server MUST check that the access token is not yet expired, is authorized to access the requested resource, was issued with the appropriate scope, and meets other policy requirements of the resource server to access the protected resource.
+    statement: After receiving the access token, the resource server MUST check that the access token was issued with the appropriate scope.
+    status: applicable
+  - id: OAUTH21D16-5.2-04
+    section: "5.2"
+    keyword: MUST
+    text: After receiving the access token, the resource server MUST check that the access token is not yet expired, is authorized to access the requested resource, was issued with the appropriate scope, and meets other policy requirements of the resource server to access the protected resource.
+    statement: After receiving the access token, the resource server MUST check that the access token meets other policy requirements of the resource server to access the protected resource.
+    status: applicable
+    note: The handler applies them to the validated token in the request context.
+  - id: OAUTH21D16-5.3-01
+    section: "5.3"
+    keyword: SHOULD
+    text: If a resource access request fails, the resource server SHOULD inform the client of the error.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-01
+    section: 5.3.1
+    keyword: MUST
+    text: If the protected resource request does not include authentication credentials or does not contain an access token that enables access to the protected resource, the resource server MUST include the HTTP WWW-Authenticate response header field; it MAY include it in response to other conditions as well.
+    statement: If the protected resource request does not include authentication credentials or does not contain an access token that enables access to the protected resource, the resource server MUST include the HTTP WWW-Authenticate response header field.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-02
+    section: 5.3.1
+    keyword: MAY
+    text: If the protected resource request does not include authentication credentials or does not contain an access token that enables access to the protected resource, the resource server MUST include the HTTP WWW-Authenticate response header field; it MAY include it in response to other conditions as well.
+    statement: The resource server MAY include the HTTP WWW-Authenticate response header field in response to other conditions as well.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-03
+    section: 5.3.1
+    keyword: MUST
+    text: All challenges for this token type MUST use the auth-scheme value Bearer.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-04
+    section: 5.3.1
+    keyword: MUST
+    text: This scheme MUST be followed by one or more auth-param values.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-05
+    section: 5.3.1
+    keyword: MAY
+    text: Other auth-param attributes MAY be used as well.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-06
+    section: 5.3.1
+    keyword: MAY
+    text: '"realm": A realm attribute MAY be included to indicate the scope of protection in the manner described in HTTP/1.1 [RFC7235].'
+    status: applicable
+  - id: OAUTH21D16-5.3.1-07
+    section: 5.3.1
+    keyword: MUST NOT
+    text: The realm attribute MUST NOT appear more than once.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-08
+    section: 5.3.1
+    keyword: OPTIONAL
+    text: Use of the scope attribute is OPTIONAL.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-09
+    section: 5.3.1
+    keyword: MUST NOT
+    text: The scope attribute MUST NOT appear more than once.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-10
+    section: 5.3.1
+    keyword: SHOULD
+    text: '"error": If the protected resource request included an access token and failed authentication, the resource server SHOULD include the error attribute to provide the client with the reason why the access request was declined.'
+    status: applicable
+  - id: OAUTH21D16-5.3.1-11
+    section: 5.3.1
+    keyword: MAY
+    text: '"error_description": The resource server MAY include the error_description attribute to provide developers a human-readable explanation that is not meant to be displayed to end users.'
+    status: applicable
+  - id: OAUTH21D16-5.3.1-12
+    section: 5.3.1
+    keyword: MAY
+    text: '"error_uri": The resource server MAY include the error_uri attribute with an absolute URI identifying a human-readable web page explaining the error.'
+    status: applicable
+  - id: OAUTH21D16-5.3.1-13
+    section: 5.3.1
+    keyword: MUST NOT
+    text: The error, error_description, and error_uri attributes MUST NOT appear more than once.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-14
+    section: 5.3.1
+    keyword: MUST NOT
+    text: Values for the scope attribute (specified in Appendix A.4) MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E for representing scope values and %x20 for delimiters between scope values.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-15
+    section: 5.3.1
+    keyword: MUST NOT
+    text: Values for the error and error_description attributes (specified in Appendix A.7 and Appendix A.8) MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-16
+    section: 5.3.1
+    keyword: MUST
+    text: Values for the error_uri attribute (specified in Appendix A.9) MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri attribute MUST conform to the URI-reference syntax.
+    status: applicable
+  - id: OAUTH21D16-5.3.1-17
+    section: 5.3.1
+    keyword: MUST NOT
+    text: Values for the error_uri attribute (specified in Appendix A.9) MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri attribute MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    status: applicable
+  - id: OAUTH21D16-5.3.2-01
+    section: 5.3.2
+    keyword: SHOULD
+    text: The resource server SHOULD respond with the HTTP 400 (Bad Request) status code.
+    status: applicable
+  - id: OAUTH21D16-5.3.2-02
+    section: 5.3.2
+    keyword: SHOULD
+    text: The resource server SHOULD respond with the HTTP 401 (Unauthorized) status code.
+    status: applicable
+  - id: OAUTH21D16-5.3.2-03
+    section: 5.3.2
+    keyword: MAY
+    text: The client MAY request a new access token and retry the protected resource request.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-5.3.2-04
+    section: 5.3.2
+    keyword: SHOULD
+    text: The resource server SHOULD respond with the HTTP 403 (Forbidden) status code and MAY include the scope attribute with the scope necessary to access the protected resource.
+    statement: For insufficient_scope, the resource server SHOULD respond with the HTTP 403 (Forbidden) status code.
+    status: applicable
+  - id: OAUTH21D16-5.3.2-05
+    section: 5.3.2
+    keyword: MAY
+    text: The resource server SHOULD respond with the HTTP 403 (Forbidden) status code and MAY include the scope attribute with the scope necessary to access the protected resource.
+    statement: For insufficient_scope, the resource server MAY include the scope attribute with the scope necessary to access the protected resource.
+    status: applicable
+  - id: OAUTH21D16-5.3.2-06
+    section: 5.3.2
+    keyword: SHOULD NOT
+    text: If the request lacks any authentication information (e.g., the client was unaware that authentication is necessary or attempted using an unsupported authentication method), the resource server SHOULD NOT include an error code or other error information.
+    status: applicable
+  - id: OAUTH21D16-6.1.1-01
+    section: 6.1.1
+    keyword: SHOULD
+    text: New authentication schemes designed primarily for OAuth token authentication SHOULD define a mechanism for providing an error status code to the client, in which the error values allowed are registered in the error registry established by this specification.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.1-02
+    section: 6.1.1
+    keyword: MAY
+    text: Such schemes MAY limit the set of valid error codes to a subset of the registered values.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.1-03
+    section: 6.1.1
+    keyword: SHOULD
+    text: If the error code is returned using a named parameter, the parameter name SHOULD be error.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.1-04
+    section: 6.1.1
+    keyword: MAY
+    text: Other schemes capable of being used for OAuth token authentication, but not primarily designed for that purpose, MAY bind their error values to the registry in the same manner.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.1-05
+    section: 6.1.1
+    keyword: MAY
+    text: New authentication schemes MAY choose to also specify the use of the error_description and error_uri parameters to return error information in a manner parallel to their usage in this specification.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.1-06
+    section: 6.1.1
+    keyword: MUST
+    text: Type names MUST conform to the type-name ABNF.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.1-07
+    section: 6.1.1
+    keyword: SHOULD
+    text: If the type definition includes a new HTTP authentication scheme, the type name SHOULD be identical to the HTTP authentication scheme name (as defined by [RFC2617]).
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.2-01
+    section: 6.1.2
+    keyword: SHOULD
+    text: Types utilizing a URI name SHOULD be limited to vendor-specific implementations that are not commonly applicable, and are specific to the implementation details of the resource server where they are used.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.1.2-02
+    section: 6.1.2
+    keyword: MUST
+    text: All other types MUST be registered.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.2-01
+    section: "6.2"
+    keyword: MUST
+    text: Parameter names MUST conform to the param-name ABNF, and parameter values syntax MUST be well-defined (e.g., using ABNF, or a reference to the syntax of an existing parameter).
+    statement: Parameter names MUST conform to the param-name ABNF.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.2-02
+    section: "6.2"
+    keyword: MUST
+    text: Parameter names MUST conform to the param-name ABNF, and parameter values syntax MUST be well-defined (e.g., using ABNF, or a reference to the syntax of an existing parameter).
+    statement: Parameter values syntax MUST be well-defined.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.2-03
+    section: "6.2"
+    keyword: SHOULD
+    text: Unregistered vendor-specific parameter extensions that are not commonly applicable and that are specific to the implementation details of the authorization server where they are used SHOULD utilize a vendor-specific prefix that is not likely to conflict with other registered values (e.g., begin with 'companyname_').
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.3-01
+    section: "6.3"
+    keyword: MUST
+    text: If the extension grant type requires additional token endpoint parameters, they MUST be registered in the OAuth Parameters registry as described by Section 11.2 of [RFC6749].
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.4-01
+    section: "6.4"
+    keyword: MUST
+    text: Response type names MUST conform to the response-type ABNF.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.5-01
+    section: "6.5"
+    keyword: MAY
+    text: In cases where protocol extensions (i.e., access token types, extension parameters, or extension grant types) require additional error codes to be used with the authorization code grant error response (Section 4.1.2.1), the token error response (Section 3.2.4), or the resource access error response (Section 5.3), such error codes MAY be defined.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.5-02
+    section: "6.5"
+    keyword: MUST
+    text: Extension error codes MUST be registered (following the procedures in Section 11.4 of [RFC6749]) if the extension they are used in conjunction with is a registered access token type, a registered endpoint parameter, or an extension grant type.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.5-03
+    section: "6.5"
+    keyword: MAY
+    text: Error codes used with unregistered extensions MAY be registered.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.5-04
+    section: "6.5"
+    keyword: MUST
+    text: Error codes MUST conform to the error ABNF and SHOULD be prefixed by an identifying name when possible.
+    statement: Error codes MUST conform to the error ABNF.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.5-05
+    section: "6.5"
+    keyword: SHOULD
+    text: Error codes MUST conform to the error ABNF and SHOULD be prefixed by an identifying name when possible.
+    statement: Error codes SHOULD be prefixed by an identifying name when possible.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-6.5-06
+    section: "6.5"
+    keyword: SHOULD
+    text: For example, an error identifying an invalid value set to the extension parameter example SHOULD be named example_invalid.
+    status: informative
+    note: Guidance for extensions.
+  - id: OAUTH21D16-7.1.1.2-01
+    section: 7.1.1.2
+    keyword: MUST
+    text: If the client should be prevented from observing the contents of the access token, content encryption MUST be applied.
+    status: applicable
+  - id: OAUTH21D16-7.1.1.2-02
+    section: 7.1.1.2
+    keyword: MUST NOT
+    text: 'Since cookies are by default transmitted in cleartext, any information contained in them is at risk of disclosure: Bearer tokens MUST NOT be stored in cookies that can be sent in the clear.'
+    status: applicable
+  - id: OAUTH21D16-7.1.2-01
+    section: 7.1.2
+    keyword: RECOMMENDED
+    text: Restricting the use of the token to a specific scope is also RECOMMENDED.
+    status: applicable
+  - id: OAUTH21D16-7.1.3.1-01
+    section: 7.1.3.1
+    keyword: MUST
+    text: Client implementations MUST ensure that bearer tokens are not leaked to unintended parties, as they will be able to use them to gain access to protected resources.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.1.3.2-01
+    section: 7.1.3.2
+    keyword: MUST
+    text: The client MUST validate the TLS certificate chain when making requests to protected resources.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.1.3.3-01
+    section: 7.1.3.3
+    keyword: MUST
+    text: Clients MUST always use TLS (https) or equivalent transport security when making requests with bearer tokens.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.1.3.4-01
+    section: 7.1.3.4
+    keyword: MUST NOT
+    text: Implementations MUST NOT store bearer tokens within cookies that can be sent in the clear (which is the default transmission mode for cookies).
+    status: applicable
+  - id: OAUTH21D16-7.1.3.4-02
+    section: 7.1.3.4
+    keyword: MUST
+    text: Implementations that do store bearer tokens in cookies MUST take precautions against cross-site request forgery.
+    status: applicable
+  - id: OAUTH21D16-7.1.3.5-01
+    section: 7.1.3.5
+    keyword: SHOULD
+    text: Authorization servers SHOULD issue short-lived bearer tokens, particularly when issuing tokens to clients that run within a web browser or other environments where information leakage may occur.
+    status: applicable
+  - id: OAUTH21D16-7.1.3.6-01
+    section: 7.1.3.6
+    keyword: SHOULD
+    text: Authorization servers SHOULD issue bearer tokens that contain an audience restriction, scoping their use to the intended resource server or set of resource servers.
+    status: out-of-scope
+    note: Audience restriction comes with Resource Indicators, which are not implemented.
+  - id: OAUTH21D16-7.1.3.7-01
+    section: 7.1.3.7
+    keyword: MUST NOT
+    text: Bearer tokens MUST NOT be passed in page URLs (for example, as query string parameters).
+    status: applicable
+    note: Only codes are sent in URLs, and the bearer middleware ignores access tokens in the query.
+  - id: OAUTH21D16-7.1.3.7-02
+    section: 7.1.3.7
+    keyword: SHOULD
+    text: Instead, bearer tokens SHOULD be passed in HTTP message headers or message bodies for which confidentiality measures are taken.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.1.4-01
+    section: 7.1.4
+    keyword: SHOULD
+    text: The privileges associated with an access token SHOULD be restricted to the minimum required for the particular application or use case.
+    status: applicable
+  - id: OAUTH21D16-7.1.4-02
+    section: 7.1.4
+    keyword: SHOULD
+    text: In particular, access tokens SHOULD be restricted to certain resource servers (audience restriction), preferably to a single resource server.
+    status: out-of-scope
+    note: Audience restriction comes with Resource Indicators, which are not implemented.
+  - id: OAUTH21D16-7.1.4-03
+    section: 7.1.4
+    keyword: MUST
+    text: If not, the resource server MUST refuse to serve the respective request.
+    statement: If an access token is not meant for the resource server, the resource server MUST refuse to serve the respective request.
+    status: applicable
+  - id: OAUTH21D16-7.1.4-04
+    section: 7.1.4
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameters scope or resource as specified in this document and [RFC8707], respectively, to determine the resource server they want to access.
+    status: applicable
+  - id: OAUTH21D16-7.1.4-05
+    section: 7.1.4
+    keyword: SHOULD
+    text: Additionally, access tokens SHOULD be restricted to certain resources and actions on resource servers or resources.
+    status: applicable
+  - id: OAUTH21D16-7.1.4-06
+    section: 7.1.4
+    keyword: MUST
+    text: If not, the resource server MUST refuse to serve the respective request.
+    statement: If an access token is not meant for the requested resource and action, the resource server MUST refuse to serve the respective request.
+    status: applicable
+  - id: OAUTH21D16-7.1.4-07
+    section: 7.1.4
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameter scope and authorization_details as specified in [RFC9396] to determine those resources and/or actions.
+    status: applicable
+  - id: OAUTH21D16-7.3-01
+    section: "7.3"
+    keyword: SHOULD
+    text: The authorization server SHOULD enforce explicit resource owner authentication and provide the resource owner with information about the client and the requested authorization scope and lifetime.
+    statement: The authorization server SHOULD enforce explicit resource owner authentication.
+    status: applicable
+  - id: OAUTH21D16-7.3-03
+    section: "7.3"
+    keyword: SHOULD
+    text: The authorization server SHOULD enforce explicit resource owner authentication and provide the resource owner with information about the client and the requested authorization scope and lifetime.
+    statement: The authorization server SHOULD provide the resource owner with information about the client and the requested authorization scope and lifetime.
+    status: applicable
+  - id: OAUTH21D16-7.3-02
+    section: "7.3"
+    keyword: SHOULD NOT
+    text: The authorization server SHOULD NOT process repeated authorization requests automatically (without active resource owner interaction) without authenticating the client or relying on other measures to ensure that the repeated request comes from the original client and not an impersonator.
+    status: applicable
+  - id: OAUTH21D16-7.3.1-01
+    section: 7.3.1
+    keyword: SHOULD NOT
+    text: As stated above, the authorization server SHOULD NOT process authorization requests automatically without user consent or interaction, except when the identity of the client can be assured.
+    status: applicable
+  - id: OAUTH21D16-7.3.1-02
+    section: 7.3.1
+    keyword: SHOULD
+    text: This includes the case where the user has previously approved an authorization request for a given client ID -- unless the identity of the client can be proven, the request SHOULD be processed as if no previous request had been approved.
+    status: applicable
+  - id: OAUTH21D16-7.3.1-03
+    section: 7.3.1
+    keyword: MAY
+    text: Measures such as claimed https scheme redirects MAY be accepted by authorization servers as identity proof.
+    status: applicable
+  - id: OAUTH21D16-7.3.1-04
+    section: 7.3.1
+    keyword: MAY
+    text: Some operating systems may offer alternative platform-specific identity features that MAY be accepted, as appropriate.
+    status: applicable
+  - id: OAUTH21D16-7.3.2-01
+    section: 7.3.2
+    keyword: SHOULD
+    text: The client SHOULD request access tokens with the minimal scope necessary.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.3.2-02
+    section: 7.3.2
+    keyword: SHOULD
+    text: The authorization server SHOULD take the client identity into account when choosing how to honor the requested scope and MAY issue an access token with fewer scopes than requested.
+    statement: The authorization server SHOULD take the client identity into account when choosing how to honor the requested scope.
+    status: applicable
+  - id: OAUTH21D16-7.3.2-03
+    section: 7.3.2
+    keyword: MAY
+    text: The authorization server SHOULD take the client identity into account when choosing how to honor the requested scope and MAY issue an access token with fewer scopes than requested.
+    statement: The authorization server MAY issue an access token with fewer scopes than requested.
+    status: applicable
+  - id: OAUTH21D16-7.3.2-04
+    section: 7.3.2
+    keyword: SHOULD
+    text: The privileges associated with an access token SHOULD be restricted to the minimum required for the particular application or use case.
+    status: applicable
+  - id: OAUTH21D16-7.3.2-05
+    section: 7.3.2
+    keyword: SHOULD
+    text: In particular, access tokens SHOULD be restricted to certain resource servers (audience restriction), preferably to a single resource server.
+    status: out-of-scope
+    note: Audience restriction comes with Resource Indicators, which are not implemented.
+  - id: OAUTH21D16-7.3.2-06
+    section: 7.3.2
+    keyword: MUST
+    text: If not, the resource server MUST refuse to serve the respective request.
+    status: applicable
+  - id: OAUTH21D16-7.3.2-07
+    section: 7.3.2
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameters scope or resource as specified in [RFC8707], respectively, to determine the resource server they want to access.
+    status: applicable
+  - id: OAUTH21D16-7.4-01
+    section: "7.4"
+    keyword: SHOULD NOT
+    text: If the authorization server has a common namespace for client IDs and user identifiers, causing the resource server to be unable to distinguish an access token authorized by a resource owner from an access token authorized by a client itself, authorization servers SHOULD NOT allow clients to influence their client_id or any other Claim if that can cause confusion with a genuine resource owner.
+    status: applicable
+  - id: OAUTH21D16-7.4-02
+    section: "7.4"
+    keyword: MUST
+    text: Where this cannot be avoided, authorization servers MUST provide other means for the resource server to distinguish between the two types of access tokens.
+    status: applicable
+  - id: OAUTH21D16-7.5.1.1-01
+    section: 7.5.1.1
+    keyword: REQUIRED
+    text: 'To prevent injection of authorization codes into the client, using code_challenge and code_verifier is REQUIRED for clients, and authorization servers MUST enforce their use, unless both of the following criteria are met: The client is a confidential client. In the specific deployment and the specific request, there is reasonable assurance by the authorization server that the client implements the OpenID Connect nonce mechanism properly.'
+    statement: Using code_challenge and code_verifier is REQUIRED for clients, unless the client is a confidential client and the authorization server has reasonable assurance in the specific deployment and request that the client implements the OpenID Connect nonce mechanism properly.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.5.1.1-02
+    section: 7.5.1.1
+    keyword: MUST
+    text: 'To prevent injection of authorization codes into the client, using code_challenge and code_verifier is REQUIRED for clients, and authorization servers MUST enforce their use, unless both of the following criteria are met: The client is a confidential client. In the specific deployment and the specific request, there is reasonable assurance by the authorization server that the client implements the OpenID Connect nonce mechanism properly.'
+    statement: Authorization servers MUST enforce the use of code_challenge and code_verifier, unless the client is a confidential client and the authorization server has reasonable assurance in the specific deployment and request that the client implements the OpenID Connect nonce mechanism properly.
+    status: applicable
+    note: The server requires PKCE from every Client.
+  - id: OAUTH21D16-7.5.1.1-03
+    section: 7.5.1.1
+    keyword: RECOMMENDED
+    text: In this case, using and enforcing code_challenge and code_verifier is still RECOMMENDED.
+    status: applicable
+    note: The server requires PKCE from every Client.
+  - id: OAUTH21D16-7.5.1.1-04
+    section: 7.5.1.1
+    keyword: MUST
+    text: The code_challenge or OpenID Connect nonce value MUST be transaction-specific and securely bound to the client and the user agent in which the transaction was started.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.5.1.1-05
+    section: 7.5.1.1
+    keyword: MUST
+    text: If a transaction leads to an error, fresh values for code_challenge or nonce MUST be chosen.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.5.2-01
+    section: 7.5.2
+    keyword: SHOULD
+    text: Deployments with existing clients that cannot support S256 SHOULD issue extended-lifetime refresh tokens before discontinuing support for legacy authorization methods, as the refresh token grant (Section 4.3) does not require PKCE.
+    status: applicable
+  - id: OAUTH21D16-7.5.3-01
+    section: 7.5.3
+    keyword: SHOULD NOT
+    text: The authorization server SHOULD NOT revoke any issued tokens when receiving a replayed authorization code that contains invalid parameters.
+    status: applicable
+  - id: OAUTH21D16-7.5.4-01
+    section: 7.5.4
+    keyword: MUST NOT
+    text: An authorization server which redirects a request that potentially contains user credentials MUST NOT use the 307 status code (Section 15.4.8 of [RFC9110]) for redirection.
+    status: applicable
+  - id: OAUTH21D16-7.5.4-02
+    section: 7.5.4
+    keyword: SHOULD
+    text: If an HTTP redirection (and not, for example, JavaScript) is used for such a request, AS SHOULD use the status code 303 ("See Other").
+    status: applicable
+  - id: OAUTH21D16-7.7-01
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
+    statement: The authorization server MUST prevent attackers from guessing access tokens.
+    status: applicable
+  - id: OAUTH21D16-7.7-05
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
+    statement: The authorization server MUST prevent attackers from guessing resource owner passwords.
+    status: applicable
+  - id: OAUTH21D16-7.7-06
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
+    statement: The authorization server MUST prevent attackers from guessing client credentials.
+    status: applicable
+  - id: OAUTH21D16-7.7-07
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
+    statement: The authorization server MUST prevent attackers from guessing authorization codes.
+    status: applicable
+  - id: OAUTH21D16-7.7-08
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
+    statement: The authorization server MUST prevent attackers from guessing refresh tokens.
+    status: applicable
+  - id: OAUTH21D16-7.7-02
+    section: "7.7"
+    keyword: MUST
+    text: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end users) MUST be less than or equal to 2^(-128) and SHOULD be less than or equal to 2^(-160).
+    statement: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end users) MUST be less than or equal to 2^(-128).
+    status: applicable
+  - id: OAUTH21D16-7.7-03
+    section: "7.7"
+    keyword: SHOULD
+    text: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end users) MUST be less than or equal to 2^(-128) and SHOULD be less than or equal to 2^(-160).
+    statement: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end users) SHOULD be less than or equal to 2^(-160).
+    status: applicable
+  - id: OAUTH21D16-7.7-04
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST utilize other means to protect credentials intended for end-user usage.
+    status: applicable
+  - id: OAUTH21D16-7.9-01
+    section: "7.9"
+    keyword: SHOULD
+    text: Authorization servers SHOULD consider enforcing controls over client registration, including restricting which scopes a given client is permitted to request.
+    status: applicable
+  - id: OAUTH21D16-7.9-02
+    section: "7.9"
+    keyword: SHOULD
+    text: Where possible, authorization servers SHOULD verify the identity of client developers prior to granting access to sensitive scopes.
+    status: applicable
+  - id: OAUTH21D16-7.9-03
+    section: "7.9"
+    keyword: SHOULD
+    text: Authorization servers SHOULD present resource owners with clear and meaningful information during the authorization prompt, including the client name, the developer or organization that registered it, and the specific scopes being requested, so that resource owners can make an informed decision before granting access.
+    status: applicable
+  - id: OAUTH21D16-7.9-04
+    section: "7.9"
+    keyword: SHOULD
+    text: In scenarios where client pre-registration is not possible, such as when using Dynamic Client Registration [RFC7591], or when the client metadata may be provided by an outside party such as when using Client ID Metadata Document [I-D.ietf-oauth-client-id-metadata-document], authorization servers SHOULD take additional measures to verify that the user understands the client they are authorizing.
+    status: out-of-scope
+    note: Dynamic Client Registration and Client ID Metadata Documents are not implemented.
+  - id: OAUTH21D16-7.9-05
+    section: "7.9"
+    keyword: SHOULD
+    text: Authorization servers SHOULD allow administrators and resource owners to view the set of clients that have been granted access to their resources and to revoke those grants (see [RFC7009]), thereby limiting the window of exposure if a resource owner is deceived into approving a malicious authorization request.
+    status: applicable
+  - id: OAUTH21D16-7.10-01
+    section: "7.10"
+    keyword: MUST
+    text: 'When using code_verifier instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client. If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead. If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or signed/encrypted state values [I-D.bradley-oauth-jwt-encoded-state].'
+    statement: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.10-02
+    section: "7.10"
+    keyword: MUST
+    text: 'When using code_verifier instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client. If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead. If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or signed/encrypted state values [I-D.bradley-oauth-jwt-encoded-state].'
+    statement: If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.10-03
+    section: "7.10"
+    keyword: MUST
+    text: 'When using code_verifier instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the AS supports the code_challenge_method intended to be used by the client. If an authorization server does not support the requested method, state or nonce MUST be used for CSRF protection instead. If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or signed/encrypted state values [I-D.bradley-oauth-jwt-encoded-state].'
+    statement: If state is used for carrying application state, and integrity of its contents is a concern, clients MUST protect state against tampering and swapping.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.10-04
+    section: "7.10"
+    keyword: MUST
+    text: AS therefore MUST provide a way to detect their supported code challenge methods either via AS metadata according to [RFC8414] or provide a deployment-specific way to ensure or determine support.
+    status: applicable
+  - id: OAUTH21D16-7.11-01
+    section: "7.11"
+    keyword: MUST
+    text: Authorization servers MUST prevent clickjacking attacks.
+    status: applicable
+  - id: OAUTH21D16-7.11-02
+    section: "7.11"
+    keyword: SHOULD
+    text: In addition to those, authorization servers SHOULD also use Content Security Policy (CSP) level 2 [CSP-2] or greater.
+    status: applicable
+  - id: OAUTH21D16-7.11-03
+    section: "7.11"
+    keyword: MAY
+    text: The client MAY permit being framed by some other origin than the one used in its redirection endpoint.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.11-04
+    section: "7.11"
+    keyword: SHOULD
+    text: For this reason, authorization servers SHOULD allow administrators to configure allowed origins for particular clients and/or for clients to register these dynamically.
+    status: applicable
+  - id: OAUTH21D16-7.11-05
+    section: "7.11"
+    keyword: SHOULD
+    text: Because some user agents do not support [CSP-2], this technique SHOULD be combined with others, including those described in [RFC6819], unless such legacy user agents are explicitly unsupported by the authorization server.
+    status: applicable
+  - id: OAUTH21D16-7.11-06
+    section: "7.11"
+    keyword: SHOULD
+    text: Even in such cases, additional countermeasures SHOULD still be employed.
+    status: applicable
+  - id: OAUTH21D16-7.12-01
+    section: "7.12"
+    keyword: MUST
+    text: The authorization server and client MUST treat parameters received as potentially malicious external input and apply appropriate protections, in particular, the values of the state and redirect_uri parameters.
+    statement: The authorization server MUST treat parameters received as potentially malicious external input and apply appropriate protections, in particular, the values of the state and redirect_uri parameters.
+    status: applicable
+  - id: OAUTH21D16-7.12-02
+    section: "7.12"
+    keyword: MUST
+    text: The authorization server and client MUST treat parameters received as potentially malicious external input and apply appropriate protections, in particular, the values of the state and redirect_uri parameters.
+    statement: The client MUST treat parameters received as potentially malicious external input and apply appropriate protections.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.13.1-01
+    section: 7.13.1
+    keyword: MUST NOT
+    text: Clients MUST NOT expose open redirectors.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.13.2-01
+    section: 7.13.2
+    keyword: MUST NOT
+    text: Section 4.1.2.1 already prevents open redirects by stating that the authorization server MUST NOT automatically redirect the user agent in case of an invalid combination of client_id and redirect_uri.
+    status: informative
+    note: Restates Section 4.1.2.1.
+  - id: OAUTH21D16-7.13.2-02
+    section: 7.13.2
+    keyword: MUST
+    text: The authorization server MUST take precautions to prevent these threats.
+    status: applicable
+  - id: OAUTH21D16-7.13.2-03
+    section: 7.13.2
+    keyword: MUST
+    text: The authorization server MUST always authenticate the user first and, with the exception of the silent authentication use case, prompt the user for credentials when needed, before redirecting the user.
+    status: applicable
+  - id: OAUTH21D16-7.13.2-04
+    section: 7.13.2
+    keyword: SHOULD
+    text: The authorization server SHOULD only automatically redirect the user agent if it trusts the redirect URI.
+    status: applicable
+    note: Only registered redirect URIs are redirected to.
+  - id: OAUTH21D16-7.13.2-05
+    section: 7.13.2
+    keyword: MAY
+    text: If the URI is not trusted, the authorization server MAY inform the user and rely on the user to make the correct decision.
+    status: applicable
+  - id: OAUTH21D16-7.14-01
+    section: "7.14"
+    keyword: MUST
+    text: In such deployments, sufficient measures MUST be employed to ensure confidentiality of the access token between the front-end and back-end servers; encryption of the token is one such possible measure.
+    status: applicable
+  - id: OAUTH21D16-7.15-01
+    section: "7.15"
+    keyword: MUST
+    text: In scenarios where an OAuth client interacts with two or more authorization servers, however, clients MUST prevent mix-up attacks.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15-02
+    section: "7.15"
+    keyword: MUST
+    text: For both defenses, clients MUST store, for each authorization request, the issuer they sent the authorization request to, bind this information to the user agent, and check that the authorization response was received from the correct issuer.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15-03
+    section: "7.15"
+    keyword: MUST
+    text: Clients MUST ensure that the subsequent access token request, if applicable, is sent to the same issuer.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.1-01
+    section: 7.15.1
+    keyword: MUST
+    text: When receiving the authorization response, the client MUST compare the received issuer identifier to the stored issuer identifier.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.1-02
+    section: 7.15.1
+    keyword: MUST
+    text: If there is a mismatch, the client MUST abort the interaction.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.1-03
+    section: 7.15.1
+    keyword: MUST
+    text: In both cases, the iss value MUST be evaluated according to [RFC9207].
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.2-01
+    section: 7.15.2
+    keyword: MUST
+    text: For this defense, clients MUST use a distinct redirect URI for each issuer they interact with.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.2-02
+    section: 7.15.2
+    keyword: MUST
+    text: Clients MUST check that the authorization response was received from the correct issuer by comparing the distinct redirect URI for the issuer to the URI where the authorization response was received on.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.2-03
+    section: 7.15.2
+    keyword: MUST
+    text: If there is a mismatch, the client MUST abort the flow.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-7.15.2-04
+    section: 7.15.2
+    keyword: SHOULD
+    text: This defense SHOULD therefore only be used if other options are not available.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.1-01
+    section: "8.1"
+    keyword: MUST NOT
+    text: For this reason, authorization servers MUST NOT require client authentication of native app clients using a shared secret, as this serves no value beyond client identification which is already provided by the client_id request parameter.
+    status: applicable
+  - id: OAUTH21D16-8.1-02
+    section: "8.1"
+    keyword: MUST
+    text: Authorization servers that still require a statically included shared secret for native app clients MUST treat the client as a public client (as defined in Section 2.1), and not accept the secret as proof of the client's identity.
+    status: applicable
+  - id: OAUTH21D16-8.1.1-01
+    section: 8.1.1
+    keyword: MUST
+    text: Except when using a mechanism like Dynamic Client Registration [RFC7591] to provision per-instance credentials, native apps are classified as public clients, as defined in Section 2.1, and MUST be registered with the authorization server as such.
+    status: applicable
+  - id: OAUTH21D16-8.1.1-02
+    section: 8.1.1
+    keyword: MUST
+    text: Authorization servers MUST record the client type in the client registration details in order to identify and process requests accordingly.
+    status: applicable
+    note: A Client has a type in the Client Store.
+  - id: OAUTH21D16-8.2-01
+    section: "8.2"
+    keyword: MUST
+    text: Native apps MUST use an external user agent to perform OAuth authorization requests.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.3-01
+    section: "8.3"
+    keyword: MAY
+    text: Typically, the external user agent used is the default browser, that is, the application configured for handling http and https scheme URIs on the system; however, different browser selection criteria and other categories of external user agents MAY be used.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.3-02
+    section: "8.3"
+    keyword: RECOMMENDED
+    text: This best practice focuses on the browser as the RECOMMENDED external user agent for native apps.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.3-03
+    section: "8.3"
+    keyword: MAY
+    text: An external user agent designed specifically for user authorization and capable of processing authorization requests and responses like a browser MAY also be used.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.3-04
+    section: "8.3"
+    keyword: RECOMMENDED
+    text: On platforms where they are supported, it is RECOMMENDED, for usability reasons, that apps use in-app browser tabs for the authorization request.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.4.1-01
+    section: 8.4.1
+    keyword: REQUIRED
+    text: As the redirect URI alone is not enough to distinguish public native app clients from confidential web clients, it is REQUIRED in Section 8.1.1 that the client type be recorded during client registration to enable the server to determine the client type and act accordingly.
+    status: informative
+    note: Restates Section 8.1.1.
+  - id: OAUTH21D16-8.4.1-02
+    section: 8.4.1
+    keyword: SHOULD
+    text: For this reason, native apps SHOULD use them over the other options where possible.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.4.2-01
+    section: 8.4.2
+    keyword: NOT RECOMMENDED
+    text: While redirect URIs using the name localhost (i.e., http://localhost:{port}/{path}) function similarly to loopback IP redirects, the use of localhost is NOT RECOMMENDED.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.4.2-02
+    section: 8.4.2
+    keyword: MUST
+    text: The authorization server MUST allow any port to be specified at the time of the request for loopback IP redirect URIs, to accommodate clients that obtain an available ephemeral port from the operating system at the time of the request.
+    status: applicable
+  - id: OAUTH21D16-8.4.2-03
+    section: 8.4.2
+    keyword: SHOULD NOT
+    text: Clients SHOULD NOT assume that the device supports a particular version of the Internet Protocol.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.4.2-04
+    section: 8.4.2
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED that clients attempt to bind to the loopback interface using both IPv4 and IPv6 and use whichever is available.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.4.3-01
+    section: 8.4.3
+    keyword: MUST
+    text: When choosing a URI scheme to associate with the app, apps MUST use a URI scheme based on a domain name under their control, expressed in reverse order, as recommended by Section 3.8 of [RFC7595] for private-use URI schemes.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.5.4-01
+    section: 8.5.4
+    keyword: MAY
+    text: Loopback interface redirect URIs MAY use the http scheme (i.e., without TLS).
+    status: applicable
+  - id: OAUTH21D16-8.5.4-02
+    section: 8.5.4
+    keyword: SHOULD
+    text: Clients SHOULD open the network port only when starting the authorization request and close it once the response is returned.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.5.4-03
+    section: 8.5.4
+    keyword: SHOULD
+    text: Clients SHOULD listen on the loopback network interface only, in order to avoid interference by other network actors.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-8.5.4-04
+    section: 8.5.4
+    keyword: SHOULD
+    text: Clients SHOULD use loopback IP literals rather than the string localhost as described in Section 8.4.2.
+    status: out-of-scope
+    note: Client requirement.
+  - id: OAUTH21D16-10.2-01
+    section: "10.2"
+    keyword: MUST
+    text: For backwards compatibility of an authorization server wishing to support both OAuth 2.0 and OAuth 2.1 clients, the authorization server MUST allow clients to send the redirect_uri parameter in the token request (Section 4.1.3), and MUST enforce the parameter as described in [RFC6749].
+    statement: The authorization server MUST allow clients to send the redirect_uri parameter in the token request.
+    status: applicable
+  - id: OAUTH21D16-10.2-02
+    section: "10.2"
+    keyword: MUST
+    text: For backwards compatibility of an authorization server wishing to support both OAuth 2.0 and OAuth 2.1 clients, the authorization server MUST allow clients to send the redirect_uri parameter in the token request (Section 4.1.3), and MUST enforce the parameter as described in [RFC6749].
+    statement: The authorization server MUST enforce the redirect_uri parameter in the token request as described in RFC 6749.
+    status: applicable
+  - id: OAUTH21D16-B-01
+    section: B
+    keyword: MUST
+    text: To address this shortcoming when generating contents using this media type, names and values MUST be encoded using the UTF-8 character encoding scheme [RFC3629] first; the resulting octet sequence then needs to be further encoded using the escaping rules defined in [W3C.REC-html401-19991224].
+    status: applicable
+  - id: OAUTH21D16-C.3-01
+    section: C.3
+    keyword: SHOULD
+    text: Omitted parameters and parameters with no value SHOULD be omitted from the object and not represented by a JSON null value, unless otherwise specified.
+    status: applicable
+  - id: OAUTH21D16-C.3-02
+    section: C.3
+    keyword: MAY
+    text: A parameter MAY have a JSON object or a JSON array as its value.
+    status: informative
+    note: Guidance for extensions.

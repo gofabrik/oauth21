@@ -2,8 +2,12 @@ package conformance
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gofabrik/oauth21/store"
 )
 
 // TestAuthorizationRequiresCodeChallenge checks that a request without a code challenge gets invalid_request.
@@ -53,7 +57,13 @@ func TestCodeChallengeNotExposed(t *testing.T) {
 //conformance:covers RFC7636-4.5-01 OAUTH21D16-4.1.1-16
 func TestTokenRequiresCodeVerifier(t *testing.T) {
 	a := newAuthorizationServer(t)
-	status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), ""), nil)
+	a.wantVerifierRequired(tokenParams(a.code(authorizeParams())), nil)
+}
+
+// wantVerifierRequired checks that the token request params with header gets invalid_request without its code_verifier.
+func (a *authorizationServer) wantVerifierRequired(params url.Values, header http.Header) {
+	a.t.Helper()
+	status, _, body := a.token(withVerifier(params, ""), header)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
@@ -63,7 +73,6 @@ func TestTokenRequiresCodeVerifier(t *testing.T) {
 func TestTokenRejectsWrongCodeVerifier(t *testing.T) {
 	for name, v := range map[string]string{
 		"other":     strings.Repeat("a", 43),
-		"challenge": challenge,
 		"too short": verifier[:42],
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -89,5 +98,167 @@ func TestCodeChallengeIsBoundToCode(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	if status, _, body := a.token(withVerifier(tokenParams(second), other), nil); status != http.StatusOK {
 		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
+// TestServerSupportsPKCE checks that a code requested with a code challenge redeems with its code verifier.
+//
+//conformance:covers OAUTH21D16-4.1.1-14
+func TestServerSupportsPKCE(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
+// TestEmptyCodeChallengeIsMissing checks that a code_challenge without a value gets invalid_request.
+//
+//conformance:covers OAUTH21D16-4.1.1-05
+func TestEmptyCodeChallengeIsMissing(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("code_challenge", "")
+	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+}
+
+// TestPublicClientRequiresCodeChallenge checks that a public Client's request without a code challenge is rejected.
+//
+//conformance:covers OAUTH21D16-4.1.2.1-05
+func TestPublicClientRequiresCodeChallenge(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Del("code_challenge")
+	params.Del("code_challenge_method")
+	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+}
+
+// TestConfidentialClientRequiresCodeChallenge checks that a confidential Client's request without a code challenge is rejected.
+//
+//conformance:covers OAUTH21D16-4.1.2.1-06
+func TestConfidentialClientRequiresCodeChallenge(t *testing.T) {
+	a := newConfidentialServer(t)
+	params := authorizeParams()
+	params.Set("client_id", confidentialID)
+	params.Del("code_challenge")
+	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+}
+
+// TestConfidentialClientRequiresCodeVerifier checks that an authenticated confidential Client cannot redeem a code without its code verifier.
+//
+//conformance:covers OAUTH21D16-7.5.1.1-02
+func TestConfidentialClientRequiresCodeVerifier(t *testing.T) {
+	a := newConfidentialServer(t)
+	a.wantVerifierRequired(a.confidentialCode(), basic(confidentialID, secret))
+}
+
+// TestPublicClientRequiresCodeVerifier checks that a public Client cannot redeem a code requested with a code challenge without its code verifier, also when the code was requested with a scope.
+//
+//conformance:covers OAUTH21D16-4.1.3-02
+func TestPublicClientRequiresCodeVerifier(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("scope", "read write")
+	a.wantVerifierRequired(tokenParams(a.code(params)), nil)
+}
+
+// TestEmptyCodeVerifierIsMissing checks that a code_verifier without a value counts as missing for a code with a code challenge.
+//
+//conformance:covers OAUTH21D16-4.1.3-10
+func TestEmptyCodeVerifierIsMissing(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := tokenParams(a.code(authorizeParams()))
+	params.Set("code_verifier", "")
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+}
+
+// TestCodeVerifierIsTransformed checks that the code verifier is compared after the S256 transformation, so presenting the code challenge itself fails.
+//
+//conformance:covers OAUTH21D16-4.1.3-11
+func TestCodeVerifierIsTransformed(t *testing.T) {
+	a := newAuthorizationServer(t)
+	status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), challenge), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestCodeChallengeIsAssociatedWithCode checks that two codes with different code challenges do not redeem with each other's verifier.
+//
+//conformance:covers OAUTH21D16-4.1.2-07
+func TestCodeChallengeIsAssociatedWithCode(t *testing.T) {
+	a := newAuthorizationServer(t)
+	other := strings.Repeat("o", 43)
+	params := authorizeParams()
+	params.Set("code_challenge", s256(other))
+	for code, v := range map[string]string{a.code(authorizeParams()): other, a.code(params): verifier} {
+		status, _, body := a.token(withVerifier(tokenParams(code), v), nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	}
+}
+
+// TestUnsupportedMethodIsInvalidRequest checks that an unknown code challenge method gets invalid_request also with a valid S256 code challenge.
+//
+//conformance:covers OAUTH21D16-4.1.2.1-07
+func TestUnsupportedMethodIsInvalidRequest(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("code_challenge_method", "S512")
+	if q := a.authorize(params).Query(); q.Get("error") != "invalid_request" {
+		t.Fatalf("got %v, want error invalid_request", q)
+	}
+}
+
+// TestUnsupportedMethodIsExplained checks that the error_description of an unsupported code challenge method names the cause.
+//
+//conformance:covers OAUTH21D16-4.1.2.1-08
+func TestUnsupportedMethodIsExplained(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("code_challenge_method", "S512")
+	if d := a.authorize(params).Query().Get("error_description"); !strings.Contains(d, "transform algorithm not supported") {
+		t.Fatalf("got error_description %q, want it to name the unsupported transform algorithm", d)
+	}
+}
+
+// TestCodeDoesNotCarryCodeChallenge checks that the authorization response carries only code, state and iss, and that the code does not depend on the code challenge: with the same randomness source, requests with different code challenges get the same code.
+//
+//conformance:covers OAUTH21D16-4.1.2-08
+func TestCodeDoesNotCarryCodeChallenge(t *testing.T) {
+	var codes []string
+	for _, v := range []string{verifier, strings.Repeat("o", 43)} {
+		a := newSeededServer(t, &seededRandom{seed: 1})
+		params := authorizeParams()
+		params.Set("code_challenge", s256(v))
+		q := a.login(a.authorize(params), "alice").Query()
+		for name := range q {
+			if name != "code" && name != "state" && name != "iss" {
+				t.Fatalf("got parameter %q in %v, want only code, state and iss", name, q)
+			}
+		}
+		codes = append(codes, q.Get("code"))
+	}
+	if codes[0] != codes[1] {
+		t.Fatalf("got codes %q for two code challenges, want the same code", codes)
+	}
+}
+
+// createCodeWithoutChallenge stores a code of the public Client without a code challenge, which the server never issues, and returns its value.
+func (a *authorizationServer) createCodeWithoutChallenge() string {
+	a.t.Helper()
+	value, hash := randomWithHash(a.t)
+	c := store.Code{Hash: hash, Grant: aliceGrant("grant-without-challenge"), RedirectURI: redirectURI, ExpiresAt: a.now().Add(time.Minute), RetainUntil: a.now().Add(time.Hour)}
+	if err := a.recorder.CreateCode(a.t.Context(), c); err != nil {
+		a.t.Fatal(err)
+	}
+	return value
+}
+
+// TestCodeWithoutChallengeIsRejected checks that a code associated with no code challenge does not redeem without a code verifier.
+//
+//conformance:covers OAUTH21D16-4.1.3-12
+func TestCodeWithoutChallengeIsRejected(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := withVerifier(tokenParams(a.createCodeWithoutChallenge()), "")
+	if status, _, body := a.token(params, nil); status != http.StatusBadRequest || body["access_token"] != nil {
+		t.Fatalf("got status %d and body %v, want 400 without an access token", status, body)
 	}
 }

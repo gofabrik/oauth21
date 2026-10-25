@@ -1,11 +1,14 @@
 package conformance
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -170,6 +173,47 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	return a
 }
 
+// seededRandom is a deterministic randomness source: the SHA-256 counter stream of its seed, with one bit inverted when flip is set.
+type seededRandom struct {
+	mu   sync.Mutex
+	seed byte
+	// flip is the bit of the stream to invert, counted from 1; 0 inverts none.
+	flip    int
+	counter uint64
+	buf     []byte
+	read    int
+}
+
+func (s *seededRandom) Read(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.buf) < len(p) {
+		block := sha256.Sum256(binary.BigEndian.AppendUint64([]byte{s.seed}, s.counter))
+		s.counter++
+		s.buf = append(s.buf, block[:]...)
+	}
+	n := copy(p, s.buf)
+	s.buf = s.buf[n:]
+	if bit := s.flip - 1; bit >= 0 && bit/8 >= s.read && bit/8 < s.read+n {
+		p[bit/8-s.read] ^= 1 << (bit % 8)
+	}
+	s.read += n
+	return n, nil
+}
+
+// bytesRead returns how many bytes were read from s so far.
+func (s *seededRandom) bytesRead() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.read
+}
+
+// newSeededServer starts an Authorization Server with randomness source s, the public Client and any extra Clients.
+func newSeededServer(t *testing.T, s *seededRandom, clients ...store.Client) *authorizationServer {
+	t.Helper()
+	return newConfiguredServer(t, func(c *oauth21.Config) { c.Random = s }, clients...)
+}
+
 // now is the clock of the Authorization Server and its Stores.
 func (a *authorizationServer) now() time.Time {
 	return time.Now().Add(time.Duration(a.skew.Load()))
@@ -223,11 +267,26 @@ func (a *authorizationServer) authorize(params url.Values) *url.URL {
 	if status != http.StatusFound {
 		a.t.Fatalf("got status %d, want a redirect", status)
 	}
-	loc, err := url.Parse(header.Get("Location"))
+	return a.redirect(header.Get("Location"))
+}
+
+// redirect parses the redirect location loc and checks that no parameter of its query is repeated.
+func (a *authorizationServer) redirect(loc string) *url.URL {
+	a.t.Helper()
+	u, err := url.Parse(loc)
 	if err != nil {
 		a.t.Fatal(err)
 	}
-	return loc
+	q, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	for name, values := range q {
+		if len(values) > 1 {
+			a.t.Fatalf("got redirect %s with %s repeated, want each parameter once", loc, name)
+		}
+	}
+	return u
 }
 
 // login completes the Authorization Request at loc as subject, granting the requested scopes.
@@ -257,11 +316,7 @@ func (a *authorizationServer) complete(id string, c oauth21.Completion) *url.URL
 	if err != nil {
 		a.t.Fatal(err)
 	}
-	u, err := url.Parse(redirect)
-	if err != nil {
-		a.t.Fatal(err)
-	}
-	return u
+	return a.redirect(redirect)
 }
 
 // code runs an authorization request through login and returns the code it issues.
@@ -308,6 +363,9 @@ func (a *authorizationServer) sendJSON(method, path, form string, header http.He
 	if ct := respHeader.Get("Content-Type"); ct != "application/json" {
 		a.t.Fatalf("got Content-Type %q, want application/json", ct)
 	}
+	if _, err := members(raw); err != nil {
+		a.t.Fatalf("got body %s: %v", raw, err)
+	}
 	var body map[string]any
 	if err := json.Unmarshal(raw, &body); err != nil {
 		a.t.Fatal(err)
@@ -352,11 +410,7 @@ func (a *authorizationServer) deny(id string) *url.URL {
 	if err != nil {
 		a.t.Fatal(err)
 	}
-	u, err := url.Parse(redirect)
-	if err != nil {
-		a.t.Fatal(err)
-	}
-	return u
+	return a.redirect(redirect)
 }
 
 // wantNotPending checks that the Authorization Request id can be neither read, completed nor denied.
@@ -372,4 +426,29 @@ func (a *authorizationServer) wantNotPending(id string) {
 	if _, err := a.srv.Deny(t.Context(), id); !errors.Is(err, oauth21.ErrRequestNotPending) {
 		t.Fatalf("got error %v denying the request, want ErrRequestNotPending", err)
 	}
+}
+
+// members returns the member names of the JSON object raw in order, and fails for anything else, including a repeated member name.
+func members(raw []byte) ([]string, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil, errors.New("not a JSON object")
+	}
+	var names []string
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, _ := tok.(string)
+		if slices.Contains(names, name) {
+			return nil, fmt.Errorf("repeated member %q", name)
+		}
+		names = append(names, name)
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+	}
+	return names, nil
 }

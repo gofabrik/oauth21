@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofabrik/oauth21/bearer"
+	"github.com/gofabrik/oauth21/store"
 )
 
 // validators builds each Validator the bearer middleware is tested with.
@@ -67,6 +70,8 @@ func (a *authorizationServer) wantChallenge(header http.Header, wantStatus int, 
 }
 
 // TestBearerTokenReachesHandler checks that a valid access token in the Authorization header gives the handler its subject, Client and scopes.
+//
+//conformance:covers OAUTH21D16-5.1.1-02
 func TestBearerTokenReachesHandler(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v, "read")
@@ -80,6 +85,8 @@ func TestBearerTokenReachesHandler(t *testing.T) {
 }
 
 // TestBearerChallengeWithoutCredentials checks that a request without Bearer credentials in the Authorization header gets 401 and a challenge without error, also when it carries an access token in the query or the body.
+//
+//conformance:covers OAUTH21D16-5.3.2-06
 func TestBearerChallengeWithoutCredentials(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
@@ -100,6 +107,8 @@ func TestBearerChallengeWithoutCredentials(t *testing.T) {
 }
 
 // TestBearerChallengeForInvalidToken checks that unknown, expired and revoked access tokens and refresh tokens get 401 and an invalid_token challenge.
+//
+//conformance:covers OAUTH21D16-5.3.2-02
 func TestBearerChallengeForInvalidToken(t *testing.T) {
 	want := `Bearer realm="oauth21", error="invalid_token", error_description="access token not active"`
 	t.Run("unknown", func(t *testing.T) {
@@ -141,6 +150,8 @@ func TestBearerChallengeForInvalidToken(t *testing.T) {
 }
 
 // TestBearerChallengeForMalformedRequest checks that malformed Bearer credentials and a repeated Authorization header get 400 and an invalid_request challenge.
+//
+//conformance:covers OAUTH21D16-5.3.2-01
 func TestBearerChallengeForMalformedRequest(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
@@ -155,6 +166,8 @@ func TestBearerChallengeForMalformedRequest(t *testing.T) {
 }
 
 // TestBearerChallengeForInsufficientScope checks that an access token without a required scope gets 403 and an insufficient_scope challenge with the required scopes, and that the scheme is case-insensitive.
+//
+//conformance:covers OAUTH21D16-5.3.2-04
 func TestBearerChallengeForInsufficientScope(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v, "read", "write")
@@ -205,4 +218,423 @@ func TestBearerRemoteValidationFailureIsServerError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// challenges returns the WWW-Authenticate challenges of a resource that requires write: for a request without credentials, and, as failures, for an unknown access token, an access token lacking write and malformed credentials.
+func (a *authorizationServer) challenges(v bearer.Validator) (withoutCredentials string, failures []string) {
+	a.t.Helper()
+	a.resource(v, "write")
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	_, header, _ := a.access(nil)
+	withoutCredentials = header.Get("WWW-Authenticate")
+	for _, h := range []http.Header{bearerHeader("unknown"), bearerHeader(access), {"Authorization": {"Bearer a b"}}} {
+		_, header, _ := a.access(h)
+		failures = append(failures, header.Get("WWW-Authenticate"))
+	}
+	return withoutCredentials, failures
+}
+
+// allChallenges returns every challenge of challenges.
+func (a *authorizationServer) allChallenges(v bearer.Validator) []string {
+	a.t.Helper()
+	withoutCredentials, failures := a.challenges(v)
+	return append([]string{withoutCredentials}, failures...)
+}
+
+// authParam is an auth-param of a challenge, with the value as sent: a quoted-string keeps its quotes and escapes.
+type authParam struct{ name, value string }
+
+// parseChallenge parses the challenge c into its auth-scheme and auth-params (RFC 9110 11.6.1), and reports whether c is well-formed.
+func parseChallenge(c string) (string, []authParam, bool) {
+	scheme, rest, _ := strings.Cut(c, " ")
+	if scheme == "" || strings.ContainsFunc(scheme, func(r rune) bool { return !tokenChar(r) }) {
+		return "", nil, false
+	}
+	var params []authParam
+	for {
+		rest = strings.TrimLeft(rest, " \t,")
+		if rest == "" {
+			return scheme, params, true
+		}
+		n := strings.IndexFunc(rest, func(r rune) bool { return !tokenChar(r) })
+		if n <= 0 {
+			return "", nil, false
+		}
+		name := rest[:n]
+		rest = strings.TrimLeft(rest[n:], " \t")
+		if !strings.HasPrefix(rest, "=") {
+			return "", nil, false
+		}
+		rest = strings.TrimLeft(rest[1:], " \t")
+		var value string
+		if strings.HasPrefix(rest, `"`) {
+			end := 1
+			for end < len(rest) && rest[end] != '"' {
+				if rest[end] == '\\' {
+					end++
+				}
+				end++
+			}
+			if end >= len(rest) {
+				return "", nil, false
+			}
+			value, rest = rest[:end+1], rest[end+1:]
+		} else {
+			n := strings.IndexFunc(rest, func(r rune) bool { return !tokenChar(r) })
+			if n < 0 {
+				n = len(rest)
+			}
+			if n == 0 {
+				return "", nil, false
+			}
+			value, rest = rest[:n], rest[n:]
+		}
+		params = append(params, authParam{strings.ToLower(name), value})
+		if rest = strings.TrimLeft(rest, " \t"); rest != "" && rest[0] != ',' {
+			return "", nil, false
+		}
+	}
+}
+
+// tokenChar reports whether c may appear in an HTTP token (RFC 9110 5.6.2).
+func tokenChar(c rune) bool {
+	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", c)
+}
+
+// wantParsed parses the challenge c and fails the test when it is malformed.
+func (a *authorizationServer) wantParsed(c string) (string, []authParam) {
+	a.t.Helper()
+	scheme, params, ok := parseChallenge(c)
+	if !ok {
+		a.t.Fatalf("got malformed challenge %q", c)
+	}
+	return scheme, params
+}
+
+// quoted returns the content of the quoted-string value of the auth-param name in params, and whether params has it.
+func quoted(params []authParam, name string) (string, bool) {
+	for _, p := range params {
+		if p.name == name {
+			return strings.TrimSuffix(strings.TrimPrefix(p.value, `"`), `"`), true
+		}
+	}
+	return "", false
+}
+
+// TestBearerIgnoresQueryToken checks that an access token in the query does not authenticate a request.
+//
+//conformance:covers OAUTH21D16-5.1-04
+func TestBearerIgnoresQueryToken(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		if status, _, _ := a.send(http.MethodGet, "/resource?access_token="+access, "", nil); status != http.StatusUnauthorized {
+			a.t.Fatalf("got status %d, want 401", status)
+		}
+	})
+}
+
+// TestBearerChallengesMissingCredentials checks that a request without credentials gets a WWW-Authenticate header.
+//
+//conformance:covers OAUTH21D16-5.3.1-01
+func TestBearerChallengesMissingCredentials(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		if _, header, _ := a.access(nil); header.Get("WWW-Authenticate") == "" {
+			a.t.Fatal("got no WWW-Authenticate header")
+		}
+	})
+}
+
+// TestBearerChallengeScheme checks that every challenge uses the Bearer scheme.
+//
+//conformance:covers OAUTH21D16-5.3.1-03
+func TestBearerChallengeScheme(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		for _, c := range a.allChallenges(v) {
+			if scheme, _ := a.wantParsed(c); scheme != "Bearer" {
+				a.t.Fatalf("got challenge %q, want the Bearer scheme", c)
+			}
+		}
+	})
+}
+
+// TestBearerChallengeHasAuthParams checks that every challenge has at least one auth-param after the scheme.
+//
+//conformance:covers OAUTH21D16-5.3.1-04
+func TestBearerChallengeHasAuthParams(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		for _, c := range a.allChallenges(v) {
+			if _, params := a.wantParsed(c); len(params) == 0 {
+				a.t.Fatalf("got challenge %q, want auth-params", c)
+			}
+		}
+	})
+}
+
+// wantAttributeAtMostOnce checks that no challenge of v has one of the attributes names more than once.
+func (a *authorizationServer) wantAttributeAtMostOnce(v bearer.Validator, names ...string) {
+	a.t.Helper()
+	for _, c := range a.allChallenges(v) {
+		_, params := a.wantParsed(c)
+		seen := map[string]bool{}
+		for _, p := range params {
+			if slices.Contains(names, p.name) && seen[p.name] {
+				a.t.Fatalf("got challenge %q, want %s at most once", c, p.name)
+			}
+			seen[p.name] = true
+		}
+	}
+}
+
+// TestBearerChallengeRealmOnce checks that no challenge has realm more than once.
+//
+//conformance:covers OAUTH21D16-5.3.1-07
+func TestBearerChallengeRealmOnce(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.wantAttributeAtMostOnce(v, "realm")
+	})
+}
+
+// TestBearerChallengeScopeOnce checks that no challenge has scope more than once.
+//
+//conformance:covers OAUTH21D16-5.3.1-09
+func TestBearerChallengeScopeOnce(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.wantAttributeAtMostOnce(v, "scope")
+	})
+}
+
+// TestBearerChallengeErrorAttributesOnce checks that no challenge has error, error_description or error_uri more than once.
+//
+//conformance:covers OAUTH21D16-5.3.1-13
+func TestBearerChallengeErrorAttributesOnce(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.wantAttributeAtMostOnce(v, "error", "error_description", "error_uri")
+	})
+}
+
+// scopeChars reports whether s is scope-tokens of %x21 / %x23-5B / %x5D-7E delimited by single spaces.
+func scopeChars(s string) bool {
+	for token := range strings.SplitSeq(s, " ") {
+		if token == "" || strings.ContainsFunc(token, func(r rune) bool { return r < 0x21 || r > 0x7e || r == '"' || r == '\\' }) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestBearerChallengeScopeCharacters checks that the scope attribute of every challenge uses only the allowed characters.
+//
+//conformance:covers OAUTH21D16-5.3.1-14
+func TestBearerChallengeScopeCharacters(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		for _, c := range a.allChallenges(v) {
+			_, params := a.wantParsed(c)
+			if scope, ok := quoted(params, "scope"); !ok || !scopeChars(scope) {
+				a.t.Fatalf("got challenge %q, want a scope of the allowed characters", c)
+			}
+		}
+	})
+}
+
+// TestBearerChallengeErrorCharacters checks that the error and error_description attributes of every error challenge use only the allowed characters.
+//
+//conformance:covers OAUTH21D16-5.3.1-15
+func TestBearerChallengeErrorCharacters(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		_, failures := a.challenges(v)
+		for _, c := range failures {
+			_, params := a.wantParsed(c)
+			for _, name := range []string{"error", "error_description"} {
+				if value, ok := quoted(params, name); !ok || value == "" || !errorChars(value) {
+					a.t.Fatalf("got challenge %q, want %s of the allowed characters", c, name)
+				}
+			}
+		}
+	})
+}
+
+// wantAccess checks that a request with the access token to the protected resource gets wantStatus.
+func (a *authorizationServer) wantAccess(token string, wantStatus int) {
+	a.t.Helper()
+	if status, header, _ := a.access(bearerHeader(token)); status != wantStatus {
+		a.t.Fatalf("got status %d and WWW-Authenticate %q, want %d", status, header.Get("WWW-Authenticate"), wantStatus)
+	}
+}
+
+// TestBearerRefusesExpiredToken checks that an expired access token is refused with 401.
+//
+//conformance:covers OAUTH21D16-5.2-01
+func TestBearerRefusesExpiredToken(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.advance(time.Hour)
+		a.wantAccess(access, http.StatusUnauthorized)
+	})
+}
+
+// audienceToken stores an access token of alice and the public Client with scope read and audience, which only the Store can give it, and returns its value.
+func (a *authorizationServer) audienceToken(audience ...string) string {
+	a.t.Helper()
+	value, hash := randomWithHash(a.t)
+	if err := a.recorder.Store.CreateToken(a.t.Context(), store.Token{Hash: hash, Grant: aliceGrant("grant-"+value, audience...), Scopes: readScope, Audience: audience, ExpiresAt: a.now().Add(time.Hour)}); err != nil {
+		a.t.Fatal(err)
+	}
+	return value
+}
+
+// TestBearerChecksAudience checks that an access token is served by a Resource Server its audience names, alone or with others.
+//
+//conformance:covers OAUTH21D16-5.2-02
+func TestBearerChecksAudience(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		a.wantAccess(a.audienceToken(resourceServerID), http.StatusOK)
+		a.wantAccess(a.audienceToken("other", resourceServerID), http.StatusOK)
+	})
+}
+
+// TestBearerRefusesTokenForOtherResourceServer checks that an access token whose audience names only other Resource Servers is refused.
+//
+//conformance:covers OAUTH21D16-7.1.4-03
+func TestBearerRefusesTokenForOtherResourceServer(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		a.wantAccess(a.audienceToken("other"), http.StatusUnauthorized)
+		a.wantAccess(a.audienceToken("other", "another"), http.StatusUnauthorized)
+	})
+}
+
+// TestRemoteValidationRefusesTokenForOtherResourceServer checks that introspection makes the remote validator refuse an access token meant for another Resource Server.
+//
+//conformance:covers OAUTH21D16-7.3.2-06
+func TestRemoteValidationRefusesTokenForOtherResourceServer(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resource(a.remote(resourceServerID, secret))
+	token := a.audienceToken("other")
+	a.wantInactive(token)
+	a.wantAccess(token, http.StatusUnauthorized)
+}
+
+// TestBearerChecksScope checks that a resource requiring read and write serves an access token with both and refuses one with only read.
+//
+//conformance:covers OAUTH21D16-5.2-03
+func TestBearerChecksScope(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v, "read", "write")
+		params := authorizeParams()
+		params.Set("scope", "read write")
+		both, _ := a.tokens(tokenParams(a.code(params)), nil)
+		read, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.wantAccess(both, http.StatusOK)
+		a.wantAccess(read, http.StatusForbidden)
+	})
+}
+
+// TestBearerHandlerGetsTokenDetails checks that the handler gets the subject, Client, scopes and audience of the validated access token to apply its own policy.
+//
+//conformance:covers OAUTH21D16-5.2-04
+func TestBearerHandlerGetsTokenDetails(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		status, _, body := a.access(bearerHeader(a.audienceToken(resourceServerID)))
+		var got bearer.Token
+		if err := json.Unmarshal(body, &got); err != nil || status != http.StatusOK || got.Subject != "alice" || got.ClientID != clientID || !slices.Equal(got.Scopes, readScope) || !slices.Equal(got.Audience, []string{resourceServerID}) {
+			a.t.Fatalf("got status %d, body %s and error %v, want the details of the token", status, body, err)
+		}
+	})
+}
+
+// TestBearerRefusesTokenWithoutScope checks that an access token without a scope the resource requires is refused with 403.
+//
+//conformance:covers OAUTH21D16-7.1.4-06
+func TestBearerRefusesTokenWithoutScope(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v, "write")
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.wantAccess(access, http.StatusForbidden)
+	})
+}
+
+// TestBearerValidatesToken checks that a resource serves an access token the server issued and refuses a value it never issued.
+//
+//conformance:covers OAUTH21D16-5-01
+func TestBearerValidatesToken(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.wantAccess(access, http.StatusOK)
+		a.wantAccess(random(a.t), http.StatusUnauthorized)
+	})
+}
+
+// TestBearerRefusesTokenAtExpiry checks that an access token is served until the end of its lifetime and refused from then on.
+//
+//conformance:covers OAUTH21D16-5-02
+func TestBearerRefusesTokenAtExpiry(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.advance(time.Hour - time.Second)
+		a.wantAccess(access, http.StatusOK)
+		a.advance(time.Second)
+		a.wantAccess(access, http.StatusUnauthorized)
+	})
+}
+
+// TestBearerServesCoveringScope checks that an access token with more scopes than a resource requires is served.
+//
+//conformance:covers OAUTH21D16-5-03
+func TestBearerServesCoveringScope(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v, "write")
+		params := authorizeParams()
+		params.Set("scope", "read write")
+		access, _ := a.tokens(tokenParams(a.code(params)), nil)
+		a.wantAccess(access, http.StatusOK)
+	})
+}
+
+// TestRemoteValidationChecksCertificates checks that the remote validator refuses an introspection endpoint whose TLS certificate its HTTP client does not trust.
+//
+//conformance:covers OAUTH21D16-1.5-04
+func TestRemoteValidationChecksCertificates(t *testing.T) {
+	a := newIntrospectionServer(t)
+	remote := a.remote(resourceServerID, secret)
+	remote.Client = &http.Client{}
+	a.resource(remote)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	if status, _, _ := a.access(bearerHeader(access)); status != http.StatusInternalServerError {
+		t.Fatalf("got status %d, want 500", status)
+	}
+}
+
+// TestBearerChallengeErrorURIIsURIReference checks that a challenge carries error_uri only as a URI-reference.
+//
+//conformance:covers OAUTH21D16-5.3.1-16
+func TestBearerChallengeErrorURIIsURIReference(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		for _, c := range a.allChallenges(v) {
+			_, params := a.wantParsed(c)
+			if uri, ok := quoted(params, "error_uri"); ok && !uriReference(uri) {
+				a.t.Fatalf("got challenge %q, want error_uri as a URI-reference", c)
+			}
+		}
+	})
+}
+
+// TestBearerChallengeErrorURICharacters checks that a challenge carries error_uri only with the allowed characters.
+//
+//conformance:covers OAUTH21D16-5.3.1-17
+func TestBearerChallengeErrorURICharacters(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		for _, c := range a.allChallenges(v) {
+			_, params := a.wantParsed(c)
+			if uri, ok := quoted(params, "error_uri"); ok && !uriChars(uri) {
+				a.t.Fatalf("got challenge %q, want error_uri of the allowed characters", c)
+			}
+		}
+	})
 }

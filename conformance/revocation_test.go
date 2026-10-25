@@ -30,6 +30,8 @@ func (a *authorizationServer) wantRevocationError(params url.Values, header http
 }
 
 // TestRevokedRefreshTokenCannotRefresh checks that a revoked refresh token, and every other refresh token of its Grant, can no longer refresh.
+//
+//conformance:covers OAUTH21D16-4.3.1-08
 func TestRevokedRefreshTokenCannotRefresh(t *testing.T) {
 	a := newAuthorizationServer(t)
 	first := a.publicRefreshToken()
