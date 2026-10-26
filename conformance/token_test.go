@@ -295,6 +295,18 @@ func TestTokenRequestRequiresGrantType(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
+// TestPasswordGrantIsUnsupported checks that a password grant request gets unsupported_grant_type, even from a Client whose grant types list password.
+//
+//conformance:covers INV-0015
+func TestPasswordGrantIsUnsupported(t *testing.T) {
+	client := confidentialClient(t)
+	client.GrantTypes = []string{"password"}
+	a := newAuthorizationServer(t, client)
+	params := url.Values{"grant_type": {"password"}, "username": {"alice"}, "password": {"hunter2"}}
+	status, _, body := a.token(params, basic(confidentialID, secret))
+	a.wantOAuthError(status, body, http.StatusBadRequest, "unsupported_grant_type")
+}
+
 // TestTokenRequestRequiresCode checks that a code redemption without code gets invalid_request.
 //
 //conformance:covers OAUTH21D16-4.1.3-01

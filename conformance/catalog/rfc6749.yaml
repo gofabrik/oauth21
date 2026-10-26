@@ -1,0 +1,1961 @@
+document: RFC6749
+title: The OAuth 2.0 Authorization Framework
+source: ../specs/rfc6749.txt
+requirements:
+  - id: RFC6749-1.6-01
+    section: "1.6"
+    keyword: MAY
+    text: Implementations MAY also support additional transport-layer security mechanisms that meet their security requirements.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-05
+  - id: RFC6749-2-01
+    section: "2"
+    keyword: SHALL
+    text: 'When registering a client, the client developer SHALL: specify the client type as described in Section 2.1, provide its client redirection URIs as described in Section 3.1.2, and include any other information required by the authorization server (e.g., application name, website, description, logo image, the acceptance of legal terms).'
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2-01
+  - id: RFC6749-2.1-01
+    section: "2.1"
+    keyword: SHOULD NOT
+    text: The authorization server SHOULD NOT make assumptions about the client type.
+    status: applicable
+  - id: RFC6749-2.1-02
+    section: "2.1"
+    keyword: SHOULD
+    text: If the authorization server does not provide support for such clients or does not provide guidance with regard to their registration, the client SHOULD register each component as a separate client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.1-03
+  - id: RFC6749-2.2-01
+    section: "2.2"
+    keyword: MUST NOT
+    text: The client identifier is not a secret; it is exposed to the resource owner and MUST NOT be used alone for client authentication.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.2-01
+  - id: RFC6749-2.2-02
+    section: "2.2"
+    keyword: SHOULD
+    text: The authorization server SHOULD document the size of any identifier it issues.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.7.1-02
+  - id: RFC6749-2.3-01
+    section: "2.3"
+    keyword: MAY
+    text: The authorization server MAY accept any form of client authentication meeting its security requirements.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-02
+  - id: RFC6749-2.3-02
+    section: "2.3"
+    keyword: MAY
+    text: The authorization server MAY establish a client authentication method with public clients.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-01
+  - id: RFC6749-2.3-03
+    section: "2.3"
+    keyword: MUST NOT
+    text: However, the authorization server MUST NOT rely on public client authentication for the purpose of identifying the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-01
+  - id: RFC6749-2.3-04
+    section: "2.3"
+    keyword: MUST NOT
+    text: The client MUST NOT use more than one authentication method in each request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-06
+  - id: RFC6749-2.3.1-01
+    section: 2.3.1
+    keyword: MAY
+    text: Clients in possession of a client password MAY use the HTTP Basic authentication scheme as defined in [RFC2617] to authenticate with the authorization server.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-05
+  - id: RFC6749-2.3.1-02
+    section: 2.3.1
+    keyword: MUST
+    text: The authorization server MUST support the HTTP Basic authentication scheme for authenticating clients that were issued a client password.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-05
+      - OAUTH21D16-2.4.1-01
+    note: OAuth 2.1 makes HTTP Basic optional and client credentials in the request body mandatory.
+  - id: RFC6749-2.3.1-03
+    section: 2.3.1
+    keyword: MAY
+    text: 'Alternatively, the authorization server MAY support including the client credentials in the request-body using the following parameters:'
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-01
+  - id: RFC6749-2.3.1-04
+    section: 2.3.1
+    keyword: REQUIRED
+    text: client_id REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-02
+  - id: RFC6749-2.3.1-05
+    section: 2.3.1
+    keyword: REQUIRED
+    text: client_secret REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-03
+  - id: RFC6749-2.3.1-06
+    section: 2.3.1
+    keyword: MAY
+    text: The client MAY omit the parameter if the client secret is an empty string.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC6749-2.3.1-07
+    section: 2.3.1
+    keyword: NOT RECOMMENDED
+    text: Including the client credentials in the request-body using the two parameters is NOT RECOMMENDED and SHOULD be limited to clients unable to directly utilize the HTTP Basic authentication scheme (or other password-based HTTP authentication schemes).
+    statement: Including the client credentials in the request-body using the two parameters is NOT RECOMMENDED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-01
+  - id: RFC6749-2.3.1-08
+    section: 2.3.1
+    keyword: SHOULD
+    text: Including the client credentials in the request-body using the two parameters is NOT RECOMMENDED and SHOULD be limited to clients unable to directly utilize the HTTP Basic authentication scheme (or other password-based HTTP authentication schemes).
+    statement: Including the client credentials in the request-body SHOULD be limited to clients unable to directly utilize the HTTP Basic authentication scheme.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-01
+  - id: RFC6749-2.3.1-09
+    section: 2.3.1
+    keyword: MUST NOT
+    text: The parameters can only be transmitted in the request-body and MUST NOT be included in the request URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-04
+  - id: RFC6749-2.3.1-10
+    section: 2.3.1
+    keyword: MUST
+    text: The authorization server MUST require the use of TLS as described in Section 1.6 when sending requests using password authentication.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+  - id: RFC6749-2.3.1-11
+    section: 2.3.1
+    keyword: MUST
+    text: Since this client authentication method involves a password, the authorization server MUST protect any endpoint utilizing it against brute force attacks.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.1-06
+  - id: RFC6749-2.3.2-01
+    section: 2.3.2
+    keyword: MAY
+    text: The authorization server MAY support any suitable HTTP authentication scheme matching its security requirements.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.2-01
+  - id: RFC6749-2.3.2-02
+    section: 2.3.2
+    keyword: MUST
+    text: When using other authentication methods, the authorization server MUST define a mapping between the client identifier (registration record) and authentication scheme.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4.2-02
+  - id: RFC6749-3-01
+    section: "3"
+    keyword: MAY
+    text: Extension grant types MAY define additional endpoints as needed.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3-01
+  - id: RFC6749-3.1-01
+    section: "3.1"
+    keyword: MUST
+    text: The authorization server MUST first verify the identity of the resource owner.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-01
+  - id: RFC6749-3.1-02
+    section: "3.1"
+    keyword: MAY
+    text: The endpoint URI MAY include an "application/x-www-form-urlencoded" formatted (per Appendix B) query component ([RFC3986] Section 3.4), which MUST be retained when adding additional query parameters.
+    statement: The endpoint URI MAY include a query component.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-03
+  - id: RFC6749-3.1-03
+    section: "3.1"
+    keyword: MUST
+    text: The endpoint URI MAY include an "application/x-www-form-urlencoded" formatted (per Appendix B) query component ([RFC3986] Section 3.4), which MUST be retained when adding additional query parameters.
+    statement: A query component of the endpoint URI MUST be retained when adding additional query parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-04
+  - id: RFC6749-3.1-04
+    section: "3.1"
+    keyword: MUST NOT
+    text: The endpoint URI MUST NOT include a fragment component.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-02
+  - id: RFC6749-3.1-05
+    section: "3.1"
+    keyword: MUST
+    text: Since requests to the authorization endpoint result in user authentication and the transmission of clear-text credentials (in the HTTP response), the authorization server MUST require the use of TLS as described in Section 1.6 when sending requests to the authorization endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+      - OAUTH21D16-1.5-02
+  - id: RFC6749-3.1-06
+    section: "3.1"
+    keyword: MUST
+    text: The authorization server MUST support the use of the HTTP "GET" method [RFC2616] for the authorization endpoint and MAY support the use of the "POST" method as well.
+    statement: The authorization server MUST support the use of the HTTP GET method for the authorization endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-05
+  - id: RFC6749-3.1-07
+    section: "3.1"
+    keyword: MAY
+    text: The authorization server MUST support the use of the HTTP "GET" method [RFC2616] for the authorization endpoint and MAY support the use of the "POST" method as well.
+    statement: The authorization server MAY support the use of the POST method for the authorization endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-06
+  - id: RFC6749-3.1-08
+    section: "3.1"
+    keyword: MUST
+    text: Parameters sent without a value MUST be treated as if they were omitted from the request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-09
+  - id: RFC6749-3.1-09
+    section: "3.1"
+    keyword: MUST
+    text: The authorization server MUST ignore unrecognized request parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-07
+  - id: RFC6749-3.1-10
+    section: "3.1"
+    keyword: MUST NOT
+    text: Request and response parameters MUST NOT be included more than once.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.1-08
+      - OAUTH21D16-3.1-12
+  - id: RFC6749-3.1.1-01
+    section: 3.1.1
+    keyword: REQUIRED
+    text: response_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-01
+  - id: RFC6749-3.1.1-02
+    section: 3.1.1
+    keyword: MUST
+    text: The value MUST be one of "code" for requesting an authorization code as described by Section 4.1.1, "token" for requesting an access token (implicit grant) as described by Section 4.2.1, or a registered extension value as described by Section 8.4.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-3.1.1-03
+    section: 3.1.1
+    keyword: MAY
+    text: Extension response types MAY contain a space-delimited (%x20) list of values, where the order of values does not matter (e.g., response type "a b" is the same as "b a").
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-02
+  - id: RFC6749-3.1.1-04
+    section: 3.1.1
+    keyword: MUST
+    text: If an authorization request is missing the "response_type" parameter, or if the response type is not understood, the authorization server MUST return an error response as described in Section 4.1.2.1.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+  - id: RFC6749-3.1.2-01
+    section: 3.1.2
+    keyword: MUST
+    text: The redirection endpoint URI MUST be an absolute URI as defined by [RFC3986] Section 4.3.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3-01
+  - id: RFC6749-3.1.2-02
+    section: 3.1.2
+    keyword: MAY
+    text: The endpoint URI MAY include an "application/x-www-form-urlencoded" formatted (per Appendix B) query component ([RFC3986] Section 3.4), which MUST be retained when adding additional query parameters.
+    statement: The endpoint URI MAY include a query component.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3-02
+  - id: RFC6749-3.1.2-03
+    section: 3.1.2
+    keyword: MUST
+    text: The endpoint URI MAY include an "application/x-www-form-urlencoded" formatted (per Appendix B) query component ([RFC3986] Section 3.4), which MUST be retained when adding additional query parameters.
+    statement: A query component of the endpoint URI MUST be retained when adding additional query parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3-03
+  - id: RFC6749-3.1.2-04
+    section: 3.1.2
+    keyword: MUST NOT
+    text: The endpoint URI MUST NOT include a fragment component.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3-04
+  - id: RFC6749-3.1.2.1-01
+    section: 3.1.2.1
+    keyword: SHOULD
+    text: The redirection endpoint SHOULD require the use of TLS as described in Section 1.6 when the requested response type is "code" or "token", or when the redirection request will result in the transmission of sensitive credentials over an open network.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-07
+  - id: RFC6749-3.1.2.1-02
+    section: 3.1.2.1
+    keyword: SHOULD
+    text: If TLS is not available, the authorization server SHOULD warn the resource owner about the insecure endpoint prior to redirection (e.g., display a message during the authorization request).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-07
+    note: OAuth 2.1 requires https for redirect URIs other than loopback ones.
+  - id: RFC6749-3.1.2.2-01
+    section: 3.1.2.2
+    keyword: MUST
+    text: 'The authorization server MUST require the following clients to register their redirection endpoint: Public clients. Confidential clients utilizing the implicit grant type.'
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+  - id: RFC6749-3.1.2.2-02
+    section: 3.1.2.2
+    keyword: SHOULD
+    text: The authorization server SHOULD require all clients to register their redirection endpoint prior to utilizing the authorization endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+  - id: RFC6749-3.1.2.2-03
+    section: 3.1.2.2
+    keyword: SHOULD
+    text: The authorization server SHOULD require the client to provide the complete redirection URI (the client MAY use the "state" request parameter to achieve per-request customization).
+    statement: The authorization server SHOULD require the client to provide the complete redirection URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+  - id: RFC6749-3.1.2.2-04
+    section: 3.1.2.2
+    keyword: MAY
+    text: The authorization server SHOULD require the client to provide the complete redirection URI (the client MAY use the "state" request parameter to achieve per-request customization).
+    statement: The client MAY use the state request parameter to achieve per-request customization.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-07
+  - id: RFC6749-3.1.2.2-05
+    section: 3.1.2.2
+    keyword: SHOULD
+    text: If requiring the registration of the complete redirection URI is not possible, the authorization server SHOULD require the registration of the URI scheme, authority, and path (allowing the client to dynamically vary only the query component of the redirection URI when requesting authorization).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+      - OAUTH21D16-2.3.1-02
+    note: OAuth 2.1 requires the complete redirect URI and exact matching.
+  - id: RFC6749-3.1.2.2-06
+    section: 3.1.2.2
+    keyword: MAY
+    text: The authorization server MAY allow the client to register multiple redirection endpoints.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-03
+  - id: RFC6749-3.1.2.3-01
+    section: 3.1.2.3
+    keyword: MUST
+    text: If multiple redirection URIs have been registered, if only part of the redirection URI has been registered, or if no redirection URI has been registered, the client MUST include a redirection URI with the authorization request using the "redirect_uri" request parameter.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.2-01
+  - id: RFC6749-3.1.2.3-02
+    section: 3.1.2.3
+    keyword: MUST
+    text: When a redirection URI is included in an authorization request, the authorization server MUST compare and match the value received against at least one of the registered redirection URIs (or URI components) as defined in [RFC3986] Section 6, if any redirection URIs were registered.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-02
+      - OAUTH21D16-4.1.1-19
+    note: OAuth 2.1 requires exact matching against a complete registered redirect URI.
+  - id: RFC6749-3.1.2.3-03
+    section: 3.1.2.3
+    keyword: MUST
+    text: If the client registration included the full redirection URI, the authorization server MUST compare the two URIs using simple string comparison as defined in [RFC3986] Section 6.2.1.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-20
+  - id: RFC6749-3.1.2.4-01
+    section: 3.1.2.4
+    keyword: SHOULD
+    text: If an authorization request fails validation due to a missing, invalid, or mismatching redirection URI, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    statement: If an authorization request fails validation due to a missing, invalid, or mismatching redirection URI, the authorization server SHOULD inform the resource owner of the error.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.5-01
+  - id: RFC6749-3.1.2.4-02
+    section: 3.1.2.4
+    keyword: MUST NOT
+    text: If an authorization request fails validation due to a missing, invalid, or mismatching redirection URI, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    statement: If an authorization request fails validation due to a missing, invalid, or mismatching redirection URI, the authorization server MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.5-02
+  - id: RFC6749-3.1.2.5-01
+    section: 3.1.2.5
+    keyword: SHOULD NOT
+    text: The client SHOULD NOT include any third-party scripts (e.g., third-party analytics, social plug-ins, ad networks) in the redirection endpoint response.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.6-01
+  - id: RFC6749-3.1.2.5-02
+    section: 3.1.2.5
+    keyword: SHOULD
+    text: Instead, it SHOULD extract the credentials from the URI and redirect the user-agent again to another endpoint without exposing the credentials (in the URI or elsewhere).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.6-02
+  - id: RFC6749-3.1.2.5-03
+    section: 3.1.2.5
+    keyword: MUST
+    text: If third-party scripts are included, the client MUST ensure that its own scripts (used to extract and remove the credentials from the URI) will execute first.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.6-03
+  - id: RFC6749-3.2-01
+    section: "3.2"
+    keyword: MAY
+    text: The endpoint URI MAY include an "application/x-www-form-urlencoded" formatted (per Appendix B) query component ([RFC3986] Section 3.4), which MUST be retained when adding additional query parameters.
+    statement: The endpoint URI MAY include a query component.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-02
+  - id: RFC6749-3.2-02
+    section: "3.2"
+    keyword: MUST
+    text: The endpoint URI MAY include an "application/x-www-form-urlencoded" formatted (per Appendix B) query component ([RFC3986] Section 3.4), which MUST be retained when adding additional query parameters.
+    statement: A query component of the endpoint URI MUST be retained when adding additional query parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-02
+    note: OAuth 2.1 keeps only the query component's MAY for the token endpoint URL.
+  - id: RFC6749-3.2-03
+    section: "3.2"
+    keyword: MUST NOT
+    text: The endpoint URI MUST NOT include a fragment component.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-01
+  - id: RFC6749-3.2-04
+    section: "3.2"
+    keyword: MUST
+    text: Since requests to the token endpoint result in the transmission of clear-text credentials (in the HTTP request and response), the authorization server MUST require the use of TLS as described in Section 1.6 when sending requests to the token endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+  - id: RFC6749-3.2-05
+    section: "3.2"
+    keyword: MUST
+    text: The client MUST use the HTTP "POST" method when making access token requests.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-03
+  - id: RFC6749-3.2-06
+    section: "3.2"
+    keyword: MUST
+    text: Parameters sent without a value MUST be treated as if they were omitted from the request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-05
+  - id: RFC6749-3.2-07
+    section: "3.2"
+    keyword: MUST
+    text: The authorization server MUST ignore unrecognized request parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-04
+  - id: RFC6749-3.2-08
+    section: "3.2"
+    keyword: MUST NOT
+    text: Request and response parameters MUST NOT be included more than once.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2-06
+      - OAUTH21D16-3.2-07
+  - id: RFC6749-3.2.1-01
+    section: 3.2.1
+    keyword: MUST
+    text: Confidential clients or other clients issued client credentials MUST authenticate with the authorization server as described in Section 2.3 when making requests to the token endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.1-01
+  - id: RFC6749-3.2.1-02
+    section: 3.2.1
+    keyword: MAY
+    text: A client MAY use the "client_id" request parameter to identify itself when sending requests to the token endpoint.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-02
+  - id: RFC6749-3.2.1-03
+    section: 3.2.1
+    keyword: MUST
+    text: In the "authorization_code" "grant_type" request to the token endpoint, an unauthenticated client MUST send its "client_id" to prevent itself from inadvertently accepting a code intended for a client with a different "client_id".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.3-04
+  - id: RFC6749-3.3-01
+    section: "3.3"
+    keyword: MAY
+    text: The authorization server MAY fully or partially ignore the scope requested by the client, based on the authorization server policy or the resource owner's instructions.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4.1-01
+  - id: RFC6749-3.3-02
+    section: "3.3"
+    keyword: MUST
+    text: If the issued access token scope is different from the one requested by the client, the authorization server MUST include the "scope" response parameter to inform the client of the actual scope granted.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4.1-02
+  - id: RFC6749-3.3-03
+    section: "3.3"
+    keyword: MUST
+    text: If the client omits the scope parameter when requesting authorization, the authorization server MUST either process the request using a pre-defined default value or fail the request indicating an invalid scope.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4.1-03
+  - id: RFC6749-3.3-04
+    section: "3.3"
+    keyword: SHOULD
+    text: The authorization server SHOULD document its scope requirements and default value (if defined).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4.1-04
+  - id: RFC6749-4.1.1-01
+    section: 4.1.1
+    keyword: REQUIRED
+    text: response_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-01
+      - OAUTH21D16-4.1.1-05
+    note: OAuth 2.1 makes PKCE mandatory and adds code_challenge to the authorization request.
+  - id: RFC6749-4.1.1-02
+    section: 4.1.1
+    keyword: MUST
+    text: Value MUST be set to "code".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-01
+  - id: RFC6749-4.1.1-03
+    section: 4.1.1
+    keyword: REQUIRED
+    text: client_id REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-04
+  - id: RFC6749-4.1.1-04
+    section: 4.1.1
+    keyword: OPTIONAL
+    text: redirect_uri OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-07
+      - OAUTH21D16-4.1.1-08
+  - id: RFC6749-4.1.1-05
+    section: 4.1.1
+    keyword: OPTIONAL
+    text: scope OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-09
+  - id: RFC6749-4.1.1-06
+    section: 4.1.1
+    keyword: RECOMMENDED
+    text: state RECOMMENDED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-10
+    note: OAuth 2.1 makes state optional, as PKCE protects against CSRF.
+  - id: RFC6749-4.1.1-07
+    section: 4.1.1
+    keyword: SHOULD
+    text: The parameter SHOULD be used for preventing cross-site request forgery as described in Section 10.12.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.3-02
+      - OAUTH21D16-2.3.3-03
+  - id: RFC6749-4.1.2-01
+    section: 4.1.2
+    keyword: REQUIRED
+    text: code REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2-01
+  - id: RFC6749-4.1.2-02
+    section: 4.1.2
+    keyword: MUST
+    text: The authorization code MUST expire shortly after it is issued to mitigate the risk of leaks.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2-02
+  - id: RFC6749-4.1.2-03
+    section: 4.1.2
+    keyword: RECOMMENDED
+    text: A maximum authorization code lifetime of 10 minutes is RECOMMENDED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2-03
+  - id: RFC6749-4.1.2-04
+    section: 4.1.2
+    keyword: MUST NOT
+    text: The client MUST NOT use the authorization code more than once.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC6749-4.1.2-05
+    section: 4.1.2
+    keyword: MUST
+    text: If an authorization code is used more than once, the authorization server MUST deny the request and SHOULD revoke (when possible) all tokens previously issued based on that authorization code.
+    statement: If an authorization code is used more than once, the authorization server MUST deny the request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.3-06
+  - id: RFC6749-4.1.2-06
+    section: 4.1.2
+    keyword: SHOULD
+    text: If an authorization code is used more than once, the authorization server MUST deny the request and SHOULD revoke (when possible) all tokens previously issued based on that authorization code.
+    statement: If an authorization code is used more than once, the authorization server SHOULD revoke (when possible) all tokens previously issued based on that authorization code.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.3-07
+  - id: RFC6749-4.1.2-07
+    section: 4.1.2
+    keyword: REQUIRED
+    text: state REQUIRED if the "state" parameter was present in the client authorization request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2-04
+  - id: RFC6749-4.1.2-08
+    section: 4.1.2
+    keyword: MUST
+    text: The client MUST ignore unrecognized response parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2-06
+  - id: RFC6749-4.1.2-09
+    section: 4.1.2
+    keyword: SHOULD
+    text: The authorization server SHOULD document the size of any value it issues.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.7.1-02
+  - id: RFC6749-4.1.2.1-01
+    section: 4.1.2.1
+    keyword: SHOULD
+    text: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    statement: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-02
+  - id: RFC6749-4.1.2.1-02
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    statement: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-01
+  - id: RFC6749-4.1.2.1-03
+    section: 4.1.2.1
+    keyword: REQUIRED
+    text: error REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-09
+  - id: RFC6749-4.1.2.1-04
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: Values for the "error" parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-10
+  - id: RFC6749-4.1.2.1-05
+    section: 4.1.2.1
+    keyword: OPTIONAL
+    text: error_description OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-11
+  - id: RFC6749-4.1.2.1-06
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: Values for the "error_description" parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-12
+  - id: RFC6749-4.1.2.1-07
+    section: 4.1.2.1
+    keyword: OPTIONAL
+    text: error_uri OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-13
+  - id: RFC6749-4.1.2.1-08
+    section: 4.1.2.1
+    keyword: MUST
+    text: Values for the "error_uri" parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST conform to the URI-reference syntax.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-14
+  - id: RFC6749-4.1.2.1-09
+    section: 4.1.2.1
+    keyword: MUST NOT
+    text: Values for the "error_uri" parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-15
+  - id: RFC6749-4.1.2.1-10
+    section: 4.1.2.1
+    keyword: REQUIRED
+    text: state REQUIRED if a "state" parameter was present in the client authorization request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2.1-16
+  - id: RFC6749-4.1.3-01
+    section: 4.1.3
+    keyword: REQUIRED
+    text: grant_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-01
+  - id: RFC6749-4.1.3-02
+    section: 4.1.3
+    keyword: MUST
+    text: Value MUST be set to "authorization_code".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-01
+  - id: RFC6749-4.1.3-03
+    section: 4.1.3
+    keyword: REQUIRED
+    text: code REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.3-01
+  - id: RFC6749-4.1.3-04
+    section: 4.1.3
+    keyword: REQUIRED
+    text: redirect_uri REQUIRED, if the "redirect_uri" parameter was included in the authorization request as described in Section 4.1.1, and their values MUST be identical.
+    statement: redirect_uri is REQUIRED if the redirect_uri parameter was included in the authorization request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-10.2-02
+    note: OAuth 2.1 removes redirect_uri from the token request and keeps it only for OAuth 2.0 Clients.
+  - id: RFC6749-4.1.3-05
+    section: 4.1.3
+    keyword: MUST
+    text: redirect_uri REQUIRED, if the "redirect_uri" parameter was included in the authorization request as described in Section 4.1.1, and their values MUST be identical.
+    statement: The redirect_uri values of the token request and the authorization request MUST be identical.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-10.2-02
+    note: OAuth 2.1 removes redirect_uri from the token request and keeps it only for OAuth 2.0 Clients.
+  - id: RFC6749-4.1.3-06
+    section: 4.1.3
+    keyword: REQUIRED
+    text: client_id REQUIRED, if the client is not authenticating with the authorization server as described in Section 3.2.1.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.3-04
+  - id: RFC6749-4.1.3-07
+    section: 4.1.3
+    keyword: MUST
+    text: If the client type is confidential or the client was issued client credentials (or assigned other authentication requirements), the client MUST authenticate with the authorization server as described in Section 3.2.1.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-03
+  - id: RFC6749-4.1.3-08
+    section: 4.1.3
+    keyword: MUST
+    text: 'The authorization server MUST: require client authentication for confidential clients or for any client that was issued client credentials (or with other authentication requirements), authenticate the client if client authentication is included, ensure that the authorization code was issued to the authenticated confidential client, or if the client is public, ensure that the code was issued to "client_id" in the request, verify that the authorization code is valid, and ensure that the "redirect_uri" parameter is present if the "redirect_uri" parameter was included in the initial authorization request as described in Section 4.1.1, and if included ensure that their values are identical.'
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-04
+      - OAUTH21D16-3.2.2-05
+      - OAUTH21D16-4.1.3-08
+      - OAUTH21D16-4.1.3-09
+      - OAUTH21D16-4.1.3-10
+      - OAUTH21D16-4.1.3-11
+      - OAUTH21D16-4.1.3-12
+    note: OAuth 2.1 makes PKCE mandatory and adds the code_verifier checks.
+      - OAUTH21D16-10.2-02
+  - id: RFC6749-4.2.1-01
+    section: 4.2.1
+    keyword: REQUIRED
+    text: response_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-02
+    section: 4.2.1
+    keyword: MUST
+    text: Value MUST be set to "token".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-03
+    section: 4.2.1
+    keyword: REQUIRED
+    text: client_id REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-04
+    section: 4.2.1
+    keyword: OPTIONAL
+    text: redirect_uri OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-05
+    section: 4.2.1
+    keyword: OPTIONAL
+    text: scope OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-06
+    section: 4.2.1
+    keyword: RECOMMENDED
+    text: state RECOMMENDED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-07
+    section: 4.2.1
+    keyword: SHOULD
+    text: The parameter SHOULD be used for preventing cross-site request forgery as described in Section 10.12.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.1-08
+    section: 4.2.1
+    keyword: MUST
+    text: The authorization server MUST verify that the redirection URI to which it will redirect the access token matches a redirection URI registered by the client as described in Section 3.1.2.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-01
+    section: 4.2.2
+    keyword: REQUIRED
+    text: access_token REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-02
+    section: 4.2.2
+    keyword: REQUIRED
+    text: token_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-03
+    section: 4.2.2
+    keyword: RECOMMENDED
+    text: expires_in RECOMMENDED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-04
+    section: 4.2.2
+    keyword: SHOULD
+    text: If omitted, the authorization server SHOULD provide the expiration time via other means or document the default value.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-05
+    section: 4.2.2
+    keyword: OPTIONAL
+    text: scope OPTIONAL, if identical to the scope requested by the client; otherwise, REQUIRED.
+    statement: scope is OPTIONAL in the implicit grant response if identical to the scope requested by the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-06
+    section: 4.2.2
+    keyword: REQUIRED
+    text: scope OPTIONAL, if identical to the scope requested by the client; otherwise, REQUIRED.
+    statement: scope is REQUIRED in the implicit grant response if it differs from the scope requested by the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-07
+    section: 4.2.2
+    keyword: REQUIRED
+    text: state REQUIRED if the "state" parameter was present in the client authorization request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-08
+    section: 4.2.2
+    keyword: MUST NOT
+    text: The authorization server MUST NOT issue a refresh token.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-09
+    section: 4.2.2
+    keyword: MUST
+    text: The client MUST ignore unrecognized response parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2-10
+    section: 4.2.2
+    keyword: SHOULD
+    text: The authorization server SHOULD document the size of any value it issues.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-01
+    section: 4.2.2.1
+    keyword: SHOULD
+    text: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    statement: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-02
+    section: 4.2.2.1
+    keyword: MUST NOT
+    text: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server SHOULD inform the resource owner of the error and MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    statement: If the request fails due to a missing, invalid, or mismatching redirection URI, or if the client identifier is missing or invalid, the authorization server MUST NOT automatically redirect the user-agent to the invalid redirection URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-03
+    section: 4.2.2.1
+    keyword: REQUIRED
+    text: error REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-04
+    section: 4.2.2.1
+    keyword: MUST NOT
+    text: Values for the "error" parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-05
+    section: 4.2.2.1
+    keyword: OPTIONAL
+    text: error_description OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-06
+    section: 4.2.2.1
+    keyword: MUST NOT
+    text: Values for the "error_description" parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-07
+    section: 4.2.2.1
+    keyword: OPTIONAL
+    text: error_uri OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-08
+    section: 4.2.2.1
+    keyword: MUST
+    text: Values for the "error_uri" parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST conform to the URI-reference syntax.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-09
+    section: 4.2.2.1
+    keyword: MUST NOT
+    text: Values for the "error_uri" parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.2.2.1-10
+    section: 4.2.2.1
+    keyword: REQUIRED
+    text: state REQUIRED if a "state" parameter was present in the client authorization request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-4.3.1-01
+    section: 4.3.1
+    keyword: MUST
+    text: The client MUST discard the credentials once an access token has been obtained.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-01
+    section: 4.3.2
+    keyword: REQUIRED
+    text: grant_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-02
+    section: 4.3.2
+    keyword: MUST
+    text: Value MUST be set to "password".
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-03
+    section: 4.3.2
+    keyword: REQUIRED
+    text: username REQUIRED.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-04
+    section: 4.3.2
+    keyword: REQUIRED
+    text: password REQUIRED.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-05
+    section: 4.3.2
+    keyword: OPTIONAL
+    text: scope OPTIONAL.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-06
+    section: 4.3.2
+    keyword: MUST
+    text: If the client type is confidential or the client was issued client credentials (or assigned other authentication requirements), the client MUST authenticate with the authorization server as described in Section 3.2.1.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-07
+    section: 4.3.2
+    keyword: MUST
+    text: 'The authorization server MUST: require client authentication for confidential clients or for any client that was issued client credentials (or with other authentication requirements), authenticate the client if client authentication is included, and validate the resource owner password credentials using its existing password validation algorithm.'
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.3.2-08
+    section: 4.3.2
+    keyword: MUST
+    text: Since this access token request utilizes the resource owner's password, the authorization server MUST protect the endpoint against brute force attacks (e.g., using rate-limitation or generating alerts).
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-4.4-01
+    section: "4.4"
+    keyword: MUST
+    text: The client credentials grant type MUST only be used by confidential clients.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.2-01
+  - id: RFC6749-4.4.2-01
+    section: 4.4.2
+    keyword: REQUIRED
+    text: grant_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-01
+  - id: RFC6749-4.4.2-02
+    section: 4.4.2
+    keyword: MUST
+    text: Value MUST be set to "client_credentials".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-01
+  - id: RFC6749-4.4.2-03
+    section: 4.4.2
+    keyword: OPTIONAL
+    text: scope OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.2.1-01
+  - id: RFC6749-4.4.2-04
+    section: 4.4.2
+    keyword: MUST
+    text: The client MUST authenticate with the authorization server as described in Section 3.2.1.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-03
+  - id: RFC6749-4.4.2-05
+    section: 4.4.2
+    keyword: MUST
+    text: The authorization server MUST authenticate the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.2.1-02
+  - id: RFC6749-4.4.3-01
+    section: 4.4.3
+    keyword: SHOULD NOT
+    text: A refresh token SHOULD NOT be included.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-09
+    note: OAuth 2.1 leaves issuing refresh tokens to the authorization server's risk assessment.
+  - id: RFC6749-5.1-01
+    section: "5.1"
+    keyword: REQUIRED
+    text: access_token REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-01
+  - id: RFC6749-5.1-02
+    section: "5.1"
+    keyword: REQUIRED
+    text: token_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-02
+  - id: RFC6749-5.1-03
+    section: "5.1"
+    keyword: RECOMMENDED
+    text: expires_in RECOMMENDED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-03
+  - id: RFC6749-5.1-04
+    section: "5.1"
+    keyword: SHOULD
+    text: If omitted, the authorization server SHOULD provide the expiration time via other means or document the default value.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-04
+  - id: RFC6749-5.1-05
+    section: "5.1"
+    keyword: OPTIONAL
+    text: refresh_token OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-08
+  - id: RFC6749-5.1-06
+    section: "5.1"
+    keyword: OPTIONAL
+    text: scope OPTIONAL, if identical to the scope requested by the client; otherwise, REQUIRED.
+    statement: scope is OPTIONAL in the token response if identical to the scope requested by the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-06
+  - id: RFC6749-5.1-07
+    section: "5.1"
+    keyword: REQUIRED
+    text: scope OPTIONAL, if identical to the scope requested by the client; otherwise, REQUIRED.
+    statement: scope is REQUIRED in the token response if it differs from the scope requested by the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-07
+  - id: RFC6749-5.1-08
+    section: "5.1"
+    keyword: MUST
+    text: The authorization server MUST include the HTTP "Cache-Control" response header field [RFC2616] with a value of "no-store" in any response containing tokens, credentials, or other sensitive information, as well as the "Pragma" response header field [RFC2616] with a value of "no-cache".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-12
+    note: OAuth 2.1 drops the Pragma response header field.
+  - id: RFC6749-5.1-09
+    section: "5.1"
+    keyword: MUST
+    text: The client MUST ignore unrecognized value names in the response.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-13
+  - id: RFC6749-5.1-10
+    section: "5.1"
+    keyword: SHOULD
+    text: The authorization server SHOULD document the size of any value it issues.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.7.1-02
+  - id: RFC6749-5.2-01
+    section: "5.2"
+    keyword: REQUIRED
+    text: error REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-01
+  - id: RFC6749-5.2-02
+    section: "5.2"
+    keyword: MAY
+    text: The authorization server MAY return an HTTP 401 (Unauthorized) status code to indicate which HTTP authentication schemes are supported.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-02
+  - id: RFC6749-5.2-03
+    section: "5.2"
+    keyword: MUST
+    text: If the client attempted to authenticate via the "Authorization" request header field, the authorization server MUST respond with an HTTP 401 (Unauthorized) status code and include the "WWW-Authenticate" response header field matching the authentication scheme used by the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-03
+      - OAUTH21D16-3.2.4-10
+  - id: RFC6749-5.2-04
+    section: "5.2"
+    keyword: MUST NOT
+    text: Values for the "error" parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-04
+  - id: RFC6749-5.2-05
+    section: "5.2"
+    keyword: OPTIONAL
+    text: error_description OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-05
+  - id: RFC6749-5.2-06
+    section: "5.2"
+    keyword: MUST NOT
+    text: Values for the "error_description" parameter MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-06
+  - id: RFC6749-5.2-07
+    section: "5.2"
+    keyword: OPTIONAL
+    text: error_uri OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-07
+  - id: RFC6749-5.2-08
+    section: "5.2"
+    keyword: MUST
+    text: Values for the "error_uri" parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST conform to the URI-reference syntax.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-08
+  - id: RFC6749-5.2-09
+    section: "5.2"
+    keyword: MUST NOT
+    text: Values for the "error_uri" parameter MUST conform to the URI-reference syntax and thus MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    statement: Values for the error_uri parameter MUST NOT include characters outside the set %x21 / %x23-5B / %x5D-7E.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.4-09
+  - id: RFC6749-6-01
+    section: "6"
+    keyword: REQUIRED
+    text: grant_type REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-01
+  - id: RFC6749-6-02
+    section: "6"
+    keyword: MUST
+    text: Value MUST be set to "refresh_token".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-01
+  - id: RFC6749-6-03
+    section: "6"
+    keyword: REQUIRED
+    text: refresh_token REQUIRED.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.1-01
+  - id: RFC6749-6-04
+    section: "6"
+    keyword: OPTIONAL
+    text: scope OPTIONAL.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.1-02
+  - id: RFC6749-6-05
+    section: "6"
+    keyword: MUST NOT
+    text: The requested scope MUST NOT include any scope not originally granted by the resource owner, and if omitted is treated as equal to the scope originally granted by the resource owner.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.1-03
+  - id: RFC6749-6-06
+    section: "6"
+    keyword: MUST
+    text: If the client type is confidential or the client was issued client credentials (or assigned other authentication requirements), the client MUST authenticate with the authorization server as described in Section 3.2.1.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.1-04
+  - id: RFC6749-6-07
+    section: "6"
+    keyword: MUST
+    text: 'The authorization server MUST: require client authentication for confidential clients or for any client that was issued client credentials (or with other authentication requirements), authenticate the client if client authentication is included and ensure that the refresh token was issued to the authenticated client, and validate the refresh token.'
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-04
+      - OAUTH21D16-3.2.2-05
+      - OAUTH21D16-4.3.1-05
+      - OAUTH21D16-4.3.1-09
+  - id: RFC6749-6-08
+    section: "6"
+    keyword: MAY
+    text: The authorization server MAY issue a new refresh token, in which case the client MUST discard the old refresh token and replace it with the new refresh token.
+    statement: The authorization server MAY issue a new refresh token.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.2-01
+  - id: RFC6749-6-09
+    section: "6"
+    keyword: MUST
+    text: The authorization server MAY issue a new refresh token, in which case the client MUST discard the old refresh token and replace it with the new refresh token.
+    statement: When the authorization server issues a new refresh token, the client MUST discard the old refresh token and replace it with the new refresh token.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.2-02
+  - id: RFC6749-6-10
+    section: "6"
+    keyword: MAY
+    text: The authorization server MAY revoke the old refresh token after issuing a new refresh token to the client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.3-01
+  - id: RFC6749-6-11
+    section: "6"
+    keyword: MUST
+    text: If a new refresh token is issued, the refresh token scope MUST be identical to that of the refresh token included by the client in the request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3.3-02
+  - id: RFC6749-7-01
+    section: "7"
+    keyword: MUST
+    text: The resource server MUST validate the access token and ensure that it has not expired and that its scope covers the requested resource.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-5-01
+      - OAUTH21D16-5-02
+      - OAUTH21D16-5-03
+  - id: RFC6749-7.1-01
+    section: "7.1"
+    keyword: MUST NOT
+    text: The client MUST NOT use an access token if it does not understand the token type.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC6749-7.2-01
+    section: "7.2"
+    keyword: SHOULD
+    text: If a resource access request fails, the resource server SHOULD inform the client of the error.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-5.3-01
+  - id: RFC6749-7.2-02
+    section: "7.2"
+    keyword: SHOULD
+    text: New authentication schemes designed primarily for OAuth token authentication SHOULD define a mechanism for providing an error status code to the client, in which the error values allowed are registered in the error registry established by this specification.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-01
+  - id: RFC6749-7.2-03
+    section: "7.2"
+    keyword: MAY
+    text: Such schemes MAY limit the set of valid error codes to a subset of the registered values.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-02
+  - id: RFC6749-7.2-04
+    section: "7.2"
+    keyword: SHOULD
+    text: If the error code is returned using a named parameter, the parameter name SHOULD be "error".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-03
+  - id: RFC6749-7.2-05
+    section: "7.2"
+    keyword: MAY
+    text: Other schemes capable of being used for OAuth token authentication, but not primarily designed for that purpose, MAY bind their error values to the registry in the same manner.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-04
+  - id: RFC6749-7.2-06
+    section: "7.2"
+    keyword: MAY
+    text: New authentication schemes MAY choose to also specify the use of the "error_description" and "error_uri" parameters to return error information in a manner parallel to their usage in this specification.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-05
+  - id: RFC6749-8.1-01
+    section: "8.1"
+    keyword: SHOULD
+    text: Types utilizing a URI name SHOULD be limited to vendor-specific implementations that are not commonly applicable, and are specific to the implementation details of the resource server where they are used.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.2-01
+  - id: RFC6749-8.1-02
+    section: "8.1"
+    keyword: MUST
+    text: All other types MUST be registered.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.2-02
+  - id: RFC6749-8.1-03
+    section: "8.1"
+    keyword: MUST
+    text: Type names MUST conform to the type-name ABNF.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-06
+  - id: RFC6749-8.1-04
+    section: "8.1"
+    keyword: SHOULD
+    text: If the type definition includes a new HTTP authentication scheme, the type name SHOULD be identical to the HTTP authentication scheme name (as defined by [RFC2617]).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.1.1-07
+  - id: RFC6749-8.2-01
+    section: "8.2"
+    keyword: MUST
+    text: Parameter names MUST conform to the param-name ABNF, and parameter values syntax MUST be well-defined (e.g., using ABNF, or a reference to the syntax of an existing parameter).
+    statement: Parameter names MUST conform to the param-name ABNF.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.2-01
+  - id: RFC6749-8.2-02
+    section: "8.2"
+    keyword: MUST
+    text: Parameter names MUST conform to the param-name ABNF, and parameter values syntax MUST be well-defined (e.g., using ABNF, or a reference to the syntax of an existing parameter).
+    statement: Parameter values syntax MUST be well-defined.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.2-02
+  - id: RFC6749-8.2-03
+    section: "8.2"
+    keyword: SHOULD
+    text: Unregistered vendor-specific parameter extensions that are not commonly applicable and that are specific to the implementation details of the authorization server where they are used SHOULD utilize a vendor-specific prefix that is not likely to conflict with other registered values (e.g., begin with 'companyname_').
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.2-03
+  - id: RFC6749-8.3-01
+    section: "8.3"
+    keyword: MUST
+    text: If the extension grant type requires additional token endpoint parameters, they MUST be registered in the OAuth Parameters registry as described by Section 11.2.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.3-01
+  - id: RFC6749-8.4-01
+    section: "8.4"
+    keyword: MUST
+    text: Response type names MUST conform to the response-type ABNF.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.4-01
+  - id: RFC6749-8.5-01
+    section: "8.5"
+    keyword: MAY
+    text: In cases where protocol extensions (i.e., access token types, extension parameters, or extension grant types) require additional error codes to be used with the authorization code grant error response (Section 4.1.2.1), the implicit grant error response (Section 4.2.2.1), the token error response (Section 5.2), or the resource access error response (Section 7.2), such error codes MAY be defined.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.5-01
+  - id: RFC6749-8.5-02
+    section: "8.5"
+    keyword: MUST
+    text: Extension error codes MUST be registered (following the procedures in Section 11.4) if the extension they are used in conjunction with is a registered access token type, a registered endpoint parameter, or an extension grant type.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.5-02
+  - id: RFC6749-8.5-03
+    section: "8.5"
+    keyword: MAY
+    text: Error codes used with unregistered extensions MAY be registered.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.5-03
+  - id: RFC6749-8.5-04
+    section: "8.5"
+    keyword: MUST
+    text: Error codes MUST conform to the error ABNF and SHOULD be prefixed by an identifying name when possible.
+    statement: Error codes MUST conform to the error ABNF.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.5-04
+  - id: RFC6749-8.5-05
+    section: "8.5"
+    keyword: SHOULD
+    text: Error codes MUST conform to the error ABNF and SHOULD be prefixed by an identifying name when possible.
+    statement: Error codes SHOULD be prefixed by an identifying name when possible.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.5-05
+  - id: RFC6749-8.5-06
+    section: "8.5"
+    keyword: SHOULD
+    text: For example, an error identifying an invalid value set to the extension parameter "example" SHOULD be named "example_invalid".
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-6.5-06
+  - id: RFC6749-9-01
+    section: "9"
+    keyword: SHOULD
+    text: 'When choosing between the implicit grant type and the authorization code grant type, the following should be considered: Native applications that use the authorization code grant type SHOULD do so without using client credentials, due to the native application''s inability to keep client credentials confidential. When using the implicit grant type flow, a refresh token is not returned, which requires repeating the authorization process once the access token expires.'
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-8.1.1-01
+  - id: RFC6749-10.1-01
+    section: "10.1"
+    keyword: MUST
+    text: Web application clients MUST ensure confidentiality of client passwords and other client credentials.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.1-01
+  - id: RFC6749-10.1-02
+    section: "10.1"
+    keyword: MUST NOT
+    text: The authorization server MUST NOT issue client passwords or other client credentials to native application or user-agent-based application clients for the purpose of client authentication.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-01
+      - OAUTH21D16-8.1-01
+      - OAUTH21D16-8.1.1-01
+  - id: RFC6749-10.1-03
+    section: "10.1"
+    keyword: MAY
+    text: The authorization server MAY issue a client password or other credentials for a specific installation of a native application client on a specific device.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-8.1.1-01
+  - id: RFC6749-10.1-04
+    section: "10.1"
+    keyword: SHOULD
+    text: When client authentication is not possible, the authorization server SHOULD employ other means to validate the client's identity -- for example, by requiring the registration of the client redirection URI or enlisting the resource owner to confirm identity.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-05
+  - id: RFC6749-10.2-01
+    section: "10.2"
+    keyword: MUST
+    text: The authorization server MUST authenticate the client whenever possible.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-04
+      - OAUTH21D16-3.2.2-05
+  - id: RFC6749-10.2-02
+    section: "10.2"
+    keyword: MUST
+    text: If the authorization server cannot authenticate the client due to the client's nature, the authorization server MUST require the registration of any redirection URI used for receiving authorization responses and SHOULD utilize other means to protect resource owners from such potentially malicious clients.
+    statement: If the authorization server cannot authenticate the client due to the client's nature, the authorization server MUST require the registration of any redirection URI used for receiving authorization responses.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+  - id: RFC6749-10.2-03
+    section: "10.2"
+    keyword: SHOULD
+    text: If the authorization server cannot authenticate the client due to the client's nature, the authorization server MUST require the registration of any redirection URI used for receiving authorization responses and SHOULD utilize other means to protect resource owners from such potentially malicious clients.
+    statement: If the authorization server cannot authenticate the client due to the client's nature, the authorization server SHOULD utilize other means to protect resource owners from such potentially malicious clients.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.4-05
+  - id: RFC6749-10.2-04
+    section: "10.2"
+    keyword: SHOULD
+    text: The authorization server SHOULD enforce explicit resource owner authentication and provide the resource owner with information about the client and the requested authorization scope and lifetime.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.3-01
+      - OAUTH21D16-7.3-03
+  - id: RFC6749-10.2-05
+    section: "10.2"
+    keyword: SHOULD NOT
+    text: The authorization server SHOULD NOT process repeated authorization requests automatically (without active resource owner interaction) without authenticating the client or relying on other measures to ensure that the repeated request comes from the original client and not an impersonator.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.3-02
+  - id: RFC6749-10.3-01
+    section: "10.3"
+    keyword: MUST
+    text: Access token credentials (as well as any confidential access token attributes) MUST be kept confidential in transit and storage, and only shared among the authorization server, the resource servers the access token is valid for, and the client to whom the access token is issued.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4-02
+      - OAUTH21D16-1.4-04
+      - OAUTH21D16-1.4-05
+      - OAUTH21D16-1.4-08
+  - id: RFC6749-10.3-02
+    section: "10.3"
+    keyword: MUST
+    text: Access token credentials MUST only be transmitted using TLS as described in Section 1.6 with server authentication as defined by [RFC2818].
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4-04
+      - OAUTH21D16-1.5-01
+  - id: RFC6749-10.3-03
+    section: "10.3"
+    keyword: MUST
+    text: The authorization server MUST ensure that access tokens cannot be generated, modified, or guessed to produce valid access tokens by unauthorized parties.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.4-03
+      - OAUTH21D16-1.4-06
+      - OAUTH21D16-1.4-07
+  - id: RFC6749-10.3-04
+    section: "10.3"
+    keyword: SHOULD
+    text: The client SHOULD request access tokens with the minimal scope necessary.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.3.2-01
+  - id: RFC6749-10.3-05
+    section: "10.3"
+    keyword: SHOULD
+    text: The authorization server SHOULD take the client identity into account when choosing how to honor the requested scope and MAY issue an access token with less rights than requested.
+    statement: The authorization server SHOULD take the client identity into account when choosing how to honor the requested scope.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.3.2-02
+  - id: RFC6749-10.3-06
+    section: "10.3"
+    keyword: MAY
+    text: The authorization server SHOULD take the client identity into account when choosing how to honor the requested scope and MAY issue an access token with less rights than requested.
+    statement: The authorization server MAY issue an access token with less rights than requested.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.3.2-03
+  - id: RFC6749-10.4-01
+    section: "10.4"
+    keyword: MAY
+    text: Authorization servers MAY issue refresh tokens to web application clients and native application clients.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.3-09
+  - id: RFC6749-10.4-02
+    section: "10.4"
+    keyword: MUST
+    text: Refresh tokens MUST be kept confidential in transit and storage, and shared only among the authorization server and the client to whom the refresh tokens were issued.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3-01
+      - OAUTH21D16-4.3-06
+      - OAUTH21D16-4.3-07
+  - id: RFC6749-10.4-03
+    section: "10.4"
+    keyword: MUST
+    text: The authorization server MUST maintain the binding between a refresh token and the client to whom it was issued.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3-02
+  - id: RFC6749-10.4-04
+    section: "10.4"
+    keyword: MUST
+    text: Refresh tokens MUST only be transmitted using TLS as described in Section 1.6 with server authentication as defined by [RFC2818].
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3-06
+  - id: RFC6749-10.4-05
+    section: "10.4"
+    keyword: MUST
+    text: The authorization server MUST verify the binding between the refresh token and client identity whenever the client identity can be authenticated.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3-03
+  - id: RFC6749-10.4-06
+    section: "10.4"
+    keyword: SHOULD
+    text: When client authentication is not possible, the authorization server SHOULD deploy other means to detect refresh token abuse.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3-04
+  - id: RFC6749-10.4-07
+    section: "10.4"
+    keyword: MUST
+    text: The authorization server MUST ensure that refresh tokens cannot be generated, modified, or guessed to produce valid refresh tokens by unauthorized parties.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.3-05
+      - OAUTH21D16-4.3-08
+      - OAUTH21D16-4.3-09
+  - id: RFC6749-10.5-01
+    section: "10.5"
+    keyword: SHOULD
+    text: The transmission of authorization codes SHOULD be made over a secure channel, and the client SHOULD require the use of TLS with its redirection URI if the URI identifies a network resource.
+    statement: The transmission of authorization codes SHOULD be made over a secure channel.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+  - id: RFC6749-10.5-02
+    section: "10.5"
+    keyword: SHOULD
+    text: The transmission of authorization codes SHOULD be made over a secure channel, and the client SHOULD require the use of TLS with its redirection URI if the URI identifies a network resource.
+    statement: The client SHOULD require the use of TLS with its redirection URI if the URI identifies a network resource.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-07
+  - id: RFC6749-10.5-03
+    section: "10.5"
+    keyword: MUST
+    text: Therefore, if the client relies on the authorization code for its own resource owner authentication, the client redirection endpoint MUST require the use of TLS.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-07
+  - id: RFC6749-10.5-04
+    section: "10.5"
+    keyword: MUST
+    text: Authorization codes MUST be short lived and single-use.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.2-02
+      - OAUTH21D16-4.1.3-05
+  - id: RFC6749-10.5-05
+    section: "10.5"
+    keyword: SHOULD
+    text: If the authorization server observes multiple attempts to exchange an authorization code for an access token, the authorization server SHOULD attempt to revoke all access tokens already granted based on the compromised authorization code.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.3-07
+  - id: RFC6749-10.5-06
+    section: "10.5"
+    keyword: MUST
+    text: If the client can be authenticated, the authorization servers MUST authenticate the client and ensure that the authorization code was issued to the same client.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-3.2.2-05
+      - OAUTH21D16-4.1.3-08
+  - id: RFC6749-10.6-01
+    section: "10.6"
+    keyword: MUST
+    text: In order to prevent such an attack, the authorization server MUST ensure that the redirection URI used to obtain the authorization code is identical to the redirection URI provided when exchanging the authorization code for an access token.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-10.2-02
+    note: OAuth 2.1 removes redirect_uri from the token request and keeps it only for OAuth 2.0 Clients.
+  - id: RFC6749-10.6-02
+    section: "10.6"
+    keyword: MUST
+    text: The authorization server MUST require public clients and SHOULD require confidential clients to register their redirection URIs.
+    statement: The authorization server MUST require public clients to register their redirection URIs.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+  - id: RFC6749-10.6-03
+    section: "10.6"
+    keyword: SHOULD
+    text: The authorization server MUST require public clients and SHOULD require confidential clients to register their redirection URIs.
+    statement: The authorization server SHOULD require confidential clients to register their redirection URIs.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.1-01
+  - id: RFC6749-10.6-04
+    section: "10.6"
+    keyword: MUST
+    text: If a redirection URI is provided in the request, the authorization server MUST validate it against the registered value.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-19
+  - id: RFC6749-10.7-01
+    section: "10.7"
+    keyword: SHOULD
+    text: The authorization server and client SHOULD minimize use of this grant type and utilize other grant types whenever possible.
+    status: superseded
+    superseded_by:
+      - INV-0015
+    note: OAuth 2.1 removes the resource owner password credentials grant.
+  - id: RFC6749-10.8-01
+    section: "10.8"
+    keyword: MUST NOT
+    text: Access tokens, refresh tokens, resource owner passwords, and client credentials MUST NOT be transmitted in the clear.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+  - id: RFC6749-10.8-02
+    section: "10.8"
+    keyword: SHOULD NOT
+    text: Authorization codes SHOULD NOT be transmitted in the clear.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+  - id: RFC6749-10.8-03
+    section: "10.8"
+    keyword: SHOULD NOT
+    text: The "state" and "scope" parameters SHOULD NOT include sensitive client or resource owner information in plain text, as they can be transmitted over insecure channels or stored insecurely.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-18
+  - id: RFC6749-10.9-01
+    section: "10.9"
+    keyword: MUST
+    text: In order to prevent man-in-the-middle attacks, the authorization server MUST require the use of TLS with server authentication as defined by [RFC2818] for any request sent to the authorization and token endpoints.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+      - OAUTH21D16-1.5-02
+  - id: RFC6749-10.9-02
+    section: "10.9"
+    keyword: MUST
+    text: The client MUST validate the authorization server's TLS certificate as defined by [RFC6125] and in accordance with its requirements for server identity authentication.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-04
+  - id: RFC6749-10.10-01
+    section: "10.10"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.7-01
+      - OAUTH21D16-7.7-05
+      - OAUTH21D16-7.7-06
+      - OAUTH21D16-7.7-07
+      - OAUTH21D16-7.7-08
+  - id: RFC6749-10.10-02
+    section: "10.10"
+    keyword: MUST
+    text: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end-users) MUST be less than or equal to 2^(-128) and SHOULD be less than or equal to 2^(-160).
+    statement: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end-users) MUST be less than or equal to 2^(-128).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.7-02
+  - id: RFC6749-10.10-03
+    section: "10.10"
+    keyword: SHOULD
+    text: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end-users) MUST be less than or equal to 2^(-128) and SHOULD be less than or equal to 2^(-160).
+    statement: The probability of an attacker guessing generated tokens (and other credentials not intended for handling by end-users) SHOULD be less than or equal to 2^(-160).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.7-03
+  - id: RFC6749-10.10-04
+    section: "10.10"
+    keyword: MUST
+    text: The authorization server MUST utilize other means to protect credentials intended for end-user usage.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.7-04
+  - id: RFC6749-10.11-01
+    section: "10.11"
+    keyword: MUST
+    text: To reduce the risk of phishing attacks, the authorization servers MUST require the use of TLS on every endpoint used for end-user interaction.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-02
+  - id: RFC6749-10.12-01
+    section: "10.12"
+    keyword: MUST
+    text: The client MUST implement CSRF protection for its redirection URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.3-01
+  - id: RFC6749-10.12-02
+    section: "10.12"
+    keyword: SHOULD
+    text: The client SHOULD utilize the "state" request parameter to deliver this value to the authorization server when making an authorization request.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.3-03
+  - id: RFC6749-10.12-03
+    section: "10.12"
+    keyword: MUST
+    text: The binding value used for CSRF protection MUST contain a non-guessable value (as described in Section 10.10), and the user-agent's authenticated state (e.g., session cookie, HTML5 local storage) MUST be kept in a location accessible only to the client and the user-agent (i.e., protected by same-origin policy).
+    statement: The binding value used for CSRF protection MUST contain a non-guessable value.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.3-03
+  - id: RFC6749-10.12-04
+    section: "10.12"
+    keyword: MUST
+    text: The binding value used for CSRF protection MUST contain a non-guessable value (as described in Section 10.10), and the user-agent's authenticated state (e.g., session cookie, HTML5 local storage) MUST be kept in a location accessible only to the client and the user-agent (i.e., protected by same-origin policy).
+    statement: The user-agent's authenticated state MUST be kept in a location accessible only to the client and the user-agent.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-2.3.3-03
+  - id: RFC6749-10.12-05
+    section: "10.12"
+    keyword: MUST
+    text: The authorization server MUST implement CSRF protection for its authorization endpoint and ensure that a malicious client cannot obtain authorization without the awareness and explicit consent of the resource owner.
+    statement: The authorization server MUST implement CSRF protection for its authorization endpoint.
+    status: applicable
+  - id: RFC6749-10.12-06
+    section: "10.12"
+    keyword: MUST
+    text: The authorization server MUST implement CSRF protection for its authorization endpoint and ensure that a malicious client cannot obtain authorization without the awareness and explicit consent of the resource owner.
+    statement: The authorization server MUST ensure that a malicious client cannot obtain authorization without the awareness and explicit consent of the resource owner.
+    status: applicable
+  - id: RFC6749-10.13-01
+    section: "10.13"
+    keyword: SHOULD
+    text: To prevent this form of attack, native applications SHOULD use external browsers instead of embedding browsers within the application when requesting end-user authorization.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-8.2-01
+  - id: RFC6749-10.14-01
+    section: "10.14"
+    keyword: MUST
+    text: The authorization server and client MUST sanitize (and validate when possible) any value received -- in particular, the value of the "state" and "redirect_uri" parameters.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-7.12-01
+      - OAUTH21D16-7.12-02
+  - id: RFC6749-10.16-01
+    section: "10.16"
+    keyword: MUST NOT
+    text: Any specification that uses the authorization process as a form of delegated end-user authentication to the client (e.g., third-party sign-in service) MUST NOT use the implicit flow without additional security mechanisms that would enable the client to determine if the access token was issued for its use (e.g., audience-restricting the access token).
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-4.1.1-03
+    note: OAuth 2.1 removes the implicit grant.
+  - id: RFC6749-11.1.1-01
+    section: 11.1.1
+    keyword: MUST
+    text: New parameters MUST be separately registered in the OAuth Parameters registry as described by Section 11.2.
+    status: informative
+  - id: RFC6749-11.4.1-01
+    section: 11.4.1
+    keyword: MUST NOT
+    text: Values for the error name MUST NOT include characters outside the set %x20-21 / %x23-5B / %x5D-7E.
+    status: informative
+    note: A rule for names registered in the OAuth Extensions Error registry, not for the server.
+  - id: RFC6749-B-01
+    section: B
+    keyword: MUST
+    text: To address this shortcoming when generating payloads using this media type, names and values MUST be encoded using the UTF-8 character encoding scheme [RFC3629] first; the resulting octet sequence then needs to be further encoded using the escaping rules defined in [W3C.REC-html401-19991224].
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-B-01

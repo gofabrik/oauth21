@@ -57,3 +57,7 @@ requirements:
     keyword: MUST
     text: Every Authorization Request ID, authorization code, access token and refresh token the server issues carries at least 128 bits of randomness.
     status: applicable
+  - id: INV-0015
+    keyword: MUST
+    text: The token endpoint refuses the resource owner password credentials grant with unsupported_grant_type.
+    status: applicable
