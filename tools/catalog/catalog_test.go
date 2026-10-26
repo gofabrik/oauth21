@@ -105,6 +105,19 @@ func TestLoadOutOfScope(t *testing.T) {
 	}
 }
 
+func TestLoadStatement(t *testing.T) {
+	if err := load(map[string]string{"a.yaml": invariants + "    statement: An authorization code MUST issue tokens at most once.\n"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadStatementAcrossLines(t *testing.T) {
+	doc := strings.Replace(invariants, "keyword: MUST", "keyword: MUST NOT", 1) + "    statement: |-\n      Codes MUST\n      NOT issue tokens twice.\n"
+	if err := load(map[string]string{"a.yaml": doc}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadInvalid(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -188,8 +201,33 @@ func TestLoadInvalid(t *testing.T) {
 		},
 		{
 			name:  "shared text without statement",
-			files: map[string]string{"a.yaml": invariants + "  - id: INV-0002\n    keyword: MUST\n    text: An authorization code issues tokens at most once.\n    statement: Tokens are issued once.\n    status: applicable\n"},
+			files: map[string]string{"a.yaml": invariants + "  - id: INV-0002\n    keyword: MUST\n    text: An authorization code issues tokens at most once.\n    statement: Tokens MUST be issued once.\n    status: applicable\n"},
 			want:  "INV-0001: shares its text with another requirement and has no statement",
+		},
+		{
+			name:  "statement without keyword",
+			files: map[string]string{"a.yaml": invariants + "    statement: Tokens are issued once.\n"},
+			want:  `INV-0001: statement does not contain keyword "MUST"`,
+		},
+		{
+			name:  "statement with a longer keyword",
+			files: map[string]string{"a.yaml": invariants + "    statement: Codes MUST NOT issue tokens twice.\n"},
+			want:  `INV-0001: statement does not contain keyword "MUST"`,
+		},
+		{
+			name:  "statement with a longer keyword across lines",
+			files: map[string]string{"a.yaml": invariants + "    statement: |-\n      Codes MUST\n      NOT issue tokens twice.\n"},
+			want:  `INV-0001: statement does not contain keyword "MUST"`,
+		},
+		{
+			name:  "statement with a lowercase keyword",
+			files: map[string]string{"a.yaml": invariants + "    statement: Codes must issue tokens at most once.\n"},
+			want:  `INV-0001: statement does not contain keyword "MUST"`,
+		},
+		{
+			name:  "statement with a quoted keyword",
+			files: map[string]string{"a.yaml": invariants + "    statement: Codes \"MUST\" issue tokens at most once.\n"},
+			want:  `INV-0001: statement does not contain keyword "MUST"`,
 		},
 		{
 			name:  "out-of-scope without reason",

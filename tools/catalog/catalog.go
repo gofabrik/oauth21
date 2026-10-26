@@ -200,6 +200,9 @@ func (c *Catalog) Validate() error {
 			if r.Text == "" {
 				fail("%s: missing text", r.ID)
 			}
+			if r.Statement != "" && !slices.Contains(keywordsOf(strings.Join(strings.Fields(r.Statement), " ")), r.Keyword) {
+				fail("%s: statement does not contain keyword %q", r.ID, r.Keyword)
+			}
 			if (r.Status == Superseded) != (len(r.SupersededBy) > 0) {
 				fail("%s: superseded_by must be set exactly when status is %q", r.ID, Superseded)
 			}
