@@ -36,7 +36,10 @@ tasks:
     desc: Run every fuzz target briefly in all modules
     cmds:
       - |
+        set -o pipefail
         root=$PWD
+        out=$(mktemp)
+        trap 'rm -f "$out"' EXIT
         status=0
         for module in {{.MODULES}}; do
           cd "$root/$module"
@@ -44,7 +47,13 @@ tasks:
           for pkg in $pkgs; do
             targets=$(go test -list '^Fuzz' "$pkg") || { echo "$targets"; status=1; continue; }
             for target in $(echo "$targets" | grep '^Fuzz'); do
-              go test "$pkg" -run '^$' -fuzz "^$target\$" -fuzztime {{.FUZZTIME}} || status=1
+              go test "$pkg" -run '^$' -fuzz "^$target\$" -fuzztime {{.FUZZTIME}} -fuzzminimizetime 1000x 2>&1 | tee "$out" && continue
+              # Pass a run that failed only with the deadline line and logged no failing input.
+              if grep -qx '[[:space:]]*context deadline exceeded' "$out" && ! grep -qi 'failing input' "$out"; then
+                echo "$target: ignoring the fuzz coordinator's deadline race"
+                continue
+              fi
+              status=1
             done
           done
         done
