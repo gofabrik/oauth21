@@ -356,3 +356,33 @@ func TestMetadataIssuerMatchesWellKnownURL(t *testing.T) {
 		})
 	}
 }
+
+// TestMetadataListsS256 checks that the metadata lists S256 in code_challenge_methods_supported, so a Client can detect PKCE support.
+//
+//conformance:covers RFC9700-2.1.1-10
+func TestMetadataListsS256(t *testing.T) {
+	a := newAuthorizationServer(t)
+	methods, _ := a.metadata(a.url)["code_challenge_methods_supported"].([]any)
+	if !slices.Contains(methods, any("S256")) {
+		t.Fatalf("got code_challenge_methods_supported %v, want S256 in it", methods)
+	}
+}
+
+// TestListedChallengeMethodsAreAccepted checks that the metadata at the well-known path names the code challenge methods the authorization endpoint accepts.
+//
+//conformance:covers RFC9700-4.7.1-04
+func TestListedChallengeMethodsAreAccepted(t *testing.T) {
+	a := newAuthorizationServer(t)
+	methods, _ := a.metadata(a.url)["code_challenge_methods_supported"].([]any)
+	if len(methods) == 0 {
+		t.Fatal("got no code_challenge_methods_supported, want the supported methods")
+	}
+	for _, m := range methods {
+		params := authorizeParams()
+		method, _ := m.(string)
+		params.Set("code_challenge_method", method)
+		if q := a.login(a.authorize(params), "alice").Query(); !q.Has("code") {
+			t.Fatalf("%v: got redirect query %v, want a code", m, q)
+		}
+	}
+}

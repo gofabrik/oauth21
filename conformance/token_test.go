@@ -835,3 +835,36 @@ func TestTokenErrorURICharacters(t *testing.T) {
 		}
 	}
 }
+
+// TestPasswordGrantCannotBeUsed checks that a resource owner password credentials grant issues no tokens, to a public Client or to a confidential Client whose grant types list password.
+//
+//conformance:covers RFC9700-2.4-01
+func TestPasswordGrantCannotBeUsed(t *testing.T) {
+	client := confidentialClient(t)
+	client.GrantTypes = []string{"password"}
+	a := newAuthorizationServer(t, client)
+	confidential := url.Values{"grant_type": {"password"}, "username": {"alice"}, "password": {"hunter2"}, "scope": {"read"}}
+	public := url.Values{"grant_type": {"password"}, "username": {"alice"}, "password": {"hunter2"}, "client_id": {clientID}}
+	for _, req := range []struct {
+		params url.Values
+		header http.Header
+	}{{confidential, basic(confidentialID, secret)}, {public, nil}} {
+		if status, _, body := a.token(req.params, req.header); status == http.StatusOK || body["access_token"] != nil || body["refresh_token"] != nil {
+			t.Fatalf("got status %d and body %v, want an error without tokens", status, body)
+		}
+	}
+}
+
+// TestRefreshTokenIntegrityIsVerified checks that a refresh token assembled from parts of others, or with one character changed, does not refresh.
+//
+//conformance:covers RFC9700-4.14.2-05
+func TestRefreshTokenIntegrityIsVerified(t *testing.T) {
+	a := newAuthorizationServer(t)
+	first, second := a.publicRefreshToken(), a.publicRefreshToken()
+	changed := []byte(first)
+	changed[len(changed)-1] ^= 1
+	for _, v := range []string{spliced(first, second), spliced(second, first), string(changed)} {
+		status, _, body := a.token(refreshParams(v), nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	}
+}

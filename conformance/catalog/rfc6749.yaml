@@ -1032,72 +1032,72 @@ requirements:
     text: The client MUST discard the credentials once an access token has been obtained.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-01
     section: 4.3.2
     keyword: REQUIRED
     text: grant_type REQUIRED.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-02
     section: 4.3.2
     keyword: MUST
     text: Value MUST be set to "password".
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-03
     section: 4.3.2
     keyword: REQUIRED
     text: username REQUIRED.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-04
     section: 4.3.2
     keyword: REQUIRED
     text: password REQUIRED.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-05
     section: 4.3.2
     keyword: OPTIONAL
     text: scope OPTIONAL.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-06
     section: 4.3.2
     keyword: MUST
     text: If the client type is confidential or the client was issued client credentials (or assigned other authentication requirements), the client MUST authenticate with the authorization server as described in Section 3.2.1.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-07
     section: 4.3.2
     keyword: MUST
     text: 'The authorization server MUST: require client authentication for confidential clients or for any client that was issued client credentials (or with other authentication requirements), authenticate the client if client authentication is included, and validate the resource owner password credentials using its existing password validation algorithm.'
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.3.2-08
     section: 4.3.2
     keyword: MUST
     text: Since this access token request utilizes the resource owner's password, the authorization server MUST protect the endpoint against brute force attacks (e.g., using rate-limitation or generating alerts).
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-4.4-01
     section: "4.4"
     keyword: MUST
@@ -1797,8 +1797,8 @@ requirements:
     text: The authorization server and client SHOULD minimize use of this grant type and utilize other grant types whenever possible.
     status: superseded
     superseded_by:
-      - INV-0015
-    note: OAuth 2.1 removes the resource owner password credentials grant.
+      - RFC9700-2.4-01
+    note: RFC 9700 forbids the resource owner password credentials grant.
   - id: RFC6749-10.8-01
     section: "10.8"
     keyword: MUST NOT

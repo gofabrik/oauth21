@@ -328,3 +328,37 @@ func TestRedirectURIMatchesRegistrationExactly(t *testing.T) {
 	}
 	a.nativeCode("native", "http://127.0.0.1:51004/cb")
 }
+
+// TestRedirectURIUsesExactStringMatching checks that a redirect URI differing from the registered one in any character is not redirected to.
+//
+//conformance:covers RFC9700-2.1-01
+func TestRedirectURIUsesExactStringMatching(t *testing.T) {
+	a := newAuthorizationServer(t)
+	for _, uri := range []string{redirectURI + "/", redirectURI + "?next=1", redirectURI + "#", "https://client.example/CB", "https://client.example/c", "https://client.example.attacker/cb", "https://attacker.example/cb"} {
+		if _, loc := a.sendAuthorization(withRedirectURI(uri)); loc != "" {
+			t.Fatalf("%s: got Location %q, want no redirect", uri, loc)
+		}
+	}
+}
+
+// TestRedirectURIIsComparedBySimpleStringComparison checks that redirect URIs equal to the registered one only after normalization are not redirected to.
+//
+//conformance:covers RFC9700-4.1.3-01
+func TestRedirectURIIsComparedBySimpleStringComparison(t *testing.T) {
+	a := newAuthorizationServer(t)
+	for _, uri := range []string{"https://Client.example/cb", "Https://client.example/cb", "https://client.example:443/cb", "https://client.example/%63%62", "https://client.example/./cb", "https://client.example//cb"} {
+		if _, loc := a.sendAuthorization(withRedirectURI(uri)); loc != "" {
+			t.Fatalf("%s: got Location %q, want no redirect", uri, loc)
+		}
+	}
+}
+
+// TestLoopbackRedirectURIAcceptsAnyPort checks that a native app's loopback redirect URI gets a code at any port, also when the registration names another port.
+//
+//conformance:covers RFC9700-4.1.3-02
+func TestLoopbackRedirectURIAcceptsAnyPort(t *testing.T) {
+	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1:8080/cb"))
+	for _, uri := range []string{"http://127.0.0.1:65535/cb", "http://127.0.0.1:8080/cb", "http://127.0.0.1:1/cb", "http://127.0.0.1/cb"} {
+		a.nativeCode("native", uri)
+	}
+}

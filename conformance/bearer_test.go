@@ -739,3 +739,28 @@ func TestAccessTokenLifetimeIsLimited(t *testing.T) {
 		a.wantAccess(access, http.StatusUnauthorized)
 	})
 }
+
+// TestResourceServerRefusesTokenMeantForAnother checks that a request is served with an access token whose audience names this Resource Server, and refused with one whose audience names only others.
+//
+//conformance:covers RFC9700-2.3-03
+func TestResourceServerRefusesTokenMeantForAnother(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		a.wantAccess(a.audienceToken(resourceServerID), http.StatusOK)
+		for _, audience := range otherAudiences {
+			a.wantAccess(a.audienceToken(audience...), http.StatusUnauthorized)
+		}
+	})
+}
+
+// TestLocalValidationStoresNoPlaintextToken checks that the local validator gives the Token Store an access token only as its SHA-256 hash.
+//
+//conformance:covers RFC9700-4.9.3-03
+func TestLocalValidationStoresNoPlaintextToken(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resource(a.local())
+	access := a.audienceToken(resourceServerID)
+	a.wantAccess(access, http.StatusOK)
+	a.wantAccess(access+"x", http.StatusUnauthorized)
+	a.wantStoredOnlyAsHashes(access, access+"x")
+}

@@ -12,6 +12,9 @@ RFC7662-4-11
 RFC8414-6.1-01
 RFC8414-6.1-02
 RFC8414-6.1-05
+RFC9700-4.13-01
+RFC9700-4.13-02
+RFC9700-4.9.3-04
 # 51: Client policy and the Host Application's duties
 OAUTH21D16-1.4-08
 OAUTH21D16-2.4-01
@@ -26,18 +29,25 @@ RFC6749-10.12-05
 RFC6749-10.12-06
 RFC8252-8.4-01
 RFC8252-8.5-02
+RFC9700-4.15.1-02
 # 53: authenticate the Resource Owner before redirecting errors
 OAUTH21D16-3.1-01
 OAUTH21D16-7.13.2-02
 OAUTH21D16-7.13.2-03
+RFC9700-2.1-10
+RFC9700-4.11.2-02
+RFC9700-4.11.2-03
 # 54: validate registered Client data
 OAUTH21D16-1.5-07
 OAUTH21D16-2-01
 OAUTH21D16-2.3-01
 OAUTH21D16-2.3-04
 RFC8252-8.4-03
+RFC9700-2.6-04
+RFC9700-2.6-05
 # 55: clickjacking protection
 OAUTH21D16-7.11-01
+RFC9700-4.16-01
 # 56: enforce redirect_uri at the token endpoint as RFC 6749 does
 OAUTH21D16-10.2-02
 # 57: brute-force protection for Client authentication
@@ -53,3 +63,5 @@ RFC7009-5-02
 # 64: introspect tokens whose valid period has not started
 RFC7662-4-01
 RFC7662-4-03
+# 67: bind Grants to the Resource Servers the Resource Owner consented to
+RFC9700-4.14.2-08

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -397,4 +398,63 @@ func TestRefreshKeepsAudience(t *testing.T) {
 			t.Fatalf("got %v, want an active token with audience %s", body, resourceServerID)
 		}
 	}
+}
+
+// TestPublicClientRefreshTokensRotate checks that every refresh of a public Client returns a new refresh token and retires the presented one, also where confidential Clients reuse theirs.
+//
+//conformance:covers RFC9700-2.2.2-01
+func TestPublicClientRefreshTokensRotate(t *testing.T) {
+	a := newReusingServer(t)
+	tokens := []string{a.publicRefreshToken()}
+	for range 3 {
+		next := a.refreshToken(refreshParams(tokens[len(tokens)-1]), nil)
+		if slices.Contains(tokens, next) {
+			t.Fatalf("got refresh token %q again, want a new one", next)
+		}
+		tokens = append(tokens, next)
+	}
+	status, _, body := a.token(refreshParams(tokens[0]), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestRefreshTokensFollowClientPolicy checks that the same confidential Client gets a refresh token when its grant types list refresh_token, and none when they leave it out.
+//
+//conformance:covers RFC9700-4.14.2-01
+func TestRefreshTokensFollowClientPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		grantTypes []string
+		want       bool
+	}{{[]string{"authorization_code", "refresh_token"}, true}, {[]string{"authorization_code"}, false}} {
+		client := confidentialClient(t)
+		client.GrantTypes = tt.grantTypes
+		a := newAuthorizationServer(t, client)
+		if _, refresh := a.tokens(a.confidentialCode(), basic(confidentialID, secret)); (refresh != "") != tt.want {
+			t.Fatalf("grant types %v: got refresh token %q, want one: %v", tt.grantTypes, refresh, tt.want)
+		}
+	}
+}
+
+// TestRefreshedAccessTokenHasConsentedScope checks that the access tokens a refresh token issues carry the scope the Resource Owner consented to, not the wider one the Client requested.
+//
+//conformance:covers RFC9700-4.14.2-03
+func TestRefreshedAccessTokenHasConsentedScope(t *testing.T) {
+	a := newIntrospectionServer(t)
+	params := authorizeParams()
+	params.Set("scope", "read write")
+	req := a.pending(a.authorize(params))
+	u := a.complete(req.ID, oauth21.Completion{Subject: "alice", Scopes: readScope})
+	_, refresh := a.tokens(tokenParams(u.Query().Get("code")), nil)
+	for _, access := range a.successiveAccessTokens(refresh, refreshParams, nil) {
+		if body := a.introspect(access); body["active"] != true || body["scope"] != "read" {
+			t.Fatalf("got %v, want an active token with scope read", body)
+		}
+	}
+}
+
+// TestPublicRefreshTokenReplayRevokesFamily checks that presenting a rotated refresh token of a public Client fails and revokes the refresh token and access token its successor issued.
+//
+//conformance:covers RFC9700-4.14.2-04
+func TestPublicRefreshTokenReplayRevokesFamily(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.wantReuseRevokesGrant(a.publicRefreshToken(), refreshParams, nil)
 }

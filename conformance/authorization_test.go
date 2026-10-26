@@ -350,17 +350,22 @@ func (a *authorizationServer) postedAuthorization(params url.Values) (int, strin
 	return status, header.Get("Location")
 }
 
+// wantCredentialsNotForwarded checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, is a 302 or 303 that leaves the password out of the redirect.
+func (a *authorizationServer) wantCredentialsNotForwarded() {
+	a.t.Helper()
+	for target, params := range map[string]url.Values{a.url + "/login?": authorizeParams(), redirectURI + "?": unsupportedParams()} {
+		status, loc := a.postedAuthorization(params)
+		if status != http.StatusFound && status != http.StatusSeeOther || !strings.HasPrefix(loc, target) || strings.Contains(loc, "hunter2") {
+			a.t.Fatalf("got status %d and Location %q, want a 302 or 303 to %s without the password", status, loc, target)
+		}
+	}
+}
+
 // TestPostedCredentialsAreNotForwarded checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, neither repeats the request body nor puts the password in the redirect.
 //
 //conformance:covers OAUTH21D16-3.1-10
 func TestPostedCredentialsAreNotForwarded(t *testing.T) {
-	a := newAuthorizationServer(t)
-	for target, params := range map[string]url.Values{a.url + "/login?": authorizeParams(), redirectURI + "?": unsupportedParams()} {
-		status, loc := a.postedAuthorization(params)
-		if status != http.StatusFound && status != http.StatusSeeOther || !strings.HasPrefix(loc, target) || strings.Contains(loc, "hunter2") {
-			t.Fatalf("got status %d and Location %q, want a 302 or 303 to %s without the password", status, loc, target)
-		}
-	}
+	newAuthorizationServer(t).wantCredentialsNotForwarded()
 }
 
 // TestAuthorizationRedirectsAreNot307 checks that the authorization endpoint never redirects with 307, for GET and POST requests, to the login URL and to the Client.
@@ -428,6 +433,46 @@ func TestIssIsHTTPSURLWithoutQueryOrFragment(t *testing.T) {
 		parsed, err := url.Parse(iss)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.ContainsAny(iss, "?#") {
 			t.Fatalf("got iss %q, want an https URL without query or fragment", iss)
+		}
+	}
+}
+
+// TestRedirectDoesNotForwardCredentials checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, is a 302 or 303 that leaves the password out of the redirect.
+//
+//conformance:covers RFC9700-2.1-09
+func TestRedirectDoesNotForwardCredentials(t *testing.T) {
+	newAuthorizationServer(t).wantCredentialsNotForwarded()
+}
+
+// TestAuthorizationEndpointRefusesCORS checks that no cross-origin request to the authorization endpoint, simple or preflight, is allowed.
+//
+//conformance:covers RFC9700-2.6-08
+func TestAuthorizationEndpointRefusesCORS(t *testing.T) {
+	a := newAuthorizationServer(t)
+	for _, origin := range []string{"https://client.example", "null"} {
+		header := http.Header{"Origin": {origin}, "Access-Control-Request-Method": {"POST"}, "Access-Control-Request-Headers": {"Content-Type"}}
+		for _, method := range []string{http.MethodGet, http.MethodOptions} {
+			status, h, _ := a.send(method, "/authorize?"+authorizeParams().Encode(), "", header)
+			for name := range h {
+				if strings.HasPrefix(name, "Access-Control-") {
+					t.Fatalf("%s from %s: got header %s, want no CORS", method, origin, name)
+				}
+			}
+			if method == http.MethodOptions && status < 300 {
+				t.Fatalf("%s from %s: got status %d, want the preflight refused", method, origin, status)
+			}
+		}
+	}
+}
+
+// TestRedirectOfCredentialsIsNot307 checks that a POST authorization request carrying a password is redirected, to the login URL or to the Client, without 307.
+//
+//conformance:covers RFC9700-4.12-01
+func TestRedirectOfCredentialsIsNot307(t *testing.T) {
+	a := newAuthorizationServer(t)
+	for _, params := range []url.Values{authorizeParams(), unsupportedParams()} {
+		if status, loc := a.postedAuthorization(params); status == http.StatusTemporaryRedirect || loc == "" {
+			t.Fatalf("got status %d and Location %q, want a redirect other than 307", status, loc)
 		}
 	}
 }

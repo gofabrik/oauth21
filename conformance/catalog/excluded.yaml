@@ -16,6 +16,7 @@ features:
   - mtls
   - jar
   - rar
+  - web-message-response-mode
   - openid-connect
   - persistent-stores
   - admin-ui

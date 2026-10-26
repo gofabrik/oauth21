@@ -1,0 +1,750 @@
+document: RFC9700
+title: Best Current Practice for OAuth 2.0 Security
+source: ../specs/rfc9700.txt
+requirements:
+  - id: RFC9700-1-01
+    section: "1"
+    keyword: RECOMMENDED
+    text: Nonetheless, it is RECOMMENDED that implementers upgrade their implementations and ecosystems as soon as feasible.
+    status: applicable
+  - id: RFC9700-2.1-01
+    section: "2.1"
+    keyword: MUST
+    text: When comparing client redirection URIs against pre-registered URIs, authorization servers MUST utilize exact string matching except for port numbers in localhost redirection URIs of native apps (see Section 4.1.3).
+    status: applicable
+  - id: RFC9700-2.1-02
+    section: "2.1"
+    keyword: MUST NOT
+    text: Clients and authorization servers MUST NOT expose URLs that forward the user's browser to arbitrary URIs obtained from a query parameter (open redirectors) as described in Section 4.11.
+    statement: Clients MUST NOT expose URLs that forward the user's browser to arbitrary URIs obtained from a query parameter (open redirectors).
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-10
+    section: "2.1"
+    keyword: MUST NOT
+    text: Clients and authorization servers MUST NOT expose URLs that forward the user's browser to arbitrary URIs obtained from a query parameter (open redirectors) as described in Section 4.11.
+    statement: Authorization servers MUST NOT expose URLs that forward the user's browser to arbitrary URIs obtained from a query parameter (open redirectors).
+    status: applicable
+  - id: RFC9700-2.1-03
+    section: "2.1"
+    keyword: MUST
+    text: Clients MUST prevent Cross-Site Request Forgery (CSRF).
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-04
+    section: "2.1"
+    keyword: MAY
+    text: Clients that have ensured that the authorization server supports Proof Key for Code Exchange (PKCE) [RFC7636] MAY rely on the CSRF protection provided by PKCE.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-05
+    section: "2.1"
+    keyword: MUST
+    text: Otherwise, one-time use CSRF tokens carried in the state parameter that are securely bound to the user agent MUST be used for CSRF protection (see Section 4.7.1).
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-06
+    section: "2.1"
+    keyword: REQUIRED
+    text: When an OAuth client can interact with more than one authorization server, a defense against mix-up attacks (see Section 4.4) is REQUIRED.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-07
+    section: "2.1"
+    keyword: SHOULD
+    text: To this end, clients SHOULD use the iss parameter as a countermeasure according to [RFC9207], or use an alternative countermeasure based on an iss value in the authorization response (such as the iss claim in the ID Token in [OpenID.Core] or in [OpenID.JARM] responses), processing that value as described in [RFC9207].
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-08
+    section: "2.1"
+    keyword: MAY
+    text: In the absence of these options, clients MAY instead use distinct redirection URIs to identify authorization endpoints and token endpoints, as described in Section 4.4.2.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1-09
+    section: "2.1"
+    keyword: MUST
+    text: An authorization server that redirects a request potentially containing user credentials MUST avoid forwarding these user credentials accidentally (see Section 4.12 for details).
+    status: applicable
+  - id: RFC9700-2.1.1-01
+    section: 2.1.1
+    keyword: MUST
+    text: 'Clients MUST prevent authorization code injection attacks (see Section 4.5) and misuse of authorization codes using one of the following options: Public clients MUST use PKCE [RFC7636] to this end, as motivated in Section 4.5.3.1. For confidential clients, the use of PKCE [RFC7636] is RECOMMENDED, as it provides strong protection against misuse and injection of authorization codes as described in Section 4.5.3.1. Also, as a side effect, it prevents CSRF even in the presence of strong attackers as described in Section 4.7.1. With additional precautions, described in Section 4.5.3.2, confidential OpenID Connect [OpenID.Core] clients MAY use the nonce parameter and the respective Claim in the ID Token instead.'
+    statement: Clients MUST prevent authorization code injection attacks and misuse of authorization codes.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.1-02
+    section: 2.1.1
+    keyword: MUST
+    text: 'Clients MUST prevent authorization code injection attacks (see Section 4.5) and misuse of authorization codes using one of the following options: Public clients MUST use PKCE [RFC7636] to this end, as motivated in Section 4.5.3.1. For confidential clients, the use of PKCE [RFC7636] is RECOMMENDED, as it provides strong protection against misuse and injection of authorization codes as described in Section 4.5.3.1. Also, as a side effect, it prevents CSRF even in the presence of strong attackers as described in Section 4.7.1. With additional precautions, described in Section 4.5.3.2, confidential OpenID Connect [OpenID.Core] clients MAY use the nonce parameter and the respective Claim in the ID Token instead.'
+    statement: Public clients MUST use PKCE to prevent authorization code injection attacks and misuse of authorization codes.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.1-03
+    section: 2.1.1
+    keyword: RECOMMENDED
+    text: 'Clients MUST prevent authorization code injection attacks (see Section 4.5) and misuse of authorization codes using one of the following options: Public clients MUST use PKCE [RFC7636] to this end, as motivated in Section 4.5.3.1. For confidential clients, the use of PKCE [RFC7636] is RECOMMENDED, as it provides strong protection against misuse and injection of authorization codes as described in Section 4.5.3.1. Also, as a side effect, it prevents CSRF even in the presence of strong attackers as described in Section 4.7.1. With additional precautions, described in Section 4.5.3.2, confidential OpenID Connect [OpenID.Core] clients MAY use the nonce parameter and the respective Claim in the ID Token instead.'
+    statement: For confidential clients, the use of PKCE is RECOMMENDED.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.1-04
+    section: 2.1.1
+    keyword: MAY
+    text: 'Clients MUST prevent authorization code injection attacks (see Section 4.5) and misuse of authorization codes using one of the following options: Public clients MUST use PKCE [RFC7636] to this end, as motivated in Section 4.5.3.1. For confidential clients, the use of PKCE [RFC7636] is RECOMMENDED, as it provides strong protection against misuse and injection of authorization codes as described in Section 4.5.3.1. Also, as a side effect, it prevents CSRF even in the presence of strong attackers as described in Section 4.7.1. With additional precautions, described in Section 4.5.3.2, confidential OpenID Connect [OpenID.Core] clients MAY use the nonce parameter and the respective Claim in the ID Token instead.'
+    statement: With additional precautions, confidential OpenID Connect clients MAY use the nonce parameter and the respective Claim in the ID Token instead.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.1-05
+    section: 2.1.1
+    keyword: MUST
+    text: In any case, the PKCE challenge or OpenID Connect nonce MUST be transaction-specific and securely bound to the client and the user agent in which the transaction was started.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.1-06
+    section: 2.1.1
+    keyword: SHOULD
+    text: When using PKCE, clients SHOULD use PKCE code challenge methods that do not expose the PKCE verifier in the authorization request.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.1-07
+    section: 2.1.1
+    keyword: MUST
+    text: Authorization servers MUST support PKCE [RFC7636].
+    status: applicable
+  - id: RFC9700-2.1.1-08
+    section: 2.1.1
+    keyword: MUST
+    text: If a client sends a valid PKCE code_challenge parameter in the authorization request, the authorization server MUST enforce the correct usage of code_verifier at the token endpoint.
+    status: applicable
+  - id: RFC9700-2.1.1-09
+    section: 2.1.1
+    keyword: MUST
+    text: Authorization servers MUST mitigate PKCE downgrade attacks by ensuring that a token request containing a code_verifier parameter is accepted only if a code_challenge parameter was present in the authorization request; see Section 4.8.2 for details.
+    status: applicable
+  - id: RFC9700-2.1.1-10
+    section: 2.1.1
+    keyword: MUST
+    text: Authorization servers MUST provide a way to detect their support for PKCE.
+    status: applicable
+  - id: RFC9700-2.1.1-11
+    section: 2.1.1
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED for authorization servers to publish the element code_challenge_methods_supported in their Authorization Server Metadata [RFC8414] containing the supported PKCE challenge methods (which can be used by the client to detect PKCE support).
+    status: applicable
+  - id: RFC9700-2.1.1-12
+    section: 2.1.1
+    keyword: MAY
+    text: Authorization servers MAY instead provide a deployment-specific way to ensure or determine PKCE support by the authorization server.
+    status: applicable
+  - id: RFC9700-2.1.2-01
+    section: 2.1.2
+    keyword: SHOULD NOT
+    text: In order to avoid these issues, clients SHOULD NOT use the implicit grant (response type token) or other response types issuing access tokens in the authorization response, unless access token injection in the authorization response is prevented and the aforementioned token leakage vectors are mitigated.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.1.2-02
+    section: 2.1.2
+    keyword: SHOULD
+    text: Clients SHOULD instead use the response type code (i.e., authorization code grant type) as specified in Section 2.1.1 or any other response type that causes the authorization server to issue access tokens in the token response, such as the code id_token response type.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.2.1-01
+    section: 2.2.1
+    keyword: SHOULD
+    text: Authorization and resource servers SHOULD use mechanisms for sender-constraining access tokens, such as mutual TLS for OAuth 2.0 [RFC8705] or OAuth 2.0 Demonstrating Proof of Possession (DPoP) [RFC9449] (see Section 4.10.1), to prevent misuse of stolen and leaked access tokens.
+    status: out-of-scope
+    reason: excluded
+    feature: dpop
+    note: And mtls, which spec.md also excludes.
+  - id: RFC9700-2.2.2-01
+    section: 2.2.2
+    keyword: MUST
+    text: Refresh tokens for public clients MUST be sender-constrained or use refresh token rotation as described in Section 4.14.
+    status: applicable
+    note: Refresh tokens of public Clients always rotate.
+  - id: RFC9700-2.3-01
+    section: "2.3"
+    keyword: SHOULD
+    text: The privileges associated with an access token SHOULD be restricted to the minimum required for the particular application or use case.
+    status: applicable
+  - id: RFC9700-2.3-02
+    section: "2.3"
+    keyword: SHOULD
+    text: In particular, access tokens SHOULD be audience-restricted to a specific resource server or, if that is not feasible, to a small set of resource servers.
+    status: applicable
+  - id: RFC9700-2.3-03
+    section: "2.3"
+    keyword: MUST
+    text: If it was not, the resource server MUST refuse to serve the respective request.
+    statement: If the access token was not meant to be used for that particular resource server, the resource server MUST refuse to serve the respective request.
+    status: applicable
+  - id: RFC9700-2.3-04
+    section: "2.3"
+    keyword: MAY
+    text: The aud claim as defined in [RFC9068] MAY be used to audience-restrict access tokens.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+  - id: RFC9700-2.3-05
+    section: "2.3"
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameters scope or resource as specified in [RFC6749] and [RFC8707], respectively, to determine the resource server they want to access.
+    statement: Authorization servers MAY utilize the parameter scope to determine the resource server they want to access.
+    status: applicable
+  - id: RFC9700-2.3-10
+    section: "2.3"
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameters scope or resource as specified in [RFC6749] and [RFC8707], respectively, to determine the resource server they want to access.
+    statement: Authorization servers MAY utilize the parameter resource to determine the resource server they want to access.
+    status: out-of-scope
+    reason: excluded
+    feature: resource-indicators
+  - id: RFC9700-2.3-08
+    section: "2.3"
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameters scope or resource as specified in [RFC6749] and [RFC8707], respectively, to determine the resource server they want to access.
+    statement: Clients MAY utilize the parameters scope or resource to determine the resource server they want to access.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.3-06
+    section: "2.3"
+    keyword: SHOULD
+    text: Additionally, access tokens SHOULD be restricted to certain resources and actions on resource servers or resources.
+    status: applicable
+  - id: RFC9700-2.3-07
+    section: "2.3"
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameter scope as specified in [RFC6749] and authorization_details as specified in [RFC9396] to determine those resources and/or actions.
+    statement: Authorization servers MAY utilize the parameter scope to determine those resources and/or actions.
+    status: applicable
+  - id: RFC9700-2.3-11
+    section: "2.3"
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameter scope as specified in [RFC6749] and authorization_details as specified in [RFC9396] to determine those resources and/or actions.
+    statement: Authorization servers MAY utilize the parameter authorization_details to determine those resources and/or actions.
+    status: out-of-scope
+    reason: excluded
+    feature: rar
+  - id: RFC9700-2.3-09
+    section: "2.3"
+    keyword: MAY
+    text: Clients and authorization servers MAY utilize the parameter scope as specified in [RFC6749] and authorization_details as specified in [RFC9396] to determine those resources and/or actions.
+    statement: Clients MAY utilize the parameter scope and authorization_details to determine those resources and/or actions.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.4-01
+    section: "2.4"
+    keyword: MUST NOT
+    text: The resource owner password credentials grant [RFC6749] MUST NOT be used.
+    status: applicable
+  - id: RFC9700-2.5-01
+    section: "2.5"
+    keyword: SHOULD
+    text: Authorization servers SHOULD enforce client authentication if it is feasible, in the particular deployment, to establish a process for issuance/registration of credentials for clients and ensuring the confidentiality of those credentials.
+    status: applicable
+  - id: RFC9700-2.5-02
+    section: "2.5"
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED to use asymmetric cryptography for client authentication, such as mutual TLS for OAuth 2.0 [RFC8705] or signed JWTs ("Private Key JWT") in accordance with [RFC7521] and [RFC7523].
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+    note: And mtls, which spec.md also excludes.
+  - id: RFC9700-2.6-01
+    section: "2.6"
+    keyword: RECOMMENDED
+    text: It is therefore RECOMMENDED that authorization servers publish OAuth Authorization Server Metadata according to [RFC8414] and that clients make use of this Authorization Server Metadata (when available) to configure themselves.
+    statement: It is RECOMMENDED that authorization servers publish OAuth Authorization Server Metadata according to RFC 8414.
+    status: applicable
+  - id: RFC9700-2.6-09
+    section: "2.6"
+    keyword: RECOMMENDED
+    text: It is therefore RECOMMENDED that authorization servers publish OAuth Authorization Server Metadata according to [RFC8414] and that clients make use of this Authorization Server Metadata (when available) to configure themselves.
+    statement: It is RECOMMENDED that clients make use of this Authorization Server Metadata (when available) to configure themselves.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-2.6-02
+    section: "2.6"
+    keyword: SHOULD NOT
+    text: Under the conditions described in Section 4.15.1, authorization servers SHOULD NOT allow clients to influence their client_id or any other claim that could cause confusion with a genuine resource owner.
+    status: applicable
+  - id: RFC9700-2.6-03
+    section: "2.6"
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED to use end-to-end TLS according to [BCP195] between the client and the resource server.
+    status: applicable
+  - id: RFC9700-2.6-04
+    section: "2.6"
+    keyword: MUST NOT
+    text: Authorization responses MUST NOT be transmitted over unencrypted network connections.
+    status: applicable
+  - id: RFC9700-2.6-05
+    section: "2.6"
+    keyword: MUST NOT
+    text: To this end, authorization servers MUST NOT allow redirection URIs that use the http scheme except for native clients that use loopback interface redirection as described in Section 7.3 of [RFC8252].
+    status: applicable
+  - id: RFC9700-2.6-06
+    section: "2.6"
+    keyword: MUST
+    text: If the authorization response is sent with in-browser communication techniques like postMessage [WHATWG.postmessage_api] instead of HTTP redirects, both the initiator and receiver of the in-browser message MUST be strictly verified as described in Section 4.17.
+    status: out-of-scope
+    reason: excluded
+    feature: web-message-response-mode
+  - id: RFC9700-2.6-07
+    section: "2.6"
+    keyword: MAY
+    text: To support browser-based clients, endpoints directly accessed by such clients including the Token Endpoint, Authorization Server Metadata Endpoint, jwks_uri Endpoint, and Dynamic Client Registration Endpoint MAY support the use of Cross-Origin Resource Sharing (CORS) [WHATWG.CORS].
+    status: applicable
+  - id: RFC9700-2.6-08
+    section: "2.6"
+    keyword: MUST NOT
+    text: However, CORS MUST NOT be supported at the authorization endpoint, as the client does not access this endpoint directly; instead, the client redirects the user agent to it.
+    status: applicable
+  - id: RFC9700-3-01
+    section: "3"
+    keyword: MUST
+    text: Implementers MUST take into account all possible types of attackers in the environment of their OAuth implementations.
+    status: informative
+    note: A rule for the attacker model this document assumes.
+  - id: RFC9700-4.1.3-01
+    section: 4.1.3
+    keyword: MUST
+    text: This means the authorization server MUST ensure that the two URIs are equal; see Section 6.2.1 of [RFC3986], Simple String Comparison, for details.
+    status: applicable
+  - id: RFC9700-4.1.3-02
+    section: 4.1.3
+    keyword: MUST
+    text: 'The only exception is native apps using a localhost URI: In this case, the authorization server MUST allow variable port numbers as described in Section 7.3 of [RFC8252].'
+    status: applicable
+    note: Applies to loopback IP redirect URIs as Section 7.3 of RFC 8252 describes; the name localhost gets no exception.
+  - id: RFC9700-4.1.3-03
+    section: 4.1.3
+    keyword: MUST NOT
+    text: 'Additional recommendations: Web servers on which redirection URIs are hosted MUST NOT expose open redirectors (see Section 4.11). Browsers reattach URL fragments to Location redirection URLs only if the URL in the Location header does not already contain a fragment. Therefore, servers MAY prevent browsers from reattaching fragments to redirection URLs by attaching an arbitrary fragment identifier, for example #_, to URLs in Location headers. Clients SHOULD use the authorization code response type instead of response types that cause access token issuance at the authorization endpoint. This offers countermeasures against the reuse of leaked credentials through the exchange process with the authorization server and against token replay through sender-constraining of the access tokens.'
+    statement: Web servers on which redirection URIs are hosted MUST NOT expose open redirectors.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.1.3-04
+    section: 4.1.3
+    keyword: MAY
+    text: 'Additional recommendations: Web servers on which redirection URIs are hosted MUST NOT expose open redirectors (see Section 4.11). Browsers reattach URL fragments to Location redirection URLs only if the URL in the Location header does not already contain a fragment. Therefore, servers MAY prevent browsers from reattaching fragments to redirection URLs by attaching an arbitrary fragment identifier, for example #_, to URLs in Location headers. Clients SHOULD use the authorization code response type instead of response types that cause access token issuance at the authorization endpoint. This offers countermeasures against the reuse of leaked credentials through the exchange process with the authorization server and against token replay through sender-constraining of the access tokens.'
+    statement: 'Servers MAY prevent browsers from reattaching fragments to redirection URLs by attaching an arbitrary fragment identifier, for example #_, to URLs in Location headers.'
+    status: applicable
+  - id: RFC9700-4.1.3-05
+    section: 4.1.3
+    keyword: SHOULD
+    text: 'Additional recommendations: Web servers on which redirection URIs are hosted MUST NOT expose open redirectors (see Section 4.11). Browsers reattach URL fragments to Location redirection URLs only if the URL in the Location header does not already contain a fragment. Therefore, servers MAY prevent browsers from reattaching fragments to redirection URLs by attaching an arbitrary fragment identifier, for example #_, to URLs in Location headers. Clients SHOULD use the authorization code response type instead of response types that cause access token issuance at the authorization endpoint. This offers countermeasures against the reuse of leaked credentials through the exchange process with the authorization server and against token replay through sender-constraining of the access tokens.'
+    statement: Clients SHOULD use the authorization code response type instead of response types that cause access token issuance at the authorization endpoint.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.1.3-06
+    section: 4.1.3
+    keyword: MAY
+    text: If the origin and integrity of the authorization request containing the redirection URI can be verified, for example, when using [RFC9101] or [RFC9126] with client authentication, the authorization server MAY trust the redirection URI without further checks.
+    status: out-of-scope
+    reason: excluded
+    feature: par
+    note: Or jar, which spec.md also excludes.
+  - id: RFC9700-4.2.4-01
+    section: 4.2.4
+    keyword: SHOULD NOT
+    text: The page rendered as a result of the OAuth authorization response and the authorization endpoint SHOULD NOT include third-party resources or links to external sites.
+    statement: The page rendered as a result of the OAuth authorization response SHOULD NOT include third-party resources or links to external sites.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.2.4-05
+    section: 4.2.4
+    keyword: SHOULD NOT
+    text: The page rendered as a result of the OAuth authorization response and the authorization endpoint SHOULD NOT include third-party resources or links to external sites.
+    statement: The authorization endpoint SHOULD NOT include third-party resources or links to external sites.
+    status: applicable
+  - id: RFC9700-4.2.4-02
+    section: 4.2.4
+    keyword: MUST
+    text: 'The following measures further reduce the chances of a successful attack: Suppress the Referer header by applying an appropriate Referrer Policy [W3C.webappsec-referrer-policy] to the document (either as part of the "referrer" meta attribute or by setting a Referrer-Policy header). For example, the header Referrer-Policy: no-referrer in the response completely suppresses the Referer header in all requests originating from the resulting document. Use authorization code instead of response types causing access token issuance from the authorization endpoint. Bind the authorization code to a confidential client or PKCE challenge. In this case, the attacker lacks the secret to request the code exchange. As described in Section 4.1.2 of [RFC6749], authorization codes MUST be invalidated by the authorization server after their first use at the token endpoint. For example, if an authorization server invalidated the code after the legitimate client redeemed it, the attacker would fail to exchange this code later.'
+    statement: As described in Section 4.1.2 of RFC 6749, authorization codes MUST be invalidated by the authorization server after their first use at the token endpoint.
+    status: informative
+    note: Restates Section 4.1.2 of RFC 6749.
+  - id: RFC9700-4.2.4-03
+    section: 4.2.4
+    keyword: SHOULD
+    text: Therefore, [RFC6749] further recommends that, when an attempt is made to redeem a code twice, the authorization server SHOULD revoke all tokens issued previously based on that code.
+    status: informative
+    note: Restates Section 4.1.2 of RFC 6749.
+  - id: RFC9700-4.2.4-04
+    section: 4.2.4
+    keyword: SHOULD
+    text: The state value SHOULD be invalidated by the client after its first use at the redirection endpoint.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.3.2-01
+    section: 4.3.2
+    keyword: MUST NOT
+    text: 'Countermeasures: Clients MUST NOT pass access tokens in a URI query parameter in the way described in Section 2.3 of [RFC6750]. The authorization code grant or alternative OAuth response modes like the form post response mode [OAuth.Post] can be used to this end.'
+    statement: Clients MUST NOT pass access tokens in a URI query parameter in the way described in Section 2.3 of RFC 6750.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2-01
+    section: 4.4.2
+    keyword: MUST
+    text: In scenarios where an OAuth client interacts with two or more authorization servers, however, clients MUST prevent mix-up attacks.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2-02
+    section: 4.4.2
+    keyword: MUST
+    text: For both defenses, clients MUST store, for each authorization request, the issuer they sent the authorization request to and bind this information to the user agent.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.1-01
+    section: 4.4.2.1
+    keyword: MUST
+    text: When receiving the authorization response, the client MUST compare the received issuer identifier to the stored issuer identifier.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.1-02
+    section: 4.4.2.1
+    keyword: MUST
+    text: If there is a mismatch, the client MUST abort the interaction.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.1-03
+    section: 4.4.2.1
+    keyword: MUST
+    text: In both cases, the iss value MUST be evaluated according to [RFC9207].
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.2-01
+    section: 4.4.2.2
+    keyword: MUST
+    text: For this defense, clients MUST use a distinct redirection URI for each issuer they interact with.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.2-02
+    section: 4.4.2.2
+    keyword: MUST
+    text: Clients MUST check that the authorization response was received from the correct issuer by comparing the distinct redirection URI for the issuer to the URI where the authorization response was received on.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.2-03
+    section: 4.4.2.2
+    keyword: MUST
+    text: If there is a mismatch, the client MUST abort the flow.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.4.2.2-04
+    section: 4.4.2.2
+    keyword: SHOULD
+    text: This defense SHOULD therefore only be used if other options are not available.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.5.3.2-01
+    section: 4.5.3.2
+    keyword: MUST
+    text: MUST validate the nonce in the ID Token obtained from the token endpoint, even if another ID Token was obtained from the authorization response (e.g., response_type=code+id_token), and 2.
+    statement: Confidential OpenID Connect clients using the nonce instead of PKCE MUST validate the nonce in the ID Token obtained from the token endpoint, even if another ID Token was obtained from the authorization response.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.5.3.2-02
+    section: 4.5.3.2
+    keyword: MUST
+    text: MUST ensure that, unless and until that check succeeds, all tokens (ID Tokens and the access token) are disregarded and not used for any other purpose.
+    statement: Confidential OpenID Connect clients using the nonce instead of PKCE MUST ensure that, unless and until that check succeeds, all tokens are disregarded and not used for any other purpose.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.7.1-01
+    section: 4.7.1
+    keyword: MUST
+    text: 'When using PKCE instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the authorization server supports PKCE before using PKCE for CSRF protection. If an authorization server does not support PKCE, state or nonce MUST be used for CSRF protection. If state is used for carrying application state, and the integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or by signing/ encrypting state values. One example of this is discussed in the expired Internet-Draft [JWT-ENCODED-STATE].'
+    statement: Clients MUST ensure that the authorization server supports PKCE before using PKCE for CSRF protection.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.7.1-02
+    section: 4.7.1
+    keyword: MUST
+    text: 'When using PKCE instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the authorization server supports PKCE before using PKCE for CSRF protection. If an authorization server does not support PKCE, state or nonce MUST be used for CSRF protection. If state is used for carrying application state, and the integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or by signing/ encrypting state values. One example of this is discussed in the expired Internet-Draft [JWT-ENCODED-STATE].'
+    statement: If an authorization server does not support PKCE, state or nonce MUST be used for CSRF protection.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.7.1-03
+    section: 4.7.1
+    keyword: MUST
+    text: 'When using PKCE instead of state or nonce for CSRF protection, it is important to note that: Clients MUST ensure that the authorization server supports PKCE before using PKCE for CSRF protection. If an authorization server does not support PKCE, state or nonce MUST be used for CSRF protection. If state is used for carrying application state, and the integrity of its contents is a concern, clients MUST protect state against tampering and swapping. This can be achieved by binding the contents of state to the browser session and/or by signing/ encrypting state values. One example of this is discussed in the expired Internet-Draft [JWT-ENCODED-STATE].'
+    statement: If state is used for carrying application state, and the integrity of its contents is a concern, clients MUST protect state against tampering and swapping.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.7.1-04
+    section: 4.7.1
+    keyword: MUST
+    text: The authorization server therefore MUST provide a way to detect their support for PKCE.
+    status: applicable
+  - id: RFC9700-4.7.1-05
+    section: 4.7.1
+    keyword: RECOMMENDED
+    text: Using Authorization Server Metadata according to [RFC8414] is RECOMMENDED, but authorization servers MAY instead provide a deployment-specific way to ensure or determine PKCE support.
+    statement: Using Authorization Server Metadata according to RFC 8414 is RECOMMENDED to detect support for PKCE.
+    status: applicable
+  - id: RFC9700-4.7.1-06
+    section: 4.7.1
+    keyword: MAY
+    text: Using Authorization Server Metadata according to [RFC8414] is RECOMMENDED, but authorization servers MAY instead provide a deployment-specific way to ensure or determine PKCE support.
+    statement: Authorization servers MAY instead provide a deployment-specific way to ensure or determine PKCE support.
+    status: applicable
+  - id: RFC9700-4.8.2-01
+    section: 4.8.2
+    keyword: MUST
+    text: Therefore, authorization servers MUST mitigate this attack.
+    status: applicable
+  - id: RFC9700-4.8.2-02
+    section: 4.8.2
+    keyword: MUST
+    text: '[RFC7636] already mandates that an authorization server that supports PKCE MUST check whether a code challenge is contained in the authorization request and bind this information to the code that is issued; and when a code arrives at the token endpoint, and there was a code_challenge in the authorization request for which this code was issued, there must be a valid code_verifier in the token request.'
+    status: informative
+    note: Restates RFC 7636.
+  - id: RFC9700-4.8.2-03
+    section: 4.8.2
+    keyword: MUST
+    text: Beyond this, to prevent PKCE downgrade attacks, the authorization server MUST ensure that if there was no code_challenge in the authorization request, a request to the token endpoint containing a code_verifier is rejected.
+    status: applicable
+  - id: RFC9700-4.9.3-01
+    section: 4.9.3
+    keyword: SHOULD
+    text: 'The following measures should be taken into account by implementers in order to cope with access token replay by malicious actors: Sender-constrained access tokens, as described in Section 4.10.1, SHOULD be used to prevent the attacker from replaying the access tokens on other resource servers. If an attacker has only partial access to the compromised system, like a read-only access to web server logs, sender-constrained access tokens may also prevent replay on the compromised system. Audience restriction as described in Section 4.10.2 SHOULD be used to prevent replay of captured access tokens on other resource servers. The resource server MUST treat access tokens like other sensitive secrets and not store or transfer them in plaintext.'
+    statement: Sender-constrained access tokens SHOULD be used to prevent the attacker from replaying the access tokens on other resource servers.
+    status: out-of-scope
+    reason: excluded
+    feature: dpop
+    note: And mtls, which spec.md also excludes.
+  - id: RFC9700-4.9.3-02
+    section: 4.9.3
+    keyword: SHOULD
+    text: 'The following measures should be taken into account by implementers in order to cope with access token replay by malicious actors: Sender-constrained access tokens, as described in Section 4.10.1, SHOULD be used to prevent the attacker from replaying the access tokens on other resource servers. If an attacker has only partial access to the compromised system, like a read-only access to web server logs, sender-constrained access tokens may also prevent replay on the compromised system. Audience restriction as described in Section 4.10.2 SHOULD be used to prevent replay of captured access tokens on other resource servers. The resource server MUST treat access tokens like other sensitive secrets and not store or transfer them in plaintext.'
+    statement: Audience restriction SHOULD be used to prevent replay of captured access tokens on other resource servers.
+    status: applicable
+  - id: RFC9700-4.9.3-03
+    section: 4.9.3
+    keyword: MUST
+    text: 'The following measures should be taken into account by implementers in order to cope with access token replay by malicious actors: Sender-constrained access tokens, as described in Section 4.10.1, SHOULD be used to prevent the attacker from replaying the access tokens on other resource servers. If an attacker has only partial access to the compromised system, like a read-only access to web server logs, sender-constrained access tokens may also prevent replay on the compromised system. Audience restriction as described in Section 4.10.2 SHOULD be used to prevent replay of captured access tokens on other resource servers. The resource server MUST treat access tokens like other sensitive secrets and not store or transfer them in plaintext.'
+    statement: The resource server MUST treat access tokens like other sensitive secrets and not store them in plaintext.
+    status: applicable
+  - id: RFC9700-4.9.3-04
+    section: 4.9.3
+    keyword: MUST
+    text: 'The following measures should be taken into account by implementers in order to cope with access token replay by malicious actors: Sender-constrained access tokens, as described in Section 4.10.1, SHOULD be used to prevent the attacker from replaying the access tokens on other resource servers. If an attacker has only partial access to the compromised system, like a read-only access to web server logs, sender-constrained access tokens may also prevent replay on the compromised system. Audience restriction as described in Section 4.10.2 SHOULD be used to prevent replay of captured access tokens on other resource servers. The resource server MUST treat access tokens like other sensitive secrets and not store or transfer them in plaintext.'
+    statement: The resource server MUST treat access tokens like other sensitive secrets and not transfer them in plaintext.
+    status: applicable
+  - id: RFC9700-4.10-01
+    section: "4.10"
+    keyword: SHOULD
+    text: Authorization servers therefore SHOULD ensure that access tokens are sender-constrained and audience-restricted as described in the following.
+    statement: Authorization servers SHOULD ensure that access tokens are sender-constrained.
+    status: out-of-scope
+    reason: excluded
+    feature: dpop
+    note: And mtls, which spec.md also excludes.
+  - id: RFC9700-4.10-02
+    section: "4.10"
+    keyword: SHOULD
+    text: Authorization servers therefore SHOULD ensure that access tokens are sender-constrained and audience-restricted as described in the following.
+    statement: Authorization servers SHOULD ensure that access tokens are audience-restricted.
+    status: applicable
+  - id: RFC9700-4.11.1-01
+    section: 4.11.1
+    keyword: MUST NOT
+    text: Clients MUST NOT expose open redirectors.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.11.2-01
+    section: 4.11.2
+    keyword: MUST NOT
+    text: Section 4.1.2.1 of [RFC6749] already prevents open redirects by stating that the authorization server MUST NOT automatically redirect the user agent in case of an invalid combination of client_id and redirect_uri.
+    status: informative
+    note: Restates Section 4.1.2.1 of RFC 6749.
+  - id: RFC9700-4.11.2-02
+    section: 4.11.2
+    keyword: MUST
+    text: The authorization server MUST take precautions to prevent these threats.
+    status: applicable
+  - id: RFC9700-4.11.2-03
+    section: 4.11.2
+    keyword: MUST
+    text: The authorization server MUST always authenticate the user first and, with the exception of the silent authentication use case, prompt the user for credentials when needed, before redirecting the user.
+    status: applicable
+  - id: RFC9700-4.11.2-04
+    section: 4.11.2
+    keyword: SHOULD
+    text: The authorization server SHOULD only automatically redirect the user agent if it trusts the redirection URI.
+    status: applicable
+  - id: RFC9700-4.11.2-05
+    section: 4.11.2
+    keyword: MAY
+    text: If the URI is not trusted, the authorization server MAY inform the user and rely on the user to make the correct decision.
+    status: applicable
+  - id: RFC9700-4.12-01
+    section: "4.12"
+    keyword: MUST NOT
+    text: Authorization servers that redirect a request that potentially contains the user's credentials therefore MUST NOT use the HTTP 307 status code for redirection.
+    status: applicable
+  - id: RFC9700-4.12-02
+    section: "4.12"
+    keyword: SHOULD
+    text: If an HTTP redirection (and not, for example, JavaScript) is used for such a request, the authorization server SHOULD use HTTP status code 303 (See Other).
+    status: applicable
+  - id: RFC9700-4.13-01
+    section: "4.13"
+    keyword: MUST
+    text: A reverse proxy MUST therefore sanitize any inbound requests to ensure the authenticity and integrity of all header values relevant for the security of the application servers.
+    status: applicable
+  - id: RFC9700-4.13-02
+    section: "4.13"
+    keyword: MUST
+    text: Furthermore, the communication link between the reverse proxy and application server MUST be protected against eavesdropping, injection, and replay of messages.
+    status: applicable
+  - id: RFC9700-4.14.2-01
+    section: 4.14.2
+    keyword: MUST
+    text: Authorization servers MUST determine, based on a risk assessment, whether to issue refresh tokens to a certain client.
+    status: applicable
+    note: The Host Application records its decision as the Client's grant types.
+  - id: RFC9700-4.14.2-02
+    section: 4.14.2
+    keyword: MAY
+    text: If the authorization server decides not to issue refresh tokens, the client MAY obtain a new access token by utilizing other grant types, such as the authorization code grant type.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.14.2-03
+    section: 4.14.2
+    keyword: MUST
+    text: If refresh tokens are issued, those refresh tokens MUST be bound to the scope and resource servers as consented by the resource owner.
+    statement: If refresh tokens are issued, those refresh tokens MUST be bound to the scope as consented by the resource owner.
+    status: applicable
+  - id: RFC9700-4.14.2-08
+    section: 4.14.2
+    keyword: MUST
+    text: If refresh tokens are issued, those refresh tokens MUST be bound to the scope and resource servers as consented by the resource owner.
+    statement: If refresh tokens are issued, those refresh tokens MUST be bound to the resource servers as consented by the resource owner.
+    status: applicable
+  - id: RFC9700-4.14.2-04
+    section: 4.14.2
+    keyword: MUST
+    text: 'Authorization servers MUST utilize one of these methods to detect refresh token replay by malicious actors for public clients: *Sender-constrained refresh tokens:* the authorization server cryptographically binds the refresh token to a certain client instance, e.g., by utilizing [RFC8705] or [RFC9449]. *Refresh token rotation:* the authorization server issues a new refresh token with every access token refresh response. The previous refresh token is invalidated, but information about the relationship is retained by the authorization server. If a refresh token is compromised and subsequently used by both the attacker and the legitimate client, one of them will present an invalidated refresh token, which will inform the authorization server of the breach. The authorization server cannot determine which party submitted the invalid refresh token, but it will revoke the active refresh token. This stops the attack at the cost of forcing the legitimate client to obtain a fresh authorization grant.'
+    statement: 'Authorization servers MUST utilize one of these methods to detect refresh token replay by malicious actors for public clients: sender-constrained refresh tokens or refresh token rotation.'
+    status: applicable
+    note: Refresh tokens of public Clients always rotate.
+  - id: RFC9700-4.14.2-05
+    section: 4.14.2
+    keyword: MUST
+    text: Authorization servers MUST ensure the integrity of the refresh token value in this case, for example, using signatures.
+    statement: If the grant to which a refresh token belongs is encoded into the refresh token itself, authorization servers MUST ensure the integrity of the refresh token value.
+    status: applicable
+    note: Refresh tokens do not encode their Grant; a changed value is not found by its hash, so it does not refresh.
+  - id: RFC9700-4.14.2-06
+    section: 4.14.2
+    keyword: MAY
+    text: 'Authorization servers MAY revoke refresh tokens automatically in case of a security event, such as: password change or logout at the authorization server.'
+    status: applicable
+  - id: RFC9700-4.14.2-07
+    section: 4.14.2
+    keyword: SHOULD
+    text: Refresh tokens SHOULD expire if the client has been inactive for some time, i.e., the refresh token has not been used to obtain fresh access tokens for some time.
+    status: applicable
+    note: Refresh tokens do not expire on inactivity; the Refresh Token Family expires as a whole, also while it is used.
+  - id: RFC9700-4.15-01
+    section: "4.15"
+    keyword: SHOULD
+    text: '| In cases of access tokens obtained through grants where a resource | owner is involved, such as the authorization code grant, the value | of "sub" SHOULD correspond to the subject identifier of the | resource owner.'
+    statement: In cases of access tokens obtained through grants where a resource owner is involved, such as the authorization code grant, the value of "sub" SHOULD correspond to the subject identifier of the resource owner.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: Quotes RFC 9068.
+  - id: RFC9700-4.15-02
+    section: "4.15"
+    keyword: SHOULD
+    text: In cases of access tokens obtained through grants | where no resource owner is involved, such as the client | credentials grant, the value of "sub" SHOULD correspond to an | identifier the authorization server uses to indicate the client | application.
+    statement: In cases of access tokens obtained through grants where no resource owner is involved, such as the client credentials grant, the value of "sub" SHOULD correspond to an identifier the authorization server uses to indicate the client application.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: Quotes RFC 9068.
+  - id: RFC9700-4.15.1-01
+    section: 4.15.1
+    keyword: SHOULD NOT
+    text: Authorization servers SHOULD NOT allow clients to influence their client_id or any other claim that could cause confusion with a genuine resource owner if a common namespace for client IDs and user identifiers exists, such as in the sub claim example from [RFC9068] shown in Section 4.15 above.
+    status: applicable
+  - id: RFC9700-4.15.1-02
+    section: 4.15.1
+    keyword: MUST
+    text: Where this cannot be avoided, authorization servers MUST provide other means for the resource server to distinguish between the two types of access tokens.
+    status: applicable
+  - id: RFC9700-4.16-01
+    section: "4.16"
+    keyword: MUST
+    text: Authorization servers MUST prevent clickjacking attacks.
+    status: applicable
+  - id: RFC9700-4.16-02
+    section: "4.16"
+    keyword: SHOULD
+    text: In addition to those, authorization servers SHOULD also use Content Security Policy (CSP) level 2 [W3C.CSP-2] or greater.
+    status: applicable
+  - id: RFC9700-4.16-03
+    section: "4.16"
+    keyword: MAY
+    text: The client MAY permit being framed by some other origin than the one used in its redirection endpoint.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.16-04
+    section: "4.16"
+    keyword: SHOULD
+    text: For this reason, authorization servers SHOULD allow administrators to configure allowed origins for particular clients and/or for clients to register these dynamically.
+    status: applicable
+  - id: RFC9700-4.16-05
+    section: "4.16"
+    keyword: SHOULD
+    text: Because some user agents do not support [W3C.CSP-2], this technique SHOULD be combined with others, including those described in [RFC6819], unless such legacy user agents are explicitly unsupported by the authorization server.
+    status: applicable
+  - id: RFC9700-4.16-06
+    section: "4.16"
+    keyword: SHOULD
+    text: Even in such cases, additional countermeasures SHOULD still be employed.
+    status: applicable
+  - id: RFC9700-4.17.2-01
+    section: 4.17.2
+    keyword: MUST
+    text: When comparing client receiver origins against pre-registered origins, authorization servers MUST utilize exact string matching as described in Section 4.1.3.
+    status: out-of-scope
+    reason: excluded
+    feature: web-message-response-mode
+  - id: RFC9700-4.17.2-02
+    section: 4.17.2
+    keyword: MUST
+    text: 'Authorization servers MUST send postMessages to trusted client receiver origins, as shown in the following, non-normative example:'
+    status: out-of-scope
+    reason: excluded
+    feature: web-message-response-mode
+  - id: RFC9700-4.17.2-03
+    section: 4.17.2
+    keyword: MUST NOT
+    text: Wildcard origins like "*" in postMessage MUST NOT be used, as attackers can use them to leak a victim's in-browser message to malicious origins.
+    status: out-of-scope
+    reason: excluded
+    feature: web-message-response-mode
+  - id: RFC9700-4.17.2-04
+    section: 4.17.2
+    keyword: MUST
+    text: Clients MUST prevent injection of in-browser messages on the client receiver endpoint.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.17.2-05
+    section: 4.17.2
+    keyword: MUST
+    text: 'Clients MUST utilize exact string matching to compare the initiator origin of an in-browser message with the authorization server origin, as shown in the following, non-normative example:'
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9700-4.17.2-06
+    section: 4.17.2
+    keyword: MUST
+    text: Since in-browser communication flows only apply a different communication technique (i.e., postMessage instead of HTTP redirect), all measures protecting the authorization response listed in Section 2.1 MUST be applied equally.
+    status: out-of-scope
+    reason: excluded
+    feature: web-message-response-mode

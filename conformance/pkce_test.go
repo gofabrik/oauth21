@@ -374,3 +374,75 @@ func TestCodeWithoutChallengeIsRejected(t *testing.T) {
 		})
 	}
 }
+
+// TestAuthorizationServerSupportsPKCE checks that a code requested with an S256 code challenge redeems with its code verifier only.
+//
+//conformance:covers RFC9700-2.1.1-07
+func TestAuthorizationServerSupportsPKCE(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), strings.Repeat("b", 43)), nil); status == http.StatusOK {
+		t.Fatalf("got status 200 and body %v for another code verifier, want an error", body)
+	}
+	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
+}
+
+// TestCodeChallengeEnforcesCodeVerifier checks that a code requested with a code challenge redeems neither without a code verifier nor with a wrong one.
+//
+//conformance:covers RFC9700-2.1.1-08
+func TestCodeChallengeEnforcesCodeVerifier(t *testing.T) {
+	for name, v := range map[string]string{"missing": "", "other": strings.Repeat("a", 43), "challenge": challenge, "one character off": verifier[:42] + "j"} {
+		t.Run(name, func(t *testing.T) {
+			a := newAuthorizationServer(t)
+			if status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), v), nil); status != http.StatusBadRequest || body["access_token"] != nil {
+				t.Fatalf("got status %d and body %v, want 400 without an access token", status, body)
+			}
+		})
+	}
+}
+
+// TestCodeVerifierIsAcceptedOnlyWithCodeChallenge checks that a code verifier redeems a code requested with its code challenge, but not a code associated with no code challenge.
+//
+//conformance:covers RFC9700-2.1.1-09
+func TestCodeVerifierIsAcceptedOnlyWithCodeChallenge(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if status, _, body := a.token(tokenParams(a.createCodeWithoutChallenge()), nil); status == http.StatusOK || body["access_token"] != nil {
+		t.Fatalf("got status %d and body %v without a code challenge, want an error", status, body)
+	}
+	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v with a code challenge, want 200", status, body)
+	}
+}
+
+// TestPKCEDowngradeIsMitigated checks the PKCE downgrade attack: an authorization request stripped of its code challenge gets no code, and a code without a code challenge does not redeem with an attacker's code verifier.
+//
+//conformance:covers RFC9700-4.8.2-01
+func TestPKCEDowngradeIsMitigated(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Del("code_challenge")
+	params.Del("code_challenge_method")
+	if u := a.authorize(params); endpoint(u) != redirectURI || !u.Query().Has("error") {
+		t.Fatalf("got redirect %s, want an error at the Client", u)
+	}
+	attacker := strings.Repeat("x", 43)
+	if status, _, body := a.token(withVerifier(tokenParams(a.createCodeWithoutChallenge()), attacker), nil); status == http.StatusOK || body["access_token"] != nil {
+		t.Fatalf("got status %d and body %v, want an error", status, body)
+	}
+}
+
+// TestCodeVerifierWithoutCodeChallengeIsRejected checks that a token request with a code verifier is rejected for a code associated with no code challenge, whatever the verifier.
+//
+//conformance:covers RFC9700-4.8.2-03
+func TestCodeVerifierWithoutCodeChallengeIsRejected(t *testing.T) {
+	for name, v := range map[string]string{"verifier": verifier, "other": strings.Repeat("a", 128), "short": strings.Repeat("a", 43)} {
+		t.Run(name, func(t *testing.T) {
+			a := newAuthorizationServer(t)
+			status, _, body := a.token(withVerifier(tokenParams(a.createCodeWithoutChallenge()), v), nil)
+			if status != http.StatusBadRequest || body["error"] == nil || body["access_token"] != nil {
+				t.Fatalf("got status %d and body %v, want a 400 error without an access token", status, body)
+			}
+		})
+	}
+}
