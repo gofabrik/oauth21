@@ -38,20 +38,25 @@ const (
 	clientID             = "demo-client"
 	resourceServerID     = "demo-resource-server"
 	resourceServerSecret = "demo-resource-server-secret" // #nosec G101 -- the secret of the demo Resource Server
+
+	oauchClientID            = "oauch"
+	oauchAlternativeClientID = "oauch-alternative"
+	oauchSecret              = "oauch-secret" // #nosec G101 -- the secret of the OAuch Clients
 )
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9000", "address to listen on")
 	certOut := flag.String("cert-out", "demo-ca.pem", "file to write the self-signed certificate to")
+	oauchRedirectURI := flag.String("oauch-redirect-uri", "", "redirect URI of the confidential Clients oauch and oauch-alternative to register for the OAuch harness")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *addr, *certOut); err != nil {
+	if err := run(ctx, *addr, *certOut, *oauchRedirectURI); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(ctx context.Context, addr, certOut string) error {
+func run(ctx context.Context, addr, certOut, oauchRedirectURI string) error {
 	cert, err := selfSigned()
 	if err != nil {
 		return err
@@ -60,16 +65,30 @@ func run(ctx context.Context, addr, certOut string) error {
 	if err != nil {
 		return err
 	}
+	clients := []store.Client{
+		{ID: clientID, Type: store.Public, RedirectURIs: redirectURIs, AllowedScopes: []string{scope}, DefaultScopes: []string{scope}},
+		{ID: resourceServerID, Type: store.Confidential, SecretHash: hash, Introspect: true},
+	}
+	if oauchRedirectURI != "" {
+		oauchHash, err := oauth21.PBKDF2{}.Hash(oauchSecret)
+		if err != nil {
+			return err
+		}
+		for _, id := range []string{oauchClientID, oauchAlternativeClientID} {
+			clients = append(clients, store.Client{
+				ID: id, Type: store.Confidential, SecretHash: oauchHash, RedirectURIs: []string{oauchRedirectURI},
+				AllowedScopes: []string{scope}, DefaultScopes: []string{scope},
+				GrantTypes: []string{"authorization_code", "refresh_token", "client_credentials"},
+			})
+		}
+	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return err
 	}
 	issuer := loopbackURL("https", ln.Addr())
-	as, err := newAuthorizationServer(issuer, []string{scope},
-		store.Client{ID: clientID, Type: store.Public, RedirectURIs: redirectURIs, AllowedScopes: []string{scope}, DefaultScopes: []string{scope}},
-		store.Client{ID: resourceServerID, Type: store.Confidential, SecretHash: hash, Introspect: true},
-	)
+	as, err := newAuthorizationServer(issuer, []string{scope}, clients...)
 	if err != nil {
 		return errors.Join(err, ln.Close())
 	}

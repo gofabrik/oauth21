@@ -326,3 +326,55 @@ func TestConcurrentRefresh(t *testing.T) {
 
 	d.call()
 }
+
+func TestOAuchClients(t *testing.T) {
+	bin := t.TempDir()
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", bin+string(filepath.Separator), "./server") // #nosec G204 -- bin is the test's temporary directory
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	ca, addr := filepath.Join(bin, "demo-ca.pem"), freeAddr(t)
+	const callback = "https://127.0.0.1:8443/Callback"
+	server := launch(t, filepath.Join(bin, "server"), "-addr", addr, "-cert-out", ca, "-oauch-redirect-uri", callback)
+	if !waitFor(func() bool { return exists(ca) }, server) {
+		t.Fatal("the server did not start")
+	}
+	client := browser(t, ca)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	issuer := "https://" + addr
+
+	for _, id := range []string{"oauch", "oauch-alternative"} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, issuer+"/token", strings.NewReader("grant_type=client_credentials"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetBasicAuth(id, "oauch-secret")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"access_token"`) {
+			t.Errorf("client credentials of %s: status %d: %s", id, resp.StatusCode, body)
+		}
+
+		authorization := issuer + "/authorize?" + url.Values{
+			"response_type": {"code"}, "client_id": {id}, "redirect_uri": {callback}, "scope": {"profile"},
+			"code_challenge": {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"}, "code_challenge_method": {"S256"},
+		}.Encode()
+		req, err = http.NewRequestWithContext(t.Context(), http.MethodGet, authorization, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err = client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, issuer+"/login?") {
+			t.Errorf("authorization request of %s: status %d, Location %q, want the login page", id, resp.StatusCode, loc)
+		}
+	}
+}

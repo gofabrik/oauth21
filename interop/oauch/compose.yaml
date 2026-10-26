@@ -1,0 +1,28 @@
+# OAuch against the example Authorization Server.
+# The services share the network namespace of oauch and reach each other on 127.0.0.1.
+name: oauth21-oauch
+
+services:
+  oauch:
+    build: https://github.com/DistriNet/OAuch.git#4f18c30f58517915eff6cd72fd399ab1a1cf035e:src/OAuch
+    tmpfs: [/db]
+
+  server:
+    build:
+      context: ../..
+      dockerfile: interop/oauch/Dockerfile
+      target: server
+    network_mode: service:oauch
+    command: ["-addr", "127.0.0.1:9000", "-oauch-redirect-uri", "https://127.0.0.1/Callback"]
+
+  driver:
+    build:
+      context: ../..
+      dockerfile: interop/oauch/Dockerfile
+      target: driver
+    network_mode: service:oauch
+    user: ${DRIVER_USER:-0:0}
+    depends_on: [oauch, server]
+    command: ["-oauch", "https://127.0.0.1", "-issuer", "https://127.0.0.1:9000", "-out", "/results"]
+    volumes:
+      - ./results:/results

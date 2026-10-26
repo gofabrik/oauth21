@@ -72,3 +72,21 @@ jobs:
         with:
           name: mutation
           path: mutation.json
+
+  oauch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: go-task/setup-task@v2
+      - run: task oauch
+      - if: always()
+        run: |
+          summary=interop/oauch/results/summary.md
+          [ ! -f "$summary" ] || cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: oauch
+          path: interop/oauch/results
+          if-no-files-found: ignore

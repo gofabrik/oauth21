@@ -92,6 +92,17 @@ tasks:
     cmds:
       - cd tools && go run ./example ../examples
 
+  oauch:
+    desc: Run OAuch against the example Authorization Server in Docker, writing interop/oauch/results
+    dir: interop/oauch
+    env:
+      DRIVER_USER:
+        sh: echo "$(id -u):$(id -g)"
+    cmds:
+      - mkdir -p results
+      - defer: docker compose down
+      - docker compose up --build --attach driver --exit-code-from driver
+
   archlint:
     desc: Check the architecture rules of the core module
     cmds:
