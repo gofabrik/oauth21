@@ -34,3 +34,5 @@ OAUTH21D16-2.4.1-06
 OAUTH21D16-7.7-06
 # 58: endpoint URLs with a query component
 OAUTH21D16-3.1-04
+# 62: test constant-time secret comparison
+INV-0008

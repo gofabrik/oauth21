@@ -592,6 +592,12 @@ func clientCredentialsAccess(a *authorizationServer, s *seededRandom) (access st
 	return access, from, to
 }
 
+// requestID issues the ID of an Authorization Request of the public Client.
+func requestID(a *authorizationServer, s *seededRandom) (id string, from, to int) {
+	from, to = while(s, func() { id = a.authorize(authorizeParams()).Query().Get("request_id") })
+	return id, from, to
+}
+
 // completedCode issues a code by completing an Authorization Request of the public Client.
 func completedCode(a *authorizationServer, s *seededRandom) (code string, from, to int) {
 	req := a.pending(a.authorize(authorizeParams()))
@@ -669,11 +675,32 @@ func TestRedeemedRefreshTokenCannotBeGuessed(t *testing.T) {
 	wantUnguessable(t, redeemed(true))
 }
 
+// codeAndTokenIssuers returns the issuers of a code and of the access token and refresh token redeemed for it.
+func codeAndTokenIssuers() map[string]issuing {
+	return map[string]issuing{"code": completedCode, "access token": redeemed(false), "refresh token": redeemed(true)}
+}
+
 // TestIssuedValuesCarry128Bits checks that codes, access tokens and refresh tokens each carry at least 128 bits of randomness, so guessing one succeeds with a probability of at most 2^-128.
 //
 //conformance:covers OAUTH21D16-7.7-02
 func TestIssuedValuesCarry128Bits(t *testing.T) {
-	for name, issue := range map[string]issuing{"code": completedCode, "access token": redeemed(false), "refresh token": redeemed(true)} {
+	for name, issue := range codeAndTokenIssuers() {
+		t.Run(name, func(t *testing.T) { wantUnguessable(t, issue) })
+	}
+}
+
+// TestEveryIssuedValueCarries128Bits checks that Authorization Request IDs, codes, access tokens and refresh tokens, issued in every way the server issues them, each carry at least 128 bits of randomness.
+//
+//conformance:covers INV-0014
+func TestEveryIssuedValueCarries128Bits(t *testing.T) {
+	issuers := codeAndTokenIssuers()
+	maps.Copy(issuers, map[string]issuing{
+		"request ID":               requestID,
+		"refreshed access token":   refreshed(false),
+		"refreshed refresh token":  refreshed(true),
+		"client credentials token": clientCredentialsAccess,
+	})
+	for name, issue := range issuers {
 		t.Run(name, func(t *testing.T) { wantUnguessable(t, issue) })
 	}
 }

@@ -61,7 +61,7 @@ type authorizationServer struct {
 	recorder *recorder
 }
 
-// recorder records the keys and entities the Authorization Server sends to the code and token Stores, and holds its loads of codes and refresh tokens at barrier.
+// recorder records the keys and entities the Authorization Server sends to the code and token Stores, and holds its loads of Authorization Requests, codes and refresh tokens at barrier.
 type recorder struct {
 	*memstore.Store
 	mu       sync.Mutex
@@ -69,6 +69,8 @@ type recorder struct {
 	// entities are the codes and tokens the Stores received, formatted with their field names.
 	entities []string
 	barrier  barrier
+	// rotated runs once after the next rotation of a refresh token.
+	rotated func()
 }
 
 // barrier makes loads wait in rounds until all loads of a round have arrived.
@@ -121,6 +123,11 @@ func (b *barrier) arrive() {
 	}
 }
 
+func (r *recorder) AuthorizationRequest(ctx context.Context, id string) (store.AuthorizationRequest, error) {
+	defer r.barrier.arrive()
+	return r.Store.AuthorizationRequest(ctx, id)
+}
+
 func (r *recorder) CreateCode(ctx context.Context, c store.Code) error {
 	r.record(c.Hash)
 	r.recordEntity(c)
@@ -170,7 +177,22 @@ func (r *recorder) RotateRefreshToken(ctx context.Context, hash []byte, next sto
 	r.record(hash)
 	r.record(next.Hash)
 	r.recordEntity(next)
-	return r.Store.RotateRefreshToken(ctx, hash, next)
+	t, err := r.Store.RotateRefreshToken(ctx, hash, next)
+	r.mu.Lock()
+	rotated := r.rotated
+	r.rotated = nil
+	r.mu.Unlock()
+	if rotated != nil {
+		rotated()
+	}
+	return t, err
+}
+
+// afterRotation makes do run once after the next rotation of a refresh token, before its access token is created.
+func (r *recorder) afterRotation(do func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rotated = do
 }
 
 // keys returns the keys recorded so far.
@@ -217,7 +239,7 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 		Issuer:                ts.URL,
 		LoginURL:              ts.URL + "/login",
 		Clients:               m,
-		AuthorizationRequests: m,
+		AuthorizationRequests: a.recorder,
 		Codes:                 a.recorder,
 		Tokens:                a.recorder,
 		Scopes:                []string{"read", "write", "admin"},
@@ -304,9 +326,18 @@ func authorizeParams() url.Values {
 // send sends a request with header to path and returns the status, headers and body of the response.
 func (a *authorizationServer) send(method, path, form string, header http.Header) (int, http.Header, []byte) {
 	a.t.Helper()
-	req, err := http.NewRequestWithContext(a.t.Context(), method, a.url+path, strings.NewReader(form))
+	status, h, body, err := a.trySend(method, path, form, header)
 	if err != nil {
 		a.t.Fatal(err)
+	}
+	return status, h, body
+}
+
+// trySend is send for goroutines other than the test's, returning the error instead of failing the test.
+func (a *authorizationServer) trySend(method, path, form string, header http.Header) (int, http.Header, []byte, error) {
+	req, err := http.NewRequestWithContext(a.t.Context(), method, a.url+path, strings.NewReader(form))
+	if err != nil {
+		return 0, nil, nil, err
 	}
 	if header != nil {
 		req.Header = header.Clone()
@@ -316,13 +347,13 @@ func (a *authorizationServer) send(method, path, form string, header http.Header
 	}
 	resp, err := a.client.Do(req)
 	if err != nil {
-		a.t.Fatal(err)
+		return 0, nil, nil, err
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err := errors.Join(err, resp.Body.Close()); err != nil {
-		a.t.Fatal(err)
+		return 0, nil, nil, err
 	}
-	return resp.StatusCode, resp.Header, body
+	return resp.StatusCode, resp.Header, body, nil
 }
 
 // authorize sends an authorization request and returns the redirect location.

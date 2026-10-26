@@ -41,6 +41,69 @@ func TestRevokedRefreshTokenCannotRefresh(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
+// TestRevokedGrantHasNoValidToken checks that revoking a refresh token makes every access token and refresh token of its Grant invalid, also those issued by earlier refreshes.
+//
+//conformance:covers INV-0012
+func TestRevokedGrantHasNoValidToken(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	accessTokens := []string{access}
+	for range 2 {
+		access, refresh = a.tokens(refreshParams(refresh), nil)
+		accessTokens = append(accessTokens, access)
+	}
+	a.revoke(revocationParams(refresh), nil)
+	for _, access := range accessTokens {
+		a.wantInactive(access)
+	}
+	status, _, body := a.token(refreshParams(refresh), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestCodeReplayLeavesNoValidToken checks that the Grant a replayed code revokes keeps no valid access token or refresh token, also those issued by a refresh.
+//
+//conformance:covers INV-0012
+func TestCodeReplayLeavesNoValidToken(t *testing.T) {
+	a := newIntrospectionServer(t)
+	redemption := tokenParams(a.code(authorizeParams()))
+	first, refresh := a.tokens(redemption, nil)
+	second, refresh := a.tokens(refreshParams(refresh), nil)
+	if status, _, _ := a.token(redemption, nil); status != http.StatusBadRequest {
+		t.Fatalf("got status %d for a replay, want 400", status)
+	}
+	a.wantInactive(first)
+	a.wantInactive(second)
+	status, _, body := a.token(refreshParams(refresh), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestRefreshDuringRevocationIssuesNoValidToken checks that a refresh whose Grant is revoked after its refresh token rotated leaves no valid access token or refresh token.
+//
+//conformance:covers INV-0013
+func TestRefreshDuringRevocationIssuesNoValidToken(t *testing.T) {
+	a := newIntrospectionServer(t)
+	refresh := a.publicRefreshToken()
+	var revoked int
+	var err error
+	a.recorder.afterRotation(func() {
+		revoked, _, _, err = a.trySend(http.MethodPost, "/revoke", revocationParams(refresh).Encode(), nil)
+	})
+	_, _, body := a.token(refreshParams(refresh), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revoked != http.StatusOK {
+		t.Fatalf("got status %d for the revocation, want 200", revoked)
+	}
+	if access, _ := body["access_token"].(string); access != "" {
+		a.wantInactive(access)
+	}
+	if next, _ := body["refresh_token"].(string); next != "" {
+		status, _, body := a.token(refreshParams(next), nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	}
+}
+
 // TestRevokedAccessTokenKeepsRefreshToken checks that revoking an access token, with a token_type_hint that does not match, leaves the refresh token of its Grant usable.
 func TestRevokedAccessTokenKeepsRefreshToken(t *testing.T) {
 	a := newAuthorizationServer(t)

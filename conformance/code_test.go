@@ -112,7 +112,7 @@ func TestCodeIsSingleUse(t *testing.T) {
 	newAuthorizationServer(t).wantSecondRedemptionDenied()
 }
 
-// concurrentRequests is the number of token requests racing for one code or refresh token.
+// concurrentRequests is the number of requests racing for one Authorization Request, code or refresh token.
 const concurrentRequests = 8
 
 // race sends concurrentRequests token requests params at once, holding each load of the code or refresh token until all requests have made it, and returns the bodies of those that succeed.

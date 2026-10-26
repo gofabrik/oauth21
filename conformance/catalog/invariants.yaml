@@ -25,3 +25,35 @@ requirements:
     keyword: MUST
     text: The token, revocation and introspection endpoints reject requests that do not use POST.
     status: applicable
+  - id: INV-0007
+    keyword: MUST
+    text: The server writes no authorization code, access token, refresh token, Client secret or code verifier to the log or log/slog default loggers.
+    status: applicable
+  - id: INV-0008
+    keyword: MUST
+    text: The server compares Client secrets and code verifiers in constant time.
+    status: applicable
+  - id: INV-0009
+    keyword: MUST
+    text: An Authorization Request is completed or denied at most once.
+    status: applicable
+  - id: INV-0010
+    keyword: MUST
+    text: Of concurrent completions and denials of a pending Authorization Request, exactly one succeeds.
+    status: applicable
+  - id: INV-0011
+    keyword: MUST
+    text: An Authorization Request is neither completed nor denied after its lifetime.
+    status: applicable
+  - id: INV-0012
+    keyword: MUST
+    text: Revoking a Grant invalidates every access token and refresh token of the Grant.
+    status: applicable
+  - id: INV-0013
+    keyword: MUST
+    text: A refresh whose Grant is revoked while it runs leaves no valid access token or refresh token.
+    status: applicable
+  - id: INV-0014
+    keyword: MUST
+    text: Every Authorization Request ID, authorization code, access token and refresh token the server issues carries at least 128 bits of randomness.
+    status: applicable
