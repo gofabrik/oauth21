@@ -68,6 +68,19 @@ requirements:
     feature: resource-indicators
 `
 
+const deviates = `
+document: OAUTH21D16
+title: The OAuth 2.1 Authorization Framework
+source: specs/draft-ietf-oauth-v2-1-16.txt
+requirements:
+  - id: OAUTH21D16-4.1.1-01
+    section: "4.1.1"
+    keyword: SHOULD
+    text: The authorization server SHOULD accept plain.
+    status: deviates
+    note: spec.md accepts S256 only.
+`
+
 const excluded = `
 features:
   - resource-indicators
@@ -102,6 +115,25 @@ func TestLoadValid(t *testing.T) {
 func TestLoadOutOfScope(t *testing.T) {
 	if err := load(map[string]string{"oauth21d16.yaml": outOfScope, "excluded.yaml": excluded}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadDeviates(t *testing.T) {
+	for _, k := range []Keyword{Should, ShouldNot, Recommended, NotRecommended} {
+		if err := load(map[string]string{"a.yaml": strings.Replace(deviates, "keyword: SHOULD", "keyword: "+string(k), 1)}); err != nil {
+			t.Errorf("%s: %v", k, err)
+		}
+	}
+}
+
+func TestLoadGate(t *testing.T) {
+	fsys := fstest.MapFS{"gate.yaml": {Data: []byte("recommended: true\n")}}
+	c, err := Load(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.GateRecommended {
+		t.Fatal("GateRecommended is false, want true")
 	}
 }
 
@@ -240,6 +272,26 @@ func TestLoadInvalid(t *testing.T) {
 			want:  "INV-0001: reason must be set exactly when status is \"out-of-scope\"",
 		},
 		{
+			name:  "deviates on an absolute keyword",
+			files: map[string]string{"a.yaml": strings.Replace(deviates, "keyword: SHOULD", "keyword: MUST", 1)},
+			want:  `OAUTH21D16-4.1.1-01: status "deviates" needs a recommended keyword, not "MUST"`,
+		},
+		{
+			name:  "deviates on a MAY",
+			files: map[string]string{"a.yaml": strings.Replace(deviates, "keyword: SHOULD", "keyword: MAY", 1)},
+			want:  `OAUTH21D16-4.1.1-01: status "deviates" needs a recommended keyword, not "MAY"`,
+		},
+		{
+			name:  "deviates without note",
+			files: map[string]string{"a.yaml": strings.Replace(deviates, "    note: spec.md accepts S256 only.\n", "", 1)},
+			want:  `OAUTH21D16-4.1.1-01: note must be set when status is "deviates"`,
+		},
+		{
+			name:  "deviates with reason",
+			files: map[string]string{"a.yaml": deviates + "    reason: client-requirement\n"},
+			want:  "OAUTH21D16-4.1.1-01: reason must be set exactly when status is \"out-of-scope\"",
+		},
+		{
 			name:  "unknown reason",
 			files: map[string]string{"a.yaml": strings.Replace(outOfScope, "reason: client-requirement", "reason: host", 1), "excluded.yaml": excluded},
 			want:  `OAUTH21D16-5.1-01: unknown reason "host"`,
@@ -285,6 +337,16 @@ func TestLoadInvalid(t *testing.T) {
 			want:  "excluded.yaml: empty file",
 		},
 		{
+			name:  "unknown field in gate file",
+			files: map[string]string{"gate.yaml": "recommend: true\n"},
+			want:  "gate.yaml: yaml: unmarshal errors",
+		},
+		{
+			name:  "empty gate file",
+			files: map[string]string{"gate.yaml": ""},
+			want:  "gate.yaml: empty file",
+		},
+		{
 			name:  "dangling successor",
 			files: map[string]string{"a.yaml": rfc6749},
 			want:  `superseded_by "OAUTH21D16-4.1-01" is not another requirement`,
@@ -326,6 +388,15 @@ func TestKeywordAbsolute(t *testing.T) {
 		want := k == Must || k == MustNot || k == Required || k == Shall || k == ShallNot
 		if got := k.Absolute(); got != want {
 			t.Errorf("%s.Absolute() = %v, want %v", k, got, want)
+		}
+	}
+}
+
+func TestKeywordRecommended(t *testing.T) {
+	for _, k := range keywords {
+		want := k == Should || k == ShouldNot || k == Recommended || k == NotRecommended
+		if got := k.Recommended(); got != want {
+			t.Errorf("%s.Recommended() = %v, want %v", k, got, want)
 		}
 	}
 }

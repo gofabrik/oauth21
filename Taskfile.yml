@@ -109,13 +109,17 @@ tasks:
       - cd tools && go run ./archlint ..
 
   catalog:
-    desc: Validate the requirement catalog and gate its coverage against BASE (default HEAD)
+    desc: Validate the requirement catalog and gate its coverage against BASE (default HEAD, none to skip the ratchet)
     env:
       BASE: '{{.BASE | default "HEAD"}}'
     cmds:
       - cd tools && go run ./catalog validate ../conformance/catalog
       - |
         set -o pipefail
+        if [ "$BASE" = none ]; then
+          cd tools && go run ./catalog coverage ..
+          exit
+        fi
         base=$(mktemp -d)
         trap 'rm -rf "$base"' EXIT
         git archive "$BASE" conformance/catalog | tar -x -C "$base"

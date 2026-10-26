@@ -30,6 +30,8 @@ type Coverage struct {
 	tests     map[string][]string
 	uncovered []string
 	base      map[string]bool
+	// baseRecommended is whether the base gated recommended Requirements.
+	baseRecommended bool
 }
 
 // directive is one //conformance:covers comment.
@@ -71,10 +73,10 @@ func Cover(fsys, base fs.FS) (*Coverage, error) {
 	c := &Coverage{catalog: cat, gate: map[string]bool{}, tests: map[string][]string{}, uncovered: parseUncovered(list)}
 	for _, d := range cat.Documents {
 		for _, r := range d.Requirements {
-			c.gate[r.ID] = gated(d.ID, r)
+			c.gate[r.ID] = gated(d.ID, r, cat.GateRecommended)
 		}
 	}
-	if c.base, err = baseListed(base); err != nil {
+	if c.base, c.baseRecommended, err = baseListed(base); err != nil {
 		return nil, err
 	}
 
@@ -174,9 +176,12 @@ func (c *Coverage) Report(w io.Writer) error {
 	return err
 }
 
-// Gate reports gated Requirements that are uncovered and not listed, and listed ones that are covered or new to the list.
+// Gate reports gated Requirements that are uncovered and not listed, listed ones that are covered or new to the list, and a gate narrower than the base's.
 func (c *Coverage) Gate() error {
 	var errs []error
+	if c.baseRecommended && !c.catalog.GateRecommended {
+		errs = append(errs, errors.New("the gate no longer covers recommended Requirements"))
+	}
 	listed := map[string]bool{}
 	for _, id := range c.uncovered {
 		listed[id] = true
@@ -197,9 +202,9 @@ func (c *Coverage) Gate() error {
 	return errors.Join(errs...)
 }
 
-// gated reports whether r is an applicable absolute Requirement or a Security Invariant.
-func gated(doc string, r Requirement) bool {
-	return doc == InvariantsDocument || (r.Status == Applicable && r.Keyword.Absolute())
+// gated reports whether r is a Security Invariant, an applicable absolute Requirement, or an applicable recommended one when recommended is set.
+func gated(doc string, r Requirement, recommended bool) bool {
+	return doc == InvariantsDocument || (r.Status == Applicable && (r.Keyword.Absolute() || recommended && r.Keyword.Recommended()))
 }
 
 // loadCatalog reads the catalog, unvalidated, and the known-uncovered list of the repository in fsys.
@@ -219,26 +224,27 @@ func loadCatalog(fsys fs.FS) (*Catalog, []byte, error) {
 	return cat, list, nil
 }
 
-// baseListed maps the IDs of the base catalog, except those out-of-scope for an excluded feature, to whether they are on its known-uncovered list.
-// It is nil when there is no base or the base has no list.
-func baseListed(base fs.FS) (map[string]bool, error) {
+// baseListed maps the IDs of the base catalog to whether they are on its known-uncovered list, and reports whether the base gated recommended Requirements.
+// It leaves out IDs out-of-scope for an excluded feature, and recommended ones when the base did not gate them.
+// The map is nil when there is no base or the base has no list.
+func baseListed(base fs.FS) (map[string]bool, bool, error) {
 	if base == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	if _, err := fs.Stat(base, catalogDir); err != nil {
-		return nil, fmt.Errorf("base: %w", err)
+		return nil, false, fmt.Errorf("base: %w", err)
 	}
 	if _, err := fs.Stat(base, uncoveredFile); errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, false, nil
 	}
 	cat, list, err := loadCatalog(base)
 	if err != nil {
-		return nil, fmt.Errorf("base: %w", err)
+		return nil, false, fmt.Errorf("base: %w", err)
 	}
 	m := map[string]bool{}
 	for _, d := range cat.Documents {
 		for _, r := range d.Requirements {
-			if r.Reason != Excluded {
+			if r.Reason != Excluded && (cat.GateRecommended || !r.Keyword.Recommended()) {
 				m[r.ID] = false
 			}
 		}
@@ -248,7 +254,7 @@ func baseListed(base fs.FS) (map[string]bool, error) {
 			m[id] = true
 		}
 	}
-	return m, nil
+	return m, cat.GateRecommended, nil
 }
 
 // parseUncovered returns the IDs of a known-uncovered list, one per line, skipping blanks and "#" comments.

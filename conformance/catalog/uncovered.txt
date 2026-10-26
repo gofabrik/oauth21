@@ -2,6 +2,7 @@
 # 50: transport security
 OAUTH21D16-1.4-04
 OAUTH21D16-1.4.2-01
+OAUTH21D16-1.4.3-02
 OAUTH21D16-1.5-01
 OAUTH21D16-1.5-06
 OAUTH21D16-4.3-06
@@ -12,42 +13,78 @@ RFC7662-4-11
 RFC8414-6.1-01
 RFC8414-6.1-02
 RFC8414-6.1-05
+RFC9700-2.6-03
 RFC9700-4.13-01
 RFC9700-4.13-02
 RFC9700-4.9.3-04
 # 51: Client policy and the Host Application's duties
 OAUTH21D16-1.4-08
+OAUTH21D16-1.4.1-04
+OAUTH21D16-2.1-02
 OAUTH21D16-2.4-01
+OAUTH21D16-2.4-05
 OAUTH21D16-2.4-08
+OAUTH21D16-7.3-01
+OAUTH21D16-7.3-02
+OAUTH21D16-7.3-03
+OAUTH21D16-7.3.1-01
+OAUTH21D16-7.3.1-02
+OAUTH21D16-7.4-01
 OAUTH21D16-7.4-02
+OAUTH21D16-7.5.2-01
 OAUTH21D16-7.7-04
 OAUTH21D16-7.7-05
+OAUTH21D16-7.9-02
+OAUTH21D16-7.9-03
+OAUTH21D16-7.9-05
 OAUTH21D16-8.1-01
 OAUTH21D16-8.1-02
 OAUTH21D16-8.1.1-01
 RFC6749-10.12-05
 RFC6749-10.12-06
 RFC8252-8.4-01
+RFC8252-8.5-01
 RFC8252-8.5-02
+RFC8252-8.6-01
+RFC8252-8.6-02
+RFC9700-2.5-01
+RFC9700-2.6-02
+RFC9700-4.15.1-01
 RFC9700-4.15.1-02
 # 53: authenticate the Resource Owner before redirecting errors
 OAUTH21D16-3.1-01
 OAUTH21D16-7.13.2-02
 OAUTH21D16-7.13.2-03
+OAUTH21D16-7.13.2-04
 RFC9700-2.1-10
 RFC9700-4.11.2-02
 RFC9700-4.11.2-03
+RFC9700-4.11.2-04
 # 54: validate registered Client data
 OAUTH21D16-1.5-07
 OAUTH21D16-2-01
+OAUTH21D16-2.1-03
 OAUTH21D16-2.3-01
 OAUTH21D16-2.3-04
+OAUTH21D16-2.3.1-04
+OAUTH21D16-2.3.1-05
+RFC6749-2.1-01
 RFC8252-8.4-03
+RFC8252-8.4-04
+RFC8252-8.4-05
 RFC9700-2.6-04
 RFC9700-2.6-05
 # 55: clickjacking protection
 OAUTH21D16-7.11-01
+OAUTH21D16-7.11-02
+OAUTH21D16-7.11-04
+OAUTH21D16-7.11-05
+OAUTH21D16-7.11-06
 RFC9700-4.16-01
+RFC9700-4.16-02
+RFC9700-4.16-04
+RFC9700-4.16-05
+RFC9700-4.16-06
 # 56: enforce redirect_uri at the token endpoint as RFC 6749 does
 OAUTH21D16-10.2-02
 # 57: brute-force protection for Client authentication
@@ -55,6 +92,9 @@ OAUTH21D16-2.4.1-06
 OAUTH21D16-7.7-06
 # 58: endpoint URLs with a query component
 OAUTH21D16-3.1-04
+# 59: redirect POST authorization requests with 303
+OAUTH21D16-7.5.4-02
+RFC9700-4.12-02
 # 62: test constant-time secret comparison
 INV-0008
 # 63: denial-of-service countermeasures at the revocation endpoint
@@ -64,4 +104,48 @@ RFC7009-5-02
 RFC7662-4-01
 RFC7662-4-03
 # 67: bind Grants to the Resource Servers the Resource Owner consented to
+RFC9700-2.3-02
+RFC9700-4.10-02
 RFC9700-4.14.2-08
+RFC9700-4.9.3-02
+# 69: cover PKCE from every Client
+OAUTH21D16-4.1.1-17
+OAUTH21D16-7.5.1.1-03
+RFC8252-8.1-01
+# 70: cover short code and access token lifetimes
+OAUTH21D16-3.2.3-04
+OAUTH21D16-4.1.2-03
+OAUTH21D16-7.1.3.5-01
+# 71: cover the recommended metadata
+RFC8414-2-09
+RFC9700-2.1.1-11
+RFC9700-2.6-01
+RFC9700-4.7.1-05
+# 72: least-privilege access tokens
+OAUTH21D16-7.1.2-01
+OAUTH21D16-7.1.4-01
+OAUTH21D16-7.1.4-05
+OAUTH21D16-7.3.2-04
+OAUTH21D16-7.9-01
+RFC9700-2.3-01
+RFC9700-2.3-06
+# 73: inform the Resource Owner of non-redirectable errors
+OAUTH21D16-2.3.5-01
+OAUTH21D16-4.1.2.1-02
+# 74: no third-party resources at the authorization endpoint
+RFC9700-4.2.4-05
+# 75: keep the Grant on a replayed code with invalid parameters
+OAUTH21D16-7.5.3-01
+# 76: cover the bearer error responses
+OAUTH21D16-5.3-01
+OAUTH21D16-5.3.1-10
+# 77: introspect as inactive when the state cannot be determined
+RFC7662-2.1-08
+# 78: size of issued values
+OAUTH21D16-1.7.1-02
+OAUTH21D16-1.7.1-03
+OAUTH21D16-7.7-03
+# 79: accept long parameter values
+OAUTH21D16-1.7.1-04
+# 80: decide the status of RFC 9700's upgrade recommendation
+RFC9700-1-01

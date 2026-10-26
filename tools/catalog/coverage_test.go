@@ -29,9 +29,15 @@ requirements:
     status: applicable
   - id: RFC7636-4.5-01
     section: "4.5"
-    keyword: SHOULD
-    text: The server SHOULD log failures.
+    keyword: MAY
+    text: The server MAY log failures.
     status: applicable
+  - id: RFC7636-4.5-02
+    section: "4.5"
+    keyword: SHOULD
+    text: The server SHOULD accept plain.
+    status: deviates
+    note: spec.md accepts S256 only.
   - id: RFC7636-4.6-01
     section: "4.6"
     keyword: MUST
@@ -64,6 +70,12 @@ var withoutInvariant = strings.Replace(coverageTests, "//conformance:covers INV-
 // bothListed is a known-uncovered list with RFC7636-4.4-02 and INV-0001.
 const bothListed = "# 01: t\nRFC7636-4.4-02\nINV-0001\n"
 
+// gateRecommended is a gate file that gates recommended Requirements.
+const gateRecommended = "recommended: true\n"
+
+// applicableShould is coverageCatalog with its recommended Requirement applicable.
+var applicableShould = strings.Replace(coverageCatalog, "status: deviates", "status: applicable", 1)
+
 // testFile returns a conformance test file with body after its imports, which end on line 4.
 func testFile(body string) string {
 	return "package conformance\n\nimport \"testing\"\n" + body
@@ -76,6 +88,7 @@ func repo(files map[string]string) fstest.MapFS {
 		"conformance/go.mod":                  {Data: []byte("module example.com/conformance\n")},
 		"conformance/catalog/rfc7636.yaml":    {Data: []byte(coverageCatalog)},
 		"conformance/catalog/invariants.yaml": {Data: []byte(invariants)},
+		"conformance/catalog/gate.yaml":       {Data: []byte(gateRecommended)},
 		"conformance/catalog/uncovered.txt":   {Data: []byte("# 01: t\nRFC7636-4.4-02\n")},
 		"conformance/pkce_test.go":            {Data: []byte(coverageTests)},
 	}
@@ -320,6 +333,19 @@ func TestGatePasses(t *testing.T) {
 	}
 }
 
+func TestGateWithoutRecommended(t *testing.T) {
+	c, err := Cover(repo(map[string]string{
+		"conformance/catalog/rfc7636.yaml": applicableShould,
+		"conformance/catalog/gate.yaml":    "",
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Gate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGateFails(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -343,6 +369,11 @@ func TestGateFails(t *testing.T) {
 				"conformance/catalog/invariants.yaml": strings.Replace(invariants, "status: applicable", "status: out-of-scope\n    reason: client-requirement", 1),
 			},
 			want: "INV-0001: uncovered and not on the known-uncovered list",
+		},
+		{
+			name:  "recommended uncovered and not listed",
+			files: map[string]string{"conformance/catalog/rfc7636.yaml": applicableShould},
+			want:  "RFC7636-4.5-02: uncovered and not on the known-uncovered list",
 		},
 		{
 			name:  "listed but covered",
@@ -446,6 +477,48 @@ func TestGateRatchetNewlyGated(t *testing.T) {
 	}
 }
 
+func TestGateRatchetRecommendedGated(t *testing.T) {
+	head := repo(map[string]string{
+		"conformance/catalog/rfc7636.yaml":  applicableShould,
+		"conformance/catalog/uncovered.txt": "# 01: t\nRFC7636-4.4-02\nRFC7636-4.5-02\n",
+	})
+	tests := []struct {
+		name string
+		gate string
+		want string
+	}{
+		{name: "base without a gate file", gate: ""},
+		{name: "base not gating recommended", gate: "recommended: false\n"},
+		{name: "base gating recommended", gate: gateRecommended, want: "RFC7636-4.5-02: added to the known-uncovered list"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := repo(map[string]string{"conformance/catalog/rfc7636.yaml": applicableShould, "conformance/catalog/gate.yaml": tt.gate})
+			c, err := Cover(head, base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = c.Gate()
+			if tt.want == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+				t.Fatalf("got error %v, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestGateRatchetKeepsRecommendedGated(t *testing.T) {
+	c, err := Cover(repo(map[string]string{"conformance/catalog/gate.yaml": "recommended: false\n"}), repo(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Gate(); err == nil || !strings.Contains(err.Error(), "the gate no longer covers recommended Requirements") {
+		t.Fatalf("got error %v, want the narrowed gate to fail", err)
+	}
+}
+
 func TestCoverInvalidBase(t *testing.T) {
 	bases := map[string]fstest.MapFS{
 		"invalid catalog": repo(map[string]string{"conformance/catalog/invariants.yaml": "documentz: INV\n"}),
@@ -479,10 +552,10 @@ func TestReport(t *testing.T) {
   MUST            1 covered, 0 uncovered
 RFC7636
   MUST            1 covered, 1 uncovered
-  SHOULD          0 covered, 1 uncovered
+  MAY             0 covered, 1 uncovered
 
 Uncovered, not gated:
-  RFC7636-4.5-01 SHOULD
+  RFC7636-4.5-01 MAY
 `
 	if b.String() != want {
 		t.Fatalf("got\n%s\nwant\n%s", b.String(), want)

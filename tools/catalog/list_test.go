@@ -20,6 +20,12 @@ func runList(t *testing.T, args ...string) string {
     keyword: MAY
     text: Servers MAY wait.
     status: ""
+  - id: RFC9999-5-01
+    section: "5"
+    keyword: SHOULD
+    text: Servers SHOULD accept plain.
+    status: deviates
+    note: spec.md accepts S256 only.
 `})
 	var out bytes.Buffer
 	if err := run(append([]string{"list", filepath.Join(dir, "rfc9999.yaml")}, args...), &out); err != nil {
@@ -38,6 +44,7 @@ RFC9999-4.1-06	MUST	applicable	Servers MUST answer quickly.
 RFC9999-A-01	MAY	informative	Implementers MAY read this.
 RFC9999-4.1.2-01	MUST	-	Clients MUST retry.
 RFC9999-4.10-01	MAY	-	Servers MAY wait.
+RFC9999-5-01	SHOULD	deviates	Servers SHOULD accept plain.
 `
 	if got := runList(t); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
@@ -51,6 +58,7 @@ func TestListFilters(t *testing.T) {
 		want []string
 	}{
 		{"status", []string{"--status", "out-of-scope"}, []string{"RFC9999-4.1-07"}},
+		{"deviates", []string{"--status", "deviates"}, []string{"RFC9999-5-01"}},
 		{"uncurated", []string{"--status", "-"}, []string{"RFC9999-4.1.2-01", "RFC9999-4.10-01"}},
 		{"section and subsections", []string{"--section", "4.1"}, []string{"RFC9999-4.1-01", "RFC9999-4.1-02", "RFC9999-4.1-03", "RFC9999-4.1-07", "RFC9999-4.1-05", "RFC9999-4.1-06", "RFC9999-4.1.2-01"}},
 		{"appendix", []string{"--section", "A"}, []string{"RFC9999-A-01"}},

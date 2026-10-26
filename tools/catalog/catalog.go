@@ -41,6 +41,15 @@ func (k Keyword) Absolute() bool {
 	return false
 }
 
+// Recommended reports whether k states a recommendation for or against.
+func (k Keyword) Recommended() bool {
+	switch k {
+	case Should, ShouldNot, Recommended, NotRecommended:
+		return true
+	}
+	return false
+}
+
 // Status is how a Requirement applies to this library.
 type Status string
 
@@ -49,9 +58,11 @@ const (
 	Superseded  Status = "superseded"
 	OutOfScope  Status = "out-of-scope"
 	Informative Status = "informative"
+	// Deviates is a recommended Requirement the library deliberately does not follow.
+	Deviates Status = "deviates"
 )
 
-var statuses = []Status{Applicable, Superseded, OutOfScope, Informative}
+var statuses = []Status{Applicable, Superseded, OutOfScope, Informative, Deviates}
 
 // Reason is why a Requirement is out-of-scope.
 type Reason string
@@ -68,16 +79,25 @@ var reasons = []Reason{ClientRequirement, Excluded}
 // excludedFile lists the features spec.md excludes.
 const excludedFile = "excluded.yaml"
 
+// gateFile says which Requirements the coverage gate checks besides absolute ones.
+const gateFile = "gate.yaml"
+
 // InvariantsDocument is the document ID of the Security Invariants.
 const InvariantsDocument = "INV"
 
 type Catalog struct {
 	Documents []Document
 	Excluded  []string
+	// GateRecommended is whether the coverage gate checks recommended Requirements.
+	GateRecommended bool
 }
 
 type excludedList struct {
 	Features []string `yaml:"features"`
+}
+
+type gateFlags struct {
+	Recommended bool `yaml:"recommended"`
 }
 
 type Document struct {
@@ -120,7 +140,7 @@ func Load(fsys fs.FS) (*Catalog, error) {
 	return c, nil
 }
 
-// read reads the excluded features and every other *.yaml document in the root of fsys.
+// read reads the excluded features, the gate flags and every other *.yaml document in the root of fsys.
 func read(fsys fs.FS) (*Catalog, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -137,6 +157,14 @@ func read(fsys fs.FS) (*Catalog, error) {
 				return nil, fmt.Errorf("%s: %w", e.Name(), err)
 			}
 			c.Excluded = l.Features
+			continue
+		}
+		if e.Name() == gateFile {
+			g, err := decode[gateFlags](fsys, e.Name())
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", e.Name(), err)
+			}
+			c.GateRecommended = g.Recommended
 			continue
 		}
 		d, err := decode[Document](fsys, e.Name())
@@ -208,6 +236,12 @@ func (c *Catalog) Validate() error {
 			}
 			if (r.Status == OutOfScope) != (r.Reason != "") {
 				fail("%s: reason must be set exactly when status is %q", r.ID, OutOfScope)
+			}
+			if r.Status == Deviates && !r.Keyword.Recommended() {
+				fail("%s: status %q needs a recommended keyword, not %q", r.ID, Deviates, r.Keyword)
+			}
+			if r.Status == Deviates && r.Note == "" {
+				fail("%s: note must be set when status is %q", r.ID, Deviates)
 			}
 			if r.Reason != "" && !slices.Contains(reasons, r.Reason) {
 				fail("%s: unknown reason %q", r.ID, r.Reason)

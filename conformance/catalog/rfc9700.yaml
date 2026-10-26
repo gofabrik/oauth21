@@ -647,8 +647,8 @@ requirements:
     section: 4.14.2
     keyword: SHOULD
     text: Refresh tokens SHOULD expire if the client has been inactive for some time, i.e., the refresh token has not been used to obtain fresh access tokens for some time.
-    status: applicable
-    note: Refresh tokens do not expire on inactivity; the Refresh Token Family expires as a whole, also while it is used.
+    status: deviates
+    note: Refresh tokens do not expire on inactivity; the Refresh Token Family expires as a whole, also while it is used (ADR-0009).
   - id: RFC9700-4.15-01
     section: "4.15"
     keyword: SHOULD
