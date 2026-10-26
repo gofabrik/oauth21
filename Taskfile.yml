@@ -4,6 +4,7 @@ vars:
   MODULES: . conformance tools examples
   GOLANGCI_LINT: github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
   GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+  GREMLINS: github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
   FUZZTIME: 10s
 
 tasks:
@@ -34,13 +35,36 @@ tasks:
   fuzz:
     desc: Run every fuzz target briefly in all modules
     cmds:
-      - for: { var: MODULES }
-        cmd: |
-          cd {{.ITEM}} && for pkg in $(go list ./...); do
-            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz'); do
-              go test "$pkg" -run '^$' -fuzz "^$target\$" -fuzztime {{.FUZZTIME}}
+      - |
+        root=$PWD
+        status=0
+        for module in {{.MODULES}}; do
+          cd "$root/$module"
+          pkgs=$(go list ./...) || status=1
+          for pkg in $pkgs; do
+            targets=$(go test -list '^Fuzz' "$pkg") || { echo "$targets"; status=1; continue; }
+            for target in $(echo "$targets" | grep '^Fuzz'); do
+              go test "$pkg" -run '^$' -fuzz "^$target\$" -fuzztime {{.FUZZTIME}} || status=1
             done
           done
+        done
+        exit $status
+
+  mutation:
+    desc: Mutate the core module against its own and the conformance tests, writing the results to mutation.json
+    env:
+      GOFLAGS: -count=1
+    cmds:
+      - |
+        out=$PWD/mutation.json
+        copy=$(mktemp -d)
+        trap 'rm -rf "$copy"' EXIT
+        cp -R . "$copy"
+        cd "$copy"
+        rm conformance/go.mod conformance/go.sum
+        go mod tidy
+        go run {{.GREMLINS}} unleash --integration --coverpkg 'github.com/gofabrik/oauth21/...' \
+          --exclude-files '^(tools|examples|conformance|storetest)/' --output "$out" .
 
   lint:
     desc: Run golangci-lint in all modules

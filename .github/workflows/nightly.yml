@@ -1,0 +1,74 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+          cache: false
+      - uses: go-task/setup-task@v2
+      - id: corpus
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-corpus-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-
+      - run: task fuzz FUZZTIME=5m
+      - if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-corpus-${{ github.run_id }}-${{ github.run_attempt }}
+      - if: failure() || cancelled()
+        run: |
+          files=$(git ls-files --others -- '*testdata/fuzz/*')
+          [ -z "$files" ] || echo "$files" | tar -czf crashers.tar.gz -T -
+      # Extract at the repository root and run the "go test -run" line the failure printed.
+      - if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashers
+          path: crashers.tar.gz
+          if-no-files-found: ignore
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+      - uses: go-task/setup-task@v2
+      - run: |
+          set -o pipefail
+          task mutation | tee mutation.txt
+      - if: always()
+        run: |
+          {
+            echo '```'
+            tail -n 5 mutation.txt
+            grep -E 'LIVED|TIMED OUT' mutation.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation
+          path: mutation.json
