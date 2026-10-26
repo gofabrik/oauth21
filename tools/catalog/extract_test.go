@@ -280,17 +280,109 @@ removed RFC9999-4.1-06: Servers MUST answer quickly.
 		t.Errorf("report:\n%s\nwant:\n%s", out, wantOut)
 	}
 
-	got := readFile(t, dir, "rfc9999.yaml")
-	if !strings.HasPrefix(got, curated) {
-		t.Errorf("curated requirements changed:\n%s", got)
-	}
-	if !strings.HasSuffix(got, `  - id: RFC9999-5-04
+	want := header + `# Curated by hand.
+requirements:
+  - id: RFC9999-4.1-01
+    section: "4.1"
+    keyword: REQUIRED
+    text: code_challenge REQUIRED.
+    statement: code_challenge is REQUIRED in the authorization request.
+    status: applicable
+  - id: RFC9999-4.1-02
+    section: "4.1"
+    keyword: MUST NOT
+    text: The server MUST NOT accept a request without it, e.g., a request from a public client.
+    status: superseded
+    superseded_by: [RFC9999-4.1-03]
+  - id: RFC9999-4.1-03
+    section: "4.1"
+    keyword: SHOULD
+    text: It SHOULD log the attempt and MAY drop the connection.
+    statement: It SHOULD log the attempt.
+    status: applicable
+    note: Logging is left to the Host Application.
+  - id: RFC9999-4.1-07
+    section: "4.1"
+    keyword: MAY
+    text: It SHOULD log the attempt and MAY drop the connection.
+    statement: It MAY drop the connection.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9999-4.1-04
+    section: "4.1"
+    keyword: NOT RECOMMENDED
+    text: It is NOT RECOMMENDED to retry.
+    status: ""
+  - id: RFC9999-4.1-08
+    section: "4.1"
+    keyword: SHOULD
+    text: Values ending with a period character (.) SHOULD be rejected.
+    status: ""
+  - id: RFC9999-4.1-05
+    section: "4.1"
+    keyword: MUST
+    text: A server MUST reject an expired request.
+    status: applicable
+  - id: RFC9999-4.1-09
+    section: "4.1"
+    keyword: MUST NOT
+    text: A server that receives a token request with an expired code then MUST NOT accept it.
+    status: ""
+  - id: RFC9999-4.1-10
+    section: "4.1"
+    keyword: MAY
+    text: Servers MAY cache it.
+    status: ""
+  - id: RFC9999-5-01
+    section: "5"
+    keyword: MUST
+    text: 'The authorization server MUST: authenticate the client, and validate the code.'
+    status: ""
+  - id: RFC9999-5-02
+    section: "5"
+    keyword: MUST
+    text: 'Clients MUST register: Public clients. Native clients.'
+    status: ""
+  - id: RFC9999-5-03
+    section: "5"
+    keyword: MAY
+    text: Clients MAY retry.
+    status: ""
+  - id: RFC9999-5-04
     section: "5"
     keyword: SHOULD
     text: Native clients SHOULD use PKCE.
     status: ""
-`) {
-		t.Errorf("new requirements not appended:\n%s", got)
+  - id: RFC9999-4.1-06
+    section: "4.1"
+    keyword: MUST
+    text: Servers MUST answer quickly.
+    status: applicable
+  - id: RFC9999-A-01
+    section: A
+    keyword: MAY
+    text: Implementers MAY read this.
+    status: informative
+`
+	if got := readFile(t, dir, "rfc9999.yaml"); got != want {
+		t.Errorf("catalog:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestExtractInsertsBeforeFirstQuoted(t *testing.T) {
+	appendix := `  - id: RFC9999-A-01
+    section: A
+    keyword: SHOULD
+    text: Implementers SHOULD read this.
+    status: informative
+`
+	dir := writeFiles(t, map[string]string{"rfc9999.txt": spec, "rfc9999.yaml": header + "requirements:\n" + appendix})
+	runExtract(t, dir)
+
+	got := readFile(t, dir, "rfc9999.yaml")
+	first, _, _ := strings.Cut(strings.TrimPrefix(got, header+"requirements:\n"), "\n")
+	if first != "  - id: RFC9999-4.1-01" || !strings.HasSuffix(got, "status: \"\"\n"+appendix) {
+		t.Errorf("new requirements not before the quoted one:\n%s", got)
 	}
 }
 
@@ -312,8 +404,8 @@ func TestExtractHangingIndentAcrossPages(t *testing.T) {
 func TestExtractRefusesToRewrite(t *testing.T) {
 	dir := writeFiles(t, map[string]string{"rfc9999.txt": spec, "rfc9999.yaml": header + "requirements: []\n"})
 	err := run([]string{"extract", filepath.Join(dir, "rfc9999.yaml")}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "cannot append") {
-		t.Fatalf("got error %v, want cannot append", err)
+	if err == nil || !strings.Contains(err.Error(), "cannot insert") {
+		t.Fatalf("got error %v, want cannot insert", err)
 	}
 	if got := readFile(t, dir, "rfc9999.yaml"); got != header+"requirements: []\n" {
 		t.Errorf("catalog changed:\n%s", got)
@@ -324,6 +416,39 @@ func TestRunUsage(t *testing.T) {
 	err := run([]string{"extract"}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "usage") {
 		t.Fatalf("got error %v, want usage", err)
+	}
+}
+
+func TestExtractKeepsCommentsWithTheirRequirement(t *testing.T) {
+	appendix := `  # Appendix A.
+  - id: RFC9999-A-01
+    section: A
+    keyword: SHOULD
+    text: Implementers SHOULD read this.
+    status: informative
+`
+	dir := writeFiles(t, map[string]string{"rfc9999.txt": spec, "rfc9999.yaml": header + "requirements:\n" + appendix})
+	runExtract(t, dir)
+
+	if got := readFile(t, dir, "rfc9999.yaml"); !strings.HasSuffix(got, "status: \"\"\n"+appendix) {
+		t.Errorf("comment not kept with its requirement:\n%s", got)
+	}
+}
+
+func TestExtractBeforeLaterKeys(t *testing.T) {
+	head := "document: RFC9999\ntitle: Example\nrequirements:\n"
+	trailer := "# Pinned text.\nsource: rfc9999.txt\n"
+	dir := writeFiles(t, map[string]string{"rfc9999.txt": spec, "rfc9999.yaml": head + `  - id: RFC9999-4.1-01
+    section: "4.1"
+    keyword: REQUIRED
+    text: code_challenge REQUIRED.
+    status: applicable
+` + trailer})
+	runExtract(t, dir)
+
+	got := readFile(t, dir, "rfc9999.yaml")
+	if !strings.HasSuffix(got, "    text: Implementers SHOULD read this.\n    status: \"\"\n"+trailer) {
+		t.Errorf("new requirements not before the later key:\n%s", got)
 	}
 }
 

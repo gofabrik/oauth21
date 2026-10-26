@@ -192,15 +192,24 @@ func keywordsOf(s string) []Keyword {
 	return out
 }
 
-// extractFile appends the new candidates of a catalog file's source to it.
-func extractFile(name string, stdout io.Writer) error {
+// readDocument reads a catalog file and the Document it holds.
+func readDocument(name string) ([]byte, Document, error) {
 	data, err := os.ReadFile(name) // #nosec G304 G703 -- the maintainer names the catalog file
 	if err != nil {
-		return err
+		return nil, Document{}, err
 	}
 	d, err := parse[Document](bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, err)
+		return nil, Document{}, fmt.Errorf("%s: %w", name, err)
+	}
+	return data, d, nil
+}
+
+// extractFile inserts the new candidates of a catalog file's source into it in document order.
+func extractFile(name string, stdout io.Writer) error {
+	data, d, err := readDocument(name)
+	if err != nil {
+		return err
 	}
 	text, err := os.ReadFile(filepath.Join(filepath.Dir(name), d.Source)) // #nosec G304 G703 -- the source is a relative path in the catalog
 	if err != nil {
@@ -209,7 +218,7 @@ func extractFile(name string, stdout io.Writer) error {
 
 	added, report := merge(d, Extract(string(text)))
 	if len(added) > 0 {
-		data, err = appendRequirements(data, d, added)
+		data, err = insertRequirements(data, d, added)
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
@@ -221,64 +230,139 @@ func extractFile(name string, stdout io.Writer) error {
 	return err
 }
 
-// appendRequirements appends rs to the requirements list at the end of data.
-func appendRequirements(data []byte, d Document, rs []Requirement) ([]byte, error) {
+// insertion is a new Requirement that goes after the Requirement at index after, which quotes the sentence before it.
+type insertion struct {
+	after int
+	r     Requirement
+}
+
+// insertRequirements inserts new Requirements into the requirements block list of data without rewriting it.
+func insertRequirements(data []byte, d Document, added []insertion) ([]byte, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, err
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	if last := len(lines) - 1; lines[last] == "" {
+		lines = lines[:last]
+	} else {
+		lines[last] += "\n"
+	}
+
+	// starts[i] is the first line of Requirement i, and starts[len(d.Requirements)] the line after the list.
+	var starts []int
+	if m := root.Content[0]; m.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(m.Content); i += 2 {
+			if m.Content[i].Value != "requirements" {
+				continue
+			}
+			for _, item := range m.Content[i+1].Content {
+				starts = append(starts, item.Line-1)
+			}
+			if i+2 < len(m.Content) {
+				starts = append(starts, m.Content[i+2].Line-1)
+			}
+		}
+	}
+	for len(starts) <= len(d.Requirements) {
+		starts = append(starts, len(lines))
+	}
+
+	after := map[int][]Requirement{}
+	for _, a := range added {
+		after[a.after] = append(after[a.after], a.r)
+	}
+	expected := after[-1]
+	for i, r := range d.Requirements {
+		expected = append(append(expected, r), after[i]...)
+	}
+
+	for i := len(d.Requirements); i >= 0; i-- {
+		if len(after[i-1]) == 0 {
+			continue
+		}
+		items, err := encodeItems(after[i-1])
+		if err != nil {
+			return nil, err
+		}
+		if len(d.Requirements) == 0 && !requirementsKey.Match(data) {
+			items = "requirements:\n" + items
+		}
+		lines = slices.Insert(lines, blockStart(lines, starts[i]), items)
+	}
+
+	out := strings.Join(lines, "")
+	got, err := parse[Document](strings.NewReader(out))
+	if err != nil || !reflect.DeepEqual(got.Requirements, expected) {
+		return nil, errors.New(`cannot insert; the requirements must be a block list of "  - " items`)
+	}
+	return []byte(out), nil
+}
+
+// encodeItems returns rs as the items of a requirements block list.
+func encodeItems(rs []Requirement) (string, error) {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(Document{Requirements: rs}); err != nil {
-		return nil, err
+		return "", err
 	}
 	_, items, _ := strings.Cut(buf.String(), "requirements:\n")
+	return items, nil
+}
 
-	out := bytes.TrimRight(data, "\n")
-	if len(d.Requirements) == 0 && !requirementsKey.Match(data) {
-		out = append(out, "\nrequirements:"...)
+// blockStart returns the line where the comments and blank lines right before line n start.
+func blockStart(lines []string, n int) int {
+	for n > 0 {
+		if l := strings.TrimSpace(lines[n-1]); l != "" && !strings.HasPrefix(l, "#") {
+			break
+		}
+		n--
 	}
-	out = append(append(out, '\n'), items...)
-
-	got, err := parse[Document](bytes.NewReader(out))
-	if err != nil || !reflect.DeepEqual(got.Requirements, append(d.Requirements, rs...)) {
-		return nil, errors.New("cannot append; the requirements block list must come last")
-	}
-	return out, nil
+	return n
 }
 
 // quote is the text of a sentence in a section.
 type quote struct{ section, text string }
 
-// merge returns the candidates no Requirement of d quotes, and report lines on new, changed and removed sentences.
-func merge(d Document, candidates []Candidate) ([]Requirement, []string) {
+// merge returns where each candidate no Requirement of d quotes goes, and report lines on new, changed and removed sentences.
+func merge(d Document, candidates []Candidate) ([]insertion, []string) {
 	extracted := map[quote]bool{}
 	for _, c := range candidates {
 		extracted[quote{c.Section, c.Text}] = true
 	}
 
 	ids := map[quote][]string{}
+	last := map[quote]int{}
 	used := map[string]bool{}
 	var unmatched []quote
-	for _, r := range d.Requirements {
+	for i, r := range d.Requirements {
 		q := quote{r.Section, r.Text}
 		if ids[q] == nil && !extracted[q] {
 			unmatched = append(unmatched, q)
 		}
 		ids[q] = append(ids[q], r.ID)
+		last[q] = i
 		used[r.ID] = true
 	}
 
 	var (
-		added  []Requirement
+		added  []insertion
 		report []string
 	)
 	isNew := map[quote]bool{}
+	after := -1
 	for _, c := range candidates {
 		q := quote{c.Section, c.Text}
 		if !isNew[q] {
 			if ids[q] != nil {
+				after = last[q]
 				continue
 			}
 			if i := mostSimilar(unmatched, q); i >= 0 {
 				ids[q] = ids[unmatched[i]]
+				last[q] = last[unmatched[i]]
+				after = last[q]
 				report = append(report, fmt.Sprintf("changed %s: %s\n", strings.Join(ids[q], ", "), q.text))
 				unmatched = slices.Delete(unmatched, i, i+1)
 				continue
@@ -287,7 +371,7 @@ func merge(d Document, candidates []Candidate) ([]Requirement, []string) {
 		}
 		r := Requirement{ID: freeID(d.ID, c.Section, used), Section: c.Section, Keyword: c.Keyword, Text: c.Text}
 		used[r.ID] = true
-		added = append(added, r)
+		added = append(added, insertion{after, r})
 		report = append(report, fmt.Sprintf("new %s: %s\n", r.ID, r.Text))
 	}
 	for _, u := range unmatched {
