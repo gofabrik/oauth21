@@ -134,34 +134,33 @@ func TestEndpointURLsAreHTTPS(t *testing.T) {
 	}
 }
 
-// metadataURL returns the URL the metadata of an Authorization Server with configured endpoint paths names under name.
-func metadataURL(t *testing.T, name string) *url.URL {
+// metadataURL returns the URL the metadata of an Authorization Server with configured endpoint paths names under name, as written in the metadata.
+func metadataURL(t *testing.T, name string) string {
 	t.Helper()
 	a := newConfiguredServer(t, func(c *oauth21.Config) {
 		c.Paths = oauth21.Paths{Authorization: "/oauth/authorize", Token: "/oauth/token"} // #nosec G101 -- endpoint paths, not credentials
 	})
 	s, _ := a.metadata(a.url)[name].(string)
-	u, err := url.Parse(s)
-	if err != nil || s == "" {
+	if _, err := url.Parse(s); err != nil || s == "" {
 		t.Fatalf("got %s %q, want a URL", name, s)
 	}
-	return u
+	return s
 }
 
-// TestAuthorizationEndpointHasNoFragment checks that the authorization endpoint URL in the metadata has no fragment.
+// TestAuthorizationEndpointHasNoFragment checks that the authorization endpoint URL in the metadata has no fragment, not even an empty one.
 //
 //conformance:covers OAUTH21D16-3.1-02
 func TestAuthorizationEndpointHasNoFragment(t *testing.T) {
-	if u := metadataURL(t, "authorization_endpoint"); u.Fragment != "" || strings.Contains(u.String(), "#") {
+	if u := metadataURL(t, "authorization_endpoint"); strings.Contains(u, "#") {
 		t.Fatalf("got authorization_endpoint %s, want no fragment", u)
 	}
 }
 
-// TestTokenEndpointHasNoFragment checks that the token endpoint URL in the metadata has no fragment.
+// TestTokenEndpointHasNoFragment checks that the token endpoint URL in the metadata has no fragment, not even an empty one.
 //
 //conformance:covers OAUTH21D16-3.2-01
 func TestTokenEndpointHasNoFragment(t *testing.T) {
-	if u := metadataURL(t, "token_endpoint"); u.Fragment != "" || strings.Contains(u.String(), "#") {
+	if u := metadataURL(t, "token_endpoint"); strings.Contains(u, "#") {
 		t.Fatalf("got token_endpoint %s, want no fragment", u)
 	}
 }

@@ -61,11 +61,25 @@ type authorizationServer struct {
 	recorder *recorder
 }
 
-// recorder records the keys the Authorization Server sends to the code and token Stores.
+// recorder records the keys and entities the Authorization Server sends to the code and token Stores, and holds its loads of codes and refresh tokens at barrier.
 type recorder struct {
 	*memstore.Store
 	mu       sync.Mutex
 	received [][]byte
+	// entities are the codes and tokens the Stores received, formatted with their field names.
+	entities []string
+	barrier  barrier
+}
+
+// barrier makes loads wait in rounds until all loads of a round have arrived.
+type barrier struct {
+	mu sync.Mutex
+	// racers is the number of loads in each round; 0 lets every load pass.
+	racers int
+	// held is the number of loads still to arrive in the current round.
+	held int
+	// loaded is closed when the current round is complete.
+	loaded chan struct{}
 }
 
 func (r *recorder) record(key []byte) {
@@ -74,13 +88,48 @@ func (r *recorder) record(key []byte) {
 	r.received = append(r.received, slices.Clone(key))
 }
 
+func (r *recorder) recordEntity(e any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entities = append(r.entities, fmt.Sprintf("%+v", e))
+}
+
+// hold makes loads wait in rounds of n until all n of a round have arrived; hold(0) lets every load pass.
+func (b *barrier) hold(n int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.racers, b.held, b.loaded = n, n, make(chan struct{})
+}
+
+// arrive waits until all loads of its round have arrived, or for at most five seconds.
+func (b *barrier) arrive() {
+	b.mu.Lock()
+	if b.racers == 0 {
+		b.mu.Unlock()
+		return
+	}
+	b.held--
+	loaded := b.loaded
+	if b.held == 0 {
+		close(loaded)
+		b.held, b.loaded = b.racers, make(chan struct{})
+	}
+	b.mu.Unlock()
+	select {
+	case <-loaded:
+	case <-time.After(5 * time.Second):
+	}
+}
+
 func (r *recorder) CreateCode(ctx context.Context, c store.Code) error {
 	r.record(c.Hash)
+	r.recordEntity(c)
 	return r.Store.CreateCode(ctx, c)
 }
 
 func (r *recorder) Code(ctx context.Context, hash []byte) (store.Code, error) {
 	r.record(hash)
+	defer r.barrier.arrive()
 	return r.Store.Code(ctx, hash)
 }
 
@@ -91,6 +140,7 @@ func (r *recorder) ConsumeCode(ctx context.Context, hash []byte) (store.Code, er
 
 func (r *recorder) CreateToken(ctx context.Context, t store.Token) error {
 	r.record(t.Hash)
+	r.recordEntity(t)
 	return r.Store.CreateToken(ctx, t)
 }
 
@@ -106,17 +156,20 @@ func (r *recorder) RevokeToken(ctx context.Context, hash []byte) error {
 
 func (r *recorder) CreateRefreshToken(ctx context.Context, t store.RefreshToken) error {
 	r.record(t.Hash)
+	r.recordEntity(t)
 	return r.Store.CreateRefreshToken(ctx, t)
 }
 
 func (r *recorder) RefreshToken(ctx context.Context, hash []byte) (store.RefreshToken, error) {
 	r.record(hash)
+	defer r.barrier.arrive()
 	return r.Store.RefreshToken(ctx, hash)
 }
 
 func (r *recorder) RotateRefreshToken(ctx context.Context, hash []byte, next store.RefreshToken) (store.RefreshToken, error) {
 	r.record(hash)
 	r.record(next.Hash)
+	r.recordEntity(next)
 	return r.Store.RotateRefreshToken(ctx, hash, next)
 }
 
@@ -125,6 +178,18 @@ func (r *recorder) keys() [][]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.received)
+}
+
+// recorded returns the entities recorded so far, formatted with their field names.
+func (r *recorder) recorded() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.entities)
+}
+
+// publicClient returns a public Client with redirectURIs that is allowed and defaults to scope read.
+func publicClient(id string, redirectURIs ...string) store.Client {
+	return store.Client{ID: id, Type: store.Public, RedirectURIs: redirectURIs, AllowedScopes: readScope, DefaultScopes: readScope}
 }
 
 // newAuthorizationServer starts an Authorization Server with the public Client and any extra Clients.

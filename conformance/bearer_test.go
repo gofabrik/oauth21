@@ -220,25 +220,27 @@ func TestBearerRemoteValidationFailureIsServerError(t *testing.T) {
 	}
 }
 
-// challenges returns the WWW-Authenticate challenges of a resource that requires write: for a request without credentials, and, as failures, for an unknown access token, an access token lacking write and malformed credentials.
+// challenges returns the WWW-Authenticate challenges of a resource that requires read and write: for a request without credentials, and, as failures, for an unknown access token, an access token lacking write, malformed credentials and a repeated Authorization header.
 func (a *authorizationServer) challenges(v bearer.Validator) (withoutCredentials string, failures []string) {
 	a.t.Helper()
-	a.resource(v, "write")
+	a.resource(v, "read", "write")
 	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 	_, header, _ := a.access(nil)
 	withoutCredentials = header.Get("WWW-Authenticate")
-	for _, h := range []http.Header{bearerHeader("unknown"), bearerHeader(access), {"Authorization": {"Bearer a b"}}} {
+	for _, h := range []http.Header{bearerHeader("unknown"), bearerHeader(access), {"Authorization": {"Bearer a b"}}, {"Authorization": {"Bearer " + access, "Bearer " + access}}} {
 		_, header, _ := a.access(h)
 		failures = append(failures, header.Get("WWW-Authenticate"))
 	}
 	return withoutCredentials, failures
 }
 
-// allChallenges returns every challenge of challenges.
+// allChallenges returns every challenge of challenges and the challenge of a resource without required scopes for a request without credentials.
 func (a *authorizationServer) allChallenges(v bearer.Validator) []string {
 	a.t.Helper()
 	withoutCredentials, failures := a.challenges(v)
-	return append([]string{withoutCredentials}, failures...)
+	a.mux.Handle("/unscoped", bearer.Middleware(v)(http.NotFoundHandler()))
+	_, header, _ := a.send(http.MethodGet, "/unscoped", "", nil)
+	return append([]string{withoutCredentials, header.Get("WWW-Authenticate")}, failures...)
 }
 
 // authParam is an auth-param of a challenge, with the value as sent: a quoted-string keeps its quotes and escapes.
@@ -334,14 +336,17 @@ func TestBearerIgnoresQueryToken(t *testing.T) {
 	})
 }
 
-// TestBearerChallengesMissingCredentials checks that a request without credentials gets a WWW-Authenticate header.
+// TestBearerChallengesMissingCredentials checks that a request without credentials, with an unknown access token or with an access token lacking a required scope gets a WWW-Authenticate header.
 //
 //conformance:covers OAUTH21D16-5.3.1-01
 func TestBearerChallengesMissingCredentials(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
-		a.resource(v)
-		if _, header, _ := a.access(nil); header.Get("WWW-Authenticate") == "" {
-			a.t.Fatal("got no WWW-Authenticate header")
+		a.resource(v, "write")
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		for _, h := range []http.Header{nil, bearerHeader("unknown"), bearerHeader(access)} {
+			if _, header, _ := a.access(h); header.Get("WWW-Authenticate") == "" {
+				a.t.Fatalf("got no WWW-Authenticate header with %v", h)
+			}
 		}
 	})
 }
@@ -424,12 +429,13 @@ func scopeChars(s string) bool {
 	return true
 }
 
-// TestBearerChallengeScopeCharacters checks that the scope attribute of every challenge uses only the allowed characters.
+// TestBearerChallengeScopeCharacters checks that the scope attribute of every challenge of a resource requiring scopes uses only the allowed characters.
 //
 //conformance:covers OAUTH21D16-5.3.1-14
 func TestBearerChallengeScopeCharacters(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
-		for _, c := range a.allChallenges(v) {
+		withoutCredentials, failures := a.challenges(v)
+		for _, c := range append(failures, withoutCredentials) {
 			_, params := a.wantParsed(c)
 			if scope, ok := quoted(params, "scope"); !ok || !scopeChars(scope) {
 				a.t.Fatalf("got challenge %q, want a scope of the allowed characters", c)
@@ -478,14 +484,26 @@ func TestBearerRefusesExpiredToken(t *testing.T) {
 // audienceToken stores an access token of alice and the public Client with scope read and audience, which only the Store can give it, and returns its value.
 func (a *authorizationServer) audienceToken(audience ...string) string {
 	a.t.Helper()
+	return a.storedToken(readScope, audience...)
+}
+
+// storedToken stores an access token of alice and the public Client with scopes and audience, which only the Store can give it, and returns its value.
+func (a *authorizationServer) storedToken(scopes []string, audience ...string) string {
+	a.t.Helper()
 	value, hash := randomWithHash(a.t)
-	if err := a.recorder.Store.CreateToken(a.t.Context(), store.Token{Hash: hash, Grant: aliceGrant("grant-"+value, audience...), Scopes: readScope, Audience: audience, ExpiresAt: a.now().Add(time.Hour)}); err != nil {
+	if err := a.recorder.Store.CreateToken(a.t.Context(), store.Token{Hash: hash, Grant: aliceGrant("grant-"+value, audience...), Scopes: scopes, Audience: audience, ExpiresAt: a.now().Add(time.Hour)}); err != nil {
 		a.t.Fatal(err)
 	}
 	return value
 }
 
-// TestBearerChecksAudience checks that an access token is served by a Resource Server its audience names, alone or with others.
+// otherAudiences are audiences that name only Resource Servers other than the Resource Server Client, some close to its Client identifier.
+var otherAudiences = [][]string{{"other"}, {"other", "another"}, {strings.ToLower(resourceServerID)}, {resourceServerID + " 2"}, {"The " + resourceServerID}, {" " + resourceServerID}, {resourceServerID + " "}}
+
+// otherScopes are scopes close to read and write that a resource requiring both refuses.
+var otherScopes = [][]string{{"read", "writer"}, {"READ", "WRITE"}, {"read", "Write"}}
+
+// TestBearerChecksAudience checks that an access token is served by a Resource Server its audience names, alone or with others, and refused when its audience names only another.
 //
 //conformance:covers OAUTH21D16-5.2-02
 func TestBearerChecksAudience(t *testing.T) {
@@ -493,32 +511,36 @@ func TestBearerChecksAudience(t *testing.T) {
 		a.resource(v)
 		a.wantAccess(a.audienceToken(resourceServerID), http.StatusOK)
 		a.wantAccess(a.audienceToken("other", resourceServerID), http.StatusOK)
+		a.wantAccess(a.audienceToken("other"), http.StatusUnauthorized)
 	})
 }
 
-// TestBearerRefusesTokenForOtherResourceServer checks that an access token whose audience names only other Resource Servers is refused.
+// TestBearerRefusesTokenForOtherResourceServer checks that an access token whose audience names only other Resource Servers is refused, also when one differs from the Resource Server only in case or by a prefix or suffix.
 //
 //conformance:covers OAUTH21D16-7.1.4-03
 func TestBearerRefusesTokenForOtherResourceServer(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
-		a.wantAccess(a.audienceToken("other"), http.StatusUnauthorized)
-		a.wantAccess(a.audienceToken("other", "another"), http.StatusUnauthorized)
+		for _, audience := range otherAudiences {
+			a.wantAccess(a.audienceToken(audience...), http.StatusUnauthorized)
+		}
 	})
 }
 
-// TestRemoteValidationRefusesTokenForOtherResourceServer checks that introspection makes the remote validator refuse an access token meant for another Resource Server.
+// TestRemoteValidationRefusesTokenForOtherResourceServer checks that introspection makes the remote validator refuse an access token meant for another Resource Server, also one whose identifier is close to its own.
 //
 //conformance:covers OAUTH21D16-7.3.2-06
 func TestRemoteValidationRefusesTokenForOtherResourceServer(t *testing.T) {
 	a := newIntrospectionServer(t)
 	a.resource(a.remote(resourceServerID, secret))
-	token := a.audienceToken("other")
-	a.wantInactive(token)
-	a.wantAccess(token, http.StatusUnauthorized)
+	for _, audience := range otherAudiences {
+		token := a.audienceToken(audience...)
+		a.wantInactive(token)
+		a.wantAccess(token, http.StatusUnauthorized)
+	}
 }
 
-// TestBearerChecksScope checks that a resource requiring read and write serves an access token with both and refuses one with only read.
+// TestBearerChecksScope checks that a resource requiring read and write serves an access token with both and refuses one with only read or with read and writer.
 //
 //conformance:covers OAUTH21D16-5.2-03
 func TestBearerChecksScope(t *testing.T) {
@@ -530,6 +552,9 @@ func TestBearerChecksScope(t *testing.T) {
 		read, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 		a.wantAccess(both, http.StatusOK)
 		a.wantAccess(read, http.StatusForbidden)
+		for _, scopes := range otherScopes {
+			a.wantAccess(a.storedToken(scopes), http.StatusForbidden)
+		}
 	})
 }
 
@@ -547,14 +572,17 @@ func TestBearerHandlerGetsTokenDetails(t *testing.T) {
 	})
 }
 
-// TestBearerRefusesTokenWithoutScope checks that an access token without a scope the resource requires is refused with 403.
+// TestBearerRefusesTokenWithoutScope checks that an access token without one of the scopes the resource requires is refused with 403, also when it has a scope that only contains the missing one.
 //
 //conformance:covers OAUTH21D16-7.1.4-06
 func TestBearerRefusesTokenWithoutScope(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
-		a.resource(v, "write")
+		a.resource(v, "read", "write")
 		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 		a.wantAccess(access, http.StatusForbidden)
+		for _, scopes := range otherScopes {
+			a.wantAccess(a.storedToken(scopes), http.StatusForbidden)
+		}
 	})
 }
 
@@ -584,7 +612,7 @@ func TestBearerRefusesTokenAtExpiry(t *testing.T) {
 	})
 }
 
-// TestBearerServesCoveringScope checks that an access token with more scopes than a resource requires is served.
+// TestBearerServesCoveringScope checks that an access token with more scopes than a resource requires is served, and one whose scopes do not cover the resource is refused.
 //
 //conformance:covers OAUTH21D16-5-03
 func TestBearerServesCoveringScope(t *testing.T) {
@@ -594,20 +622,35 @@ func TestBearerServesCoveringScope(t *testing.T) {
 		params.Set("scope", "read write")
 		access, _ := a.tokens(tokenParams(a.code(params)), nil)
 		a.wantAccess(access, http.StatusOK)
+		read, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.wantAccess(read, http.StatusForbidden)
 	})
 }
 
-// TestRemoteValidationChecksCertificates checks that the remote validator refuses an introspection endpoint whose TLS certificate its HTTP client does not trust.
+// TestRemoteValidationChecksCertificates checks that the remote validator refuses an introspection endpoint whose TLS certificate its HTTP client does not trust or that does not name the endpoint host.
 //
 //conformance:covers OAUTH21D16-1.5-04
 func TestRemoteValidationChecksCertificates(t *testing.T) {
-	a := newIntrospectionServer(t)
-	remote := a.remote(resourceServerID, secret)
-	remote.Client = &http.Client{}
-	a.resource(remote)
-	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
-	if status, _, _ := a.access(bearerHeader(access)); status != http.StatusInternalServerError {
-		t.Fatalf("got status %d, want 500", status)
+	for name, v := range map[string]func(a *authorizationServer) bearer.Remote{
+		"untrusted certificate": func(a *authorizationServer) bearer.Remote {
+			r := a.remote(resourceServerID, secret)
+			r.Client = &http.Client{}
+			return r
+		},
+		"certificate for another host": func(a *authorizationServer) bearer.Remote {
+			r := a.remote(resourceServerID, secret)
+			r.Endpoint = strings.Replace(r.Endpoint, "127.0.0.1", "localhost", 1)
+			return r
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newIntrospectionServer(t)
+			a.resource(v(a))
+			access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+			if status, _, _ := a.access(bearerHeader(access)); status != http.StatusInternalServerError {
+				t.Fatalf("got status %d, want 500", status)
+			}
+		})
 	}
 }
 

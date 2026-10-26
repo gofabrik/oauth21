@@ -19,12 +19,18 @@ func newServiceServer(t *testing.T) *authorizationServer {
 // serviceClients returns the confidential Client and the service Client, which may use client credentials.
 func serviceClients(t *testing.T) []store.Client {
 	t.Helper()
+	return []store.Client{confidentialClient(t), serviceClient(t)}
+}
+
+// serviceClient returns the confidential service Client, allowed scopes read and write and only the client_credentials grant type.
+func serviceClient(t *testing.T) store.Client {
+	t.Helper()
 	service := confidentialClient(t)
 	service.ID = serviceID
 	service.RedirectURIs = nil
 	service.AllowedScopes = []string{"read", "write"}
 	service.GrantTypes = []string{"client_credentials"}
-	return []store.Client{confidentialClient(t), service}
+	return service
 }
 
 // clientCredentialsParams returns a client credentials request asking for scope, or the default scopes when it is empty.
@@ -78,20 +84,26 @@ func TestClientCredentialsRequiresAllowedGrantType(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
 }
 
-// TestClientCredentialsRequiresAuthentication checks that a client credentials request with a wrong secret gets invalid_client.
+// TestClientCredentialsRequiresAuthentication checks that a client credentials request with a wrong or missing secret gets invalid_client.
 //
 //conformance:covers OAUTH21D16-4.2.1-02
 func TestClientCredentialsRequiresAuthentication(t *testing.T) {
 	a := newServiceServer(t)
 	status, _, body := a.token(clientCredentialsParams(""), basic(serviceID, "wrong"))
 	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
+	params := clientCredentialsParams("")
+	params.Set("client_id", serviceID)
+	status, _, body = a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 }
 
 // TestClientCredentialsScopes checks that a client credentials request gets the requested scopes only when they are supported and allowed for the Client.
 //
 //conformance:covers INV-0003
 func TestClientCredentialsScopes(t *testing.T) {
-	a := newServiceServer(t)
+	service := serviceClient(t)
+	service.AllowedScopes = append(service.AllowedScopes, "delete")
+	a := newAuthorizationServer(t, confidentialClient(t), service)
 	status, _, body := a.token(clientCredentialsParams("write read"), basic(serviceID, secret))
 	if status != http.StatusOK || body["scope"] != "write read" {
 		t.Fatalf("got status %d and body %v, want scope write read", status, body)

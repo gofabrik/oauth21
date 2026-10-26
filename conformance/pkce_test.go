@@ -94,18 +94,33 @@ func TestAuthorizationRequiresCodeChallengeMethod(t *testing.T) {
 	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
 }
 
-// TestCodeChallengeNotExposed checks that no redirect carries the code challenge.
+// TestCodeChallengeNotExposed checks that no redirect carries the code challenge: with the same randomness source, requests with different code challenges get the same login and callback redirects.
 //
 //conformance:covers RFC7636-4.4-02
 func TestCodeChallengeNotExposed(t *testing.T) {
-	a := newAuthorizationServer(t)
-	login := a.authorize(authorizeParams())
-	callback := a.login(login, "alice")
-	for _, s := range []string{login.String(), callback.String()} {
-		if strings.Contains(s, challenge) {
-			t.Fatalf("got redirect %s, want no code challenge in it", s)
-		}
+	logins, callbacks := redirectsPerChallenge(t, verifier, strings.Repeat("o", 43))
+	if logins[0] != logins[1] {
+		t.Fatalf("got login redirects %q for two code challenges, want the same redirect", logins)
 	}
+	if callbacks[0] != callbacks[1] {
+		t.Fatalf("got callback redirects %q for two code challenges, want the same redirect", callbacks)
+	}
+}
+
+// redirectsPerChallenge returns the login and callback redirects of a request with the code challenge of each of verifiers, each on its own server with the same randomness source and its URL replaced by "server".
+func redirectsPerChallenge(t *testing.T, verifiers ...string) (logins, callbacks []string) {
+	t.Helper()
+	for _, v := range verifiers {
+		a := newSeededServer(t, &seededRandom{seed: 1})
+		params := authorizeParams()
+		params.Set("code_challenge", s256(v))
+		login := a.authorize(params)
+		callback := a.login(login, "alice")
+		server := strings.NewReplacer(a.url, "server", url.QueryEscape(a.url), "server")
+		logins = append(logins, server.Replace(login.String()))
+		callbacks = append(callbacks, server.Replace(callback.String()))
+	}
+	return logins, callbacks
 }
 
 // TestTokenRequiresCodeVerifier checks that a redemption without a code verifier gets invalid_request.
@@ -128,8 +143,9 @@ func (a *authorizationServer) wantVerifierRequired(params url.Values, header htt
 //conformance:covers RFC7636-4.6-02
 func TestTokenRejectsWrongCodeVerifier(t *testing.T) {
 	for name, v := range map[string]string{
-		"other":     strings.Repeat("a", 43),
-		"too short": verifier[:42],
+		"other":          strings.Repeat("a", 43),
+		"too short":      verifier[:42],
+		"code challenge": challenge,
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t)
@@ -253,16 +269,20 @@ func TestEmptyCodeVerifierIsMissing(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
-// TestCodeVerifierIsTransformed checks that the code verifier is compared after the S256 transformation, so presenting the code challenge itself fails.
+// TestCodeVerifierIsTransformed checks that the code verifier is compared after the S256 transformation, so presenting the code challenge itself fails and the code verifier redeems.
 //
 //conformance:covers OAUTH21D16-4.1.3-11
 func TestCodeVerifierIsTransformed(t *testing.T) {
 	a := newAuthorizationServer(t)
-	status, _, body := a.token(withVerifier(tokenParams(a.code(authorizeParams())), challenge), nil)
+	params := tokenParams(a.code(authorizeParams()))
+	status, _, body := a.token(withVerifier(params, challenge), nil)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	if status, _, body := a.token(params, nil); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v, want 200", status, body)
+	}
 }
 
-// TestCodeChallengeIsAssociatedWithCode checks that two codes with different code challenges do not redeem with each other's verifier.
+// TestCodeChallengeIsAssociatedWithCode checks that two codes with different code challenges do not redeem with each other's verifier but redeem with their own.
 //
 //conformance:covers OAUTH21D16-4.1.2-07
 func TestCodeChallengeIsAssociatedWithCode(t *testing.T) {
@@ -270,9 +290,17 @@ func TestCodeChallengeIsAssociatedWithCode(t *testing.T) {
 	other := strings.Repeat("o", 43)
 	params := authorizeParams()
 	params.Set("code_challenge", s256(other))
-	for code, v := range map[string]string{a.code(authorizeParams()): other, a.code(params): verifier} {
-		status, _, body := a.token(withVerifier(tokenParams(code), v), nil)
-		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	codes := map[string]string{a.code(authorizeParams()): verifier, a.code(params): other}
+	for code, own := range codes {
+		for _, v := range codes {
+			if v != own {
+				status, _, body := a.token(withVerifier(tokenParams(code), v), nil)
+				a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+			}
+		}
+		if status, _, body := a.token(withVerifier(tokenParams(code), own), nil); status != http.StatusOK {
+			t.Fatalf("got status %d and body %v with the code's own verifier, want 200", status, body)
+		}
 	}
 }
 
@@ -300,25 +328,24 @@ func TestUnsupportedMethodIsExplained(t *testing.T) {
 	}
 }
 
-// TestCodeDoesNotCarryCodeChallenge checks that the authorization response carries only code, state and iss, and that the code does not depend on the code challenge: with the same randomness source, requests with different code challenges get the same code.
+// TestCodeDoesNotCarryCodeChallenge checks that the authorization response carries only code, state and iss, and that none of them depends on the code challenge: with the same randomness source, requests with different code challenges get the same authorization response.
 //
 //conformance:covers OAUTH21D16-4.1.2-08
 func TestCodeDoesNotCarryCodeChallenge(t *testing.T) {
-	var codes []string
-	for _, v := range []string{verifier, strings.Repeat("o", 43)} {
-		a := newSeededServer(t, &seededRandom{seed: 1})
-		params := authorizeParams()
-		params.Set("code_challenge", s256(v))
-		q := a.login(a.authorize(params), "alice").Query()
-		for name := range q {
+	_, callbacks := redirectsPerChallenge(t, verifier, strings.Repeat("o", 43))
+	for _, callback := range callbacks {
+		u, err := url.Parse(callback)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name := range u.Query() {
 			if name != "code" && name != "state" && name != "iss" {
-				t.Fatalf("got parameter %q in %v, want only code, state and iss", name, q)
+				t.Fatalf("got parameter %q in %s, want only code, state and iss", name, callback)
 			}
 		}
-		codes = append(codes, q.Get("code"))
 	}
-	if codes[0] != codes[1] {
-		t.Fatalf("got codes %q for two code challenges, want the same code", codes)
+	if callbacks[0] != callbacks[1] {
+		t.Fatalf("got authorization responses %q for two code challenges, want the same response", callbacks)
 	}
 }
 
@@ -333,13 +360,17 @@ func (a *authorizationServer) createCodeWithoutChallenge() string {
 	return value
 }
 
-// TestCodeWithoutChallengeIsRejected checks that a code associated with no code challenge does not redeem without a code verifier.
+// TestCodeWithoutChallengeIsRejected checks that a code associated with no code challenge redeems neither without nor with a code verifier.
 //
 //conformance:covers OAUTH21D16-4.1.3-12
 func TestCodeWithoutChallengeIsRejected(t *testing.T) {
-	a := newAuthorizationServer(t)
-	params := withVerifier(tokenParams(a.createCodeWithoutChallenge()), "")
-	if status, _, body := a.token(params, nil); status != http.StatusBadRequest || body["access_token"] != nil {
-		t.Fatalf("got status %d and body %v, want 400 without an access token", status, body)
+	for name, v := range map[string]string{"no verifier": "", "verifier": verifier} {
+		t.Run(name, func(t *testing.T) {
+			a := newAuthorizationServer(t)
+			params := withVerifier(tokenParams(a.createCodeWithoutChallenge()), v)
+			if status, _, body := a.token(params, nil); status != http.StatusBadRequest || body["access_token"] != nil {
+				t.Fatalf("got status %d and body %v, want 400 without an access token", status, body)
+			}
+		})
 	}
 }

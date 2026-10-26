@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -48,8 +49,8 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-4.1.1-03
 func TestErrorsAfterRedirectURIAreRedirected(t *testing.T) {
-	for responseType, code := range map[string]string{"": "invalid_request", "token": "unsupported_response_type"} {
-		t.Run(code, func(t *testing.T) {
+	for responseType, code := range map[string]string{"": "invalid_request", "token": "unsupported_response_type", "code token": "unsupported_response_type", "code id_token": "unsupported_response_type", "CODE": "unsupported_response_type"} {
+		t.Run(strconv.Quote(responseType), func(t *testing.T) {
 			a := newAuthorizationServer(t)
 			params := authorizeParams()
 			params.Set("response_type", responseType)

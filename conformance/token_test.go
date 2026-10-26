@@ -1,10 +1,12 @@
 package conformance
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -84,11 +86,15 @@ func TestTokenResponseMembersAppearOnce(t *testing.T) {
 	}
 }
 
-// tokenErrors returns the bodies of token requests failing for an unknown code, a missing code verifier, an unsupported grant type, an unknown scope and a wrong Client secret, some with characters outside those error values may have.
+// tokenErrors returns the bodies of failing token requests on a newServiceServer, some with characters outside those error values may have.
 func (a *authorizationServer) tokenErrors() []map[string]any {
 	a.t.Helper()
 	grant := tokenParams("")
 	grant.Set("grant_type", "päss\"word\\")
+	unknownClient := tokenParams(a.code(authorizeParams()))
+	unknownClient.Set("client_id", "clïent\"\\")
+	otherRedirect := tokenParams(a.code(authorizeParams()))
+	otherRedirect.Set("redirect_uri", "https://client.example/cb?ü=\"\\")
 	var bodies []map[string]any
 	for _, r := range []struct {
 		params url.Values
@@ -97,8 +103,11 @@ func (a *authorizationServer) tokenErrors() []map[string]any {
 		{tokenParams("cöde\"\\"), nil},
 		{withVerifier(tokenParams(a.code(authorizeParams())), ""), nil},
 		{grant, nil},
-		{clientCredentialsParams("read ünknown"), basic(confidentialID, secret)},
+		{clientCredentialsParams("read ünknown\"\\"), basic(serviceID, secret)},
 		{a.confidentialCode(), basic(confidentialID, "wrong")},
+		{unknownClient, nil},
+		{otherRedirect, nil},
+		{withVerifier(tokenParams(a.code(authorizeParams())), "vérifier\"\\"), nil},
 	} {
 		status, _, body := a.token(r.params, r.header)
 		if status < 400 {
@@ -113,7 +122,7 @@ func (a *authorizationServer) tokenErrors() []map[string]any {
 //
 //conformance:covers OAUTH21D16-3.2.4-01
 func TestTokenErrorCarriesError(t *testing.T) {
-	a := newConfidentialServer(t)
+	a := newServiceServer(t)
 	for _, body := range a.tokenErrors() {
 		if code, _ := body["error"].(string); code == "" {
 			t.Fatalf("got body %v, want error", body)
@@ -125,7 +134,7 @@ func TestTokenErrorCarriesError(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-3.2.4-04
 func TestTokenErrorCodeCharacters(t *testing.T) {
-	a := newConfidentialServer(t)
+	a := newServiceServer(t)
 	for _, body := range a.tokenErrors() {
 		if code, _ := body["error"].(string); !errorChars(code) {
 			t.Fatalf("got body %v, want an error code of the allowed characters", body)
@@ -137,7 +146,7 @@ func TestTokenErrorCodeCharacters(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-3.2.4-06
 func TestTokenErrorDescriptionCharacters(t *testing.T) {
-	a := newConfidentialServer(t)
+	a := newServiceServer(t)
 	for _, body := range a.tokenErrors() {
 		if d, _ := body["error_description"].(string); d == "" || !errorChars(d) {
 			t.Fatalf("got body %v, want an error_description of the allowed characters", body)
@@ -239,7 +248,7 @@ func TestUnknownTokenParameterIsIgnored(t *testing.T) {
 	a.tokens(params, nil)
 }
 
-// TestEmptyTokenParameterIsOmitted checks that a refresh request with a scope parameter without a value gets the granted scope.
+// TestEmptyTokenParameterIsOmitted checks that a refresh request with a scope parameter without a value gets the granted scope, and one that also has the scope parameter with a value gets that scope.
 //
 //conformance:covers OAUTH21D16-3.2-05
 func TestEmptyTokenParameterIsOmitted(t *testing.T) {
@@ -249,20 +258,30 @@ func TestEmptyTokenParameterIsOmitted(t *testing.T) {
 	_, refresh := a.tokens(tokenParams(a.code(authorize)), nil)
 	params := refreshParams(refresh)
 	params.Set("scope", "")
-	if status, _, body := a.token(params, nil); status != http.StatusOK || body["scope"] != "read write" {
+	status, _, body := a.token(params, nil)
+	if status != http.StatusOK || body["scope"] != "read write" {
 		t.Fatalf("got status %d and body %v, want scope read write", status, body)
+	}
+	next, _ := body["refresh_token"].(string)
+	params = refreshParams(next)
+	params["scope"] = []string{"read", ""}
+	if status, _, body := a.token(params, nil); status != http.StatusOK || body["scope"] != "read" {
+		t.Fatalf("got status %d and body %v, want scope read", status, body)
 	}
 }
 
-// TestRepeatedTokenParameterIsRejected checks that a token request with a repeated parameter gets invalid_request.
+// TestRepeatedTokenParameterIsRejected checks that a token request with a repeated parameter gets invalid_request, with another or the same value.
 //
 //conformance:covers OAUTH21D16-3.2-06
 func TestRepeatedTokenParameterIsRejected(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := tokenParams(a.code(authorizeParams()))
-	params.Add("code_verifier", strings.Repeat("v", 43))
-	status, _, body := a.token(params, nil)
-	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+	for _, repeated := range []string{strings.Repeat("v", 43), verifier} {
+		p := maps.Clone(params)
+		p["code_verifier"] = []string{verifier, repeated}
+		status, _, body := a.token(p, nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+	}
 }
 
 // TestTokenRequestRequiresGrantType checks that a token request without grant_type gets invalid_request.
@@ -298,17 +317,27 @@ func TestRefreshRequiresRefreshToken(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
-// TestTokenResponsesAreNotStored checks that successful and failed token responses carry Cache-Control no-store.
+// TestTokenResponsesAreNotStored checks that successful and failed token responses and active introspection responses carry Cache-Control no-store.
 //
 //conformance:covers OAUTH21D16-3.2.3-12
 func TestTokenResponsesAreNotStored(t *testing.T) {
-	a := newAuthorizationServer(t)
-	params := tokenParams(a.code(authorizeParams()))
-	for range 2 {
-		if status, header, _ := a.token(params, nil); header.Get("Cache-Control") != "no-store" {
-			t.Fatalf("got status %d and Cache-Control %q, want no-store", status, header.Get("Cache-Control"))
+	a := newIntrospectionServer(t)
+	wantNoStore := func(status int, header http.Header, body map[string]any) {
+		t.Helper()
+		if header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("got status %d, body %v and Cache-Control %q, want no-store", status, body, header.Get("Cache-Control"))
 		}
 	}
+	params := tokenParams(a.code(authorizeParams()))
+	status, header, body := a.token(params, nil)
+	wantNoStore(status, header, body)
+	access, _ := body["access_token"].(string)
+	status, header, body = a.sendJSON(http.MethodPost, "/introspect", url.Values{"token": {access}}.Encode(), basic(resourceServerID, secret))
+	if body["active"] != true {
+		t.Fatalf("got status %d and body %v, want an active token", status, body)
+	}
+	wantNoStore(status, header, body)
+	wantNoStore(a.token(params, nil))
 }
 
 // TestClientSecretRequiresClientID checks that a client_secret without client_id does not authenticate.
@@ -322,17 +351,23 @@ func TestClientSecretRequiresClientID(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 }
 
-// TestCredentialsInURIAreIgnored checks that client_id and client_secret in the request URI do not authenticate.
+// TestCredentialsInURIAreIgnored checks that client_id and client_secret in the request URI do not authenticate, also with client_id in the body.
 //
 //conformance:covers OAUTH21D16-2.4.1-04
 func TestCredentialsInURIAreIgnored(t *testing.T) {
 	a := newServiceServer(t)
-	query := url.Values{"client_id": {serviceID}, "client_secret": {secret}}
-	status, _, body := a.sendJSON(http.MethodPost, "/token?"+query.Encode(), clientCredentialsParams("").Encode(), nil)
-	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+	withClientID := clientCredentialsParams("")
+	withClientID.Set("client_id", serviceID)
+	for query, params := range map[string]url.Values{
+		url.Values{"client_id": {serviceID}, "client_secret": {secret}}.Encode(): clientCredentialsParams(""),
+		url.Values{"client_secret": {secret}}.Encode():                           withClientID,
+	} {
+		status, _, body := a.sendJSON(http.MethodPost, "/token?"+query, params.Encode(), nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+	}
 }
 
-// TestEndpointsRequirePost checks that the token, revocation and introspection endpoints answer GET requests with invalid_request.
+// TestEndpointsRequirePost checks that the token, revocation and introspection endpoints answer GET, PUT, PATCH and DELETE requests with invalid_request.
 //
 //conformance:covers INV-0006
 func TestEndpointsRequirePost(t *testing.T) {
@@ -349,6 +384,15 @@ func TestEndpointsRequirePost(t *testing.T) {
 	} {
 		status, _, body := a.sendJSON(http.MethodGet, r.path+"?"+r.params.Encode(), "", r.header)
 		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+		header := r.header.Clone()
+		if header == nil {
+			header = http.Header{}
+		}
+		header.Set("Content-Type", "application/x-www-form-urlencoded")
+		for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete} {
+			status, _, body := a.sendJSON(method, r.path, r.params.Encode(), header)
+			a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+		}
 	}
 }
 
@@ -373,49 +417,72 @@ func aliceGrant(id string, audience ...string) store.Grant {
 	return store.Grant{ID: id, ClientID: clientID, Subject: "alice", Scopes: readScope, Audience: audience}
 }
 
-// flipped returns v with its first character changed.
-func flipped(v string) string {
-	if v[0] == 'A' {
-		return "B" + v[1:]
+// sharingHashPrefix returns a value of the form of the codes and tokens the server issues whose hash starts with the first two bytes of the hash of v.
+func sharingHashPrefix(t *testing.T, v string) string {
+	want := sha256.Sum256([]byte(v))
+	for {
+		if value, hash := randomWithHash(t); bytes.Equal(hash[:2], want[:2]) {
+			return value
+		}
 	}
-	return "A" + v[1:]
 }
 
-// TestGeneratedAccessTokenIsInactive checks that a value of the form of an access token that the server did not issue introspects as inactive.
+// base64URL is the base64url alphabet, in the order of its values.
+const base64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+// modified returns copies of the base64url value v with the lowest bit of its first, middle and last character inverted.
+func modified(v string) []string {
+	var values []string
+	for _, i := range []int{0, len(v) / 2, len(v) - 1} {
+		c := base64URL[strings.IndexByte(base64URL, v[i])^1]
+		values = append(values, v[:i]+string(c)+v[i+1:])
+	}
+	return values
+}
+
+// TestGeneratedAccessTokenIsInactive checks that values of the form of an access token that the server did not issue introspect as inactive, also one whose hash starts like the hash of an issued one.
 //
 //conformance:covers OAUTH21D16-1.4-03
 func TestGeneratedAccessTokenIsInactive(t *testing.T) {
 	a := newIntrospectionServer(t)
-	a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 	a.wantInactive(random(t))
+	a.wantInactive(sharingHashPrefix(t, access))
 }
 
-// TestModifiedAccessTokenIsInactive checks that an access token changed in one character introspects as inactive.
+// TestModifiedAccessTokenIsInactive checks that an access token changed in one bit of its first, middle or last character introspects as inactive.
 //
 //conformance:covers OAUTH21D16-1.4-06
 func TestModifiedAccessTokenIsInactive(t *testing.T) {
 	a := newIntrospectionServer(t)
 	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
-	a.wantInactive(flipped(access))
+	for _, v := range modified(access) {
+		a.wantInactive(v)
+	}
 }
 
-// TestGeneratedRefreshTokenIsRejected checks that a value of the form of a refresh token that the server did not issue gets invalid_grant.
+// TestGeneratedRefreshTokenIsRejected checks that values of the form of a refresh token that the server did not issue get invalid_grant, also one whose hash starts like the hash of an issued one.
 //
 //conformance:covers OAUTH21D16-4.3-05
 func TestGeneratedRefreshTokenIsRejected(t *testing.T) {
 	a := newAuthorizationServer(t)
-	a.publicRefreshToken()
-	status, _, body := a.token(refreshParams(random(t)), nil)
-	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	refresh := a.publicRefreshToken()
+	for _, v := range []string{random(t), sharingHashPrefix(t, refresh)} {
+		status, _, body := a.token(refreshParams(v), nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	}
 }
 
-// TestModifiedRefreshTokenIsRejected checks that a refresh token changed in one character gets invalid_grant.
+// TestModifiedRefreshTokenIsRejected checks that a refresh token changed in one bit of its first, middle or last character gets invalid_grant.
 //
 //conformance:covers OAUTH21D16-4.3-08
 func TestModifiedRefreshTokenIsRejected(t *testing.T) {
 	a := newAuthorizationServer(t)
-	status, _, body := a.token(refreshParams(flipped(a.publicRefreshToken())), nil)
-	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	refresh := a.publicRefreshToken()
+	for _, v := range modified(refresh) {
+		status, _, body := a.token(refreshParams(v), nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	}
 }
 
 // spliced returns the first half of a joined with the second half of b.
@@ -442,18 +509,31 @@ func TestSplicedRefreshTokenIsRejected(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// TestAccessTokenRevealsNothing checks that an access token carries nothing of its Grant: with the same randomness source, Grants of different subjects and scopes get the same access token.
+// TestAccessTokenRevealsNothing checks that an access token carries nothing of its Grant: with the same randomness source, Grants of different Clients, subjects and scopes get the same access token.
 //
 //conformance:covers OAUTH21D16-7.1.1.2-01
 func TestAccessTokenRevealsNothing(t *testing.T) {
+	confidential := confidentialClient(t)
+	confidential.AllowedScopes = []string{"read", "write"}
 	var tokens []string
-	for subject, scope := range map[string]string{"alice": "read", "bob": "write"} {
-		a := newSeededServer(t, &seededRandom{seed: 1})
+	for _, g := range []struct {
+		client, subject, scope string
+		header                 http.Header
+	}{
+		{clientID, "alice", "read", nil},
+		{confidentialID, "bob", "write", basic(confidentialID, secret)},
+	} {
+		a := newSeededServer(t, &seededRandom{seed: 1}, confidential)
 		params := authorizeParams()
-		params.Set("scope", scope)
+		params.Set("client_id", g.client)
+		params.Set("scope", g.scope)
 		req := a.pending(a.authorize(params))
-		u := a.complete(req.ID, oauth21.Completion{Subject: subject, Scopes: []string{scope}})
-		access, _ := a.tokens(tokenParams(u.Query().Get("code")), nil)
+		u := a.complete(req.ID, oauth21.Completion{Subject: g.subject, Scopes: []string{g.scope}})
+		token := tokenParams(u.Query().Get("code"))
+		if g.header != nil {
+			token.Del("client_id")
+		}
+		access, _ := a.tokens(token, g.header)
 		tokens = append(tokens, access)
 	}
 	if tokens[0] != tokens[1] {
@@ -461,10 +541,13 @@ func TestAccessTokenRevealsNothing(t *testing.T) {
 	}
 }
 
+// minUnguessableLength is the fewest URL-safe characters that hold 128 bits.
+const minUnguessableLength = 22
+
 // issuing runs requests on a with randomness source s and returns the value one of them issues, and the range of bytes read from s while that request ran.
 type issuing func(a *authorizationServer, s *seededRandom) (value string, from, to int)
 
-// wantUnguessable checks that a value issue issues carries at least 128 bits of randomness: the same randomness reproduces it, and at least 128 of the bits the server reads while issuing it change it when inverted.
+// wantUnguessable checks that a value issue issues carries at least 128 bits of randomness: it is long enough to hold them, the same randomness reproduces it, and at least 128 of the bits the server reads while issuing it change it when inverted, no two to the same value.
 func wantUnguessable(t *testing.T, issue issuing) {
 	t.Helper()
 	run := func(t *testing.T, flip int) (string, int, int) {
@@ -472,19 +555,27 @@ func wantUnguessable(t *testing.T, issue issuing) {
 		return issue(newSeededServer(t, s, serviceClients(t)...), s)
 	}
 	value, from, to := run(t, 0)
+	if len(value) < minUnguessableLength {
+		t.Fatalf("got %q of %d characters, want at least %d to hold 128 bits", value, len(value), minUnguessableLength)
+	}
 	if again, _, _ := run(t, 0); again != value {
 		t.Fatalf("got %q and %q from the same randomness, want the same value", value, again)
 	}
-	changed := 0
-	for bit := from*8 + 1; bit <= to*8 && changed < 128; bit++ {
+	changedBy := map[string]int{}
+	for bit := from*8 + 1; bit <= to*8 && len(changedBy) < 128; bit++ {
 		t.Run(fmt.Sprintf("bit %d", bit), func(t *testing.T) {
-			if v, _, _ := run(t, bit); v != value {
-				changed++
+			v, _, _ := run(t, bit)
+			if v == value {
+				return
 			}
+			if other, ok := changedBy[v]; ok {
+				t.Fatalf("got %q when inverting bit %d and bit %d, want different values", v, other, bit)
+			}
+			changedBy[v] = bit
 		})
 	}
-	if changed < 128 {
-		t.Fatalf("got %d bits of randomness changing %q, want at least 128", changed, value)
+	if n := len(changedBy); n < 128 {
+		t.Fatalf("got %d bits of randomness changing %q, want at least 128", n, value)
 	}
 }
 
@@ -587,7 +678,13 @@ func TestIssuedValuesCarry128Bits(t *testing.T) {
 	}
 }
 
-// responses runs a full flow on a newIntrospectionServer: authorization, completion, redemption, refresh, introspection, a Bearer request and revocation, and returns the headers of every response.
+// newFlowServer starts an Authorization Server with the Clients of newIntrospectionServer and the service Client, which may use client credentials.
+func newFlowServer(t *testing.T) *authorizationServer {
+	t.Helper()
+	return newAuthorizationServer(t, append(newIntrospectionClients(t), serviceClient(t))...)
+}
+
+// responses runs every kind of request on a newFlowServer, failed ones included, and returns the headers of every response.
 func (a *authorizationServer) responses() []http.Header {
 	a.t.Helper()
 	a.resource(a.local())
@@ -595,7 +692,10 @@ func (a *authorizationServer) responses() []http.Header {
 	record := func(_ int, h http.Header, _ []byte) { headers = append(headers, h) }
 	_, login := a.sendAuthorization(authorizeParams())
 	u := a.login(a.redirect(login), "alice")
-	record(a.send(http.MethodPost, "/token", tokenParams(u.Query().Get("code")).Encode(), nil))
+	redemption := tokenParams(u.Query().Get("code")).Encode()
+	record(a.send(http.MethodPost, "/token", redemption, nil))
+	record(a.send(http.MethodPost, "/token", redemption, nil))
+	record(a.send(http.MethodPost, "/token", clientCredentialsParams("").Encode(), basic(serviceID, secret)))
 	access, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 	record(a.send(http.MethodPost, "/token", refreshParams(refresh).Encode(), nil))
 	record(a.send(http.MethodPost, "/introspect", url.Values{"token": {access}}.Encode(), basic(resourceServerID, secret)))
@@ -619,24 +719,24 @@ func (a *authorizationServer) wantNoCookies() {
 //
 //conformance:covers OAUTH21D16-7.1.1.2-02
 func TestBearerTokensAreNotInCookies(t *testing.T) {
-	newIntrospectionServer(t).wantNoCookies()
+	newFlowServer(t).wantNoCookies()
 }
 
 // TestBearerTokensAreNotStoredInCookies checks that the library stores no Bearer token in a cookie.
 //
 //conformance:covers OAUTH21D16-7.1.3.4-01
 func TestBearerTokensAreNotStoredInCookies(t *testing.T) {
-	newIntrospectionServer(t).wantNoCookies()
+	newFlowServer(t).wantNoCookies()
 }
 
 // TestNoCookieNeedsCSRFProtection checks that no response sets a cookie, so no cookie carries a token that needs protection against cross-site request forgery.
 //
 //conformance:covers OAUTH21D16-7.1.3.4-02
 func TestNoCookieNeedsCSRFProtection(t *testing.T) {
-	newIntrospectionServer(t).wantNoCookies()
+	newFlowServer(t).wantNoCookies()
 }
 
-// uriReference reports whether s is a URI-reference (RFC 3986 4.1): only unreserved and reserved characters and percent-encodings.
+// uriReference reports whether s is a URI-reference (RFC 3986 4.1): only unreserved and reserved characters and percent-encodings, at most one "#", and brackets only around an IP-literal host.
 func uriReference(s string) bool {
 	for i := 0; i < len(s); i++ {
 		switch c := s[i]; {
@@ -650,8 +750,14 @@ func uriReference(s string) bool {
 			return false
 		}
 	}
-	_, err := url.Parse(s)
-	return s != "" && err == nil
+	u, err := url.Parse(s)
+	if s == "" || err != nil || strings.Count(s, "#") > 1 {
+		return false
+	}
+	if strings.Contains(u.Host, "[") && (!strings.HasPrefix(u.Host, "[") || u.Hostname() == "") {
+		return false
+	}
+	return !strings.ContainsAny(strings.Replace(s, u.Host, "", 1), "[]")
 }
 
 func isHex(c byte) bool {
@@ -667,7 +773,7 @@ func uriChars(s string) bool {
 //
 //conformance:covers OAUTH21D16-3.2.4-08
 func TestTokenErrorURIIsURIReference(t *testing.T) {
-	a := newConfidentialServer(t)
+	a := newServiceServer(t)
 	for _, body := range a.tokenErrors() {
 		if v, ok := body["error_uri"]; ok {
 			if s, _ := v.(string); !uriReference(s) {
@@ -681,7 +787,7 @@ func TestTokenErrorURIIsURIReference(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-3.2.4-09
 func TestTokenErrorURICharacters(t *testing.T) {
-	a := newConfidentialServer(t)
+	a := newServiceServer(t)
 	for _, body := range a.tokenErrors() {
 		if v, ok := body["error_uri"]; ok {
 			if s, _ := v.(string); !uriChars(s) {

@@ -79,13 +79,16 @@ func TestFailedClientAuthentication(t *testing.T) {
 		form      url.Values
 		challenge string
 	}{
-		"wrong Basic secret":     {basic(confidentialID, "wrong"), nil, `Basic realm="oauth21"`},
-		"unencoded Basic secret": {basic(confidentialID, url.QueryEscape(secret)), nil, `Basic realm="oauth21"`},
-		"unknown Basic client":   {basic("unknown", secret), nil, `Basic realm="oauth21"`},
-		"malformed Basic":        {http.Header{"Authorization": {"Basic !"}}, nil, `Basic realm="oauth21"`},
-		"wrong client_secret":    {nil, url.Values{"client_id": {confidentialID}, "client_secret": {"wrong"}}, ""},
-		"no authentication":      {nil, url.Values{"client_id": {confidentialID}}, ""},
-		"no client":              {nil, nil, ""},
+		"wrong Basic secret":       {basic(confidentialID, "wrong"), nil, `Basic realm="oauth21"`},
+		"upper-cased Basic secret": {basic(confidentialID, strings.ToUpper(secret)), nil, `Basic realm="oauth21"`},
+		"extended Basic secret":    {basic(confidentialID, secret+"x"), nil, `Basic realm="oauth21"`},
+		"truncated Basic secret":   {basic(confidentialID, secret[:len(secret)-1]), nil, `Basic realm="oauth21"`},
+		"unencoded Basic secret":   {basic(confidentialID, url.QueryEscape(secret)), nil, `Basic realm="oauth21"`},
+		"unknown Basic client":     {basic("unknown", secret), nil, `Basic realm="oauth21"`},
+		"malformed Basic":          {http.Header{"Authorization": {"Basic !"}}, nil, `Basic realm="oauth21"`},
+		"wrong client_secret":      {nil, url.Values{"client_id": {confidentialID}, "client_secret": {"wrong"}}, ""},
+		"no authentication":        {nil, url.Values{"client_id": {confidentialID}}, ""},
+		"no client":                {nil, nil, ""},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -118,24 +121,28 @@ func TestFailedClientAuthenticationKeepsCode(t *testing.T) {
 	}
 }
 
-// TestMoreThanOneAuthenticationMethod checks that token, revocation and introspection requests using both client_secret_basic and client_secret_post get invalid_request.
+// TestMoreThanOneAuthenticationMethod checks that token, revocation and introspection requests using both client_secret_basic and client_secret_post get invalid_request, with and without client_id.
 //
 //conformance:covers INV-0005
 func TestMoreThanOneAuthenticationMethod(t *testing.T) {
 	a := newIntrospectionServer(t)
 	_, refresh := a.tokens(a.confidentialCode(), basic(confidentialID, secret))
-	for _, r := range []struct {
-		path, id string
-		params   url.Values
-	}{
-		{"/token", confidentialID, a.confidentialCode()},
-		{"/revoke", confidentialID, url.Values{"token": {refresh}}},
-		{"/introspect", resourceServerID, url.Values{"token": {refresh}}},
-	} {
-		r.params.Set("client_id", r.id)
-		r.params.Set("client_secret", secret)
-		status, _, body := a.sendJSON(http.MethodPost, r.path, r.params.Encode(), basic(r.id, secret))
-		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+	for _, withID := range []bool{true, false} {
+		for _, r := range []struct {
+			path, id string
+			params   url.Values
+		}{
+			{"/token", confidentialID, a.confidentialCode()},
+			{"/revoke", confidentialID, url.Values{"token": {refresh}}},
+			{"/introspect", resourceServerID, url.Values{"token": {refresh}}},
+		} {
+			if withID {
+				r.params.Set("client_id", r.id)
+			}
+			r.params.Set("client_secret", secret)
+			status, _, body := a.sendJSON(http.MethodPost, r.path, r.params.Encode(), basic(r.id, secret))
+			a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+		}
 	}
 }
 
@@ -218,12 +225,16 @@ func TestClientSecretIsRequired(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 }
 
-// TestEmptyBasicSecretDoesNotAuthenticate checks that a confidential Client using Basic with an empty secret gets invalid_client.
+// TestConfidentialClientMustAuthenticate checks that a confidential Client redeeming its code without credentials or with an empty Basic secret gets invalid_client.
 //
 //conformance:covers OAUTH21D16-3.2.2-04
-func TestEmptyBasicSecretDoesNotAuthenticate(t *testing.T) {
+func TestConfidentialClientMustAuthenticate(t *testing.T) {
 	a := newConfidentialServer(t)
-	status, _, body := a.token(a.confidentialCode(), basic(confidentialID, ""))
+	params := a.confidentialCode()
+	params.Set("client_id", confidentialID)
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+	status, _, body = a.token(a.confidentialCode(), basic(confidentialID, ""))
 	a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
 }
 
@@ -238,18 +249,24 @@ func TestPublicRedemptionRequiresClientID(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
 }
 
-// TestRequestsFollowClientType checks that a public Client redeems its code without credentials while a confidential Client cannot.
+// TestRequestsFollowClientType checks that a public Client redeems its code without credentials while a confidential Client cannot, even one without a secret.
 //
 //conformance:covers OAUTH21D16-8.1.1-02
 func TestRequestsFollowClientType(t *testing.T) {
-	a := newConfidentialServer(t)
+	noSecret := confidentialClient(t)
+	noSecret.ID, noSecret.SecretHash = "no secret", ""
+	a := newAuthorizationServer(t, confidentialClient(t), noSecret)
 	if status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil); status != http.StatusOK {
 		t.Fatalf("got status %d and body %v for the public Client, want 200", status, body)
 	}
-	params := a.confidentialCode()
-	params.Set("client_id", confidentialID)
-	status, _, body := a.token(params, nil)
-	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+	for _, id := range []string{confidentialID, "no secret"} {
+		params := authorizeParams()
+		params.Set("client_id", id)
+		token := tokenParams(a.code(params))
+		token.Set("client_id", id)
+		status, _, body := a.token(token, nil)
+		a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+	}
 }
 
 // headerFailure is the status and the challenge scheme of a token response to failing Authorization header credentials.

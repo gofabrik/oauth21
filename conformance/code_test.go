@@ -51,11 +51,11 @@ func TestCodeExpires(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// TestTokenResponseCarriesGrantedScope checks that the token response names the granted scopes.
+// TestTokenResponseCarriesGrantedScope checks that the token response names the granted scopes and that the access token carries only them.
 //
 //conformance:covers INV-0003
 func TestTokenResponseCarriesGrantedScope(t *testing.T) {
-	a := newAuthorizationServer(t)
+	a := newIntrospectionServer(t)
 	params := authorizeParams()
 	params.Set("scope", "read write")
 	req := a.pending(a.authorize(params))
@@ -64,11 +64,26 @@ func TestTokenResponseCarriesGrantedScope(t *testing.T) {
 	if status != http.StatusOK || body["scope"] != "read" {
 		t.Fatalf("got status %d and body %v, want scope read", status, body)
 	}
+	token, _ := body["access_token"].(string)
+	if got := a.introspect(token)["scope"]; got != "read" {
+		t.Fatalf("got introspected scope %v, want read", got)
+	}
 }
 
-// TestRejectedCompletionKeepsRequest checks that a Completion without a subject, without granted scopes or granting unrequested scopes is rejected and leaves the request pending.
+// TestCompletionCannotGrantUnrequestedScope checks that a Completion granting a scope the Client did not request is rejected.
 //
 //conformance:covers INV-0003
+func TestCompletionCannotGrantUnrequestedScope(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("scope", "read")
+	req := a.pending(a.authorize(params))
+	if _, err := a.srv.Complete(t.Context(), req.ID, oauth21.Completion{Subject: "alice", Scopes: []string{"read", "write"}}); !errors.Is(err, oauth21.ErrInvalidCompletion) {
+		t.Fatalf("got error %v, want ErrInvalidCompletion", err)
+	}
+}
+
+// TestRejectedCompletionKeepsRequest checks that a rejected Completion leaves the request pending.
 func TestRejectedCompletionKeepsRequest(t *testing.T) {
 	for name, c := range map[string]oauth21.Completion{
 		"no subject":        {Scopes: []string{"read"}},
@@ -100,9 +115,11 @@ func TestCodeIsSingleUse(t *testing.T) {
 // concurrentRequests is the number of token requests racing for one code or refresh token.
 const concurrentRequests = 8
 
-// race sends concurrentRequests token requests params at once and returns the bodies of those that succeed.
+// race sends concurrentRequests token requests params at once, holding each load of the code or refresh token until all requests have made it, and returns the bodies of those that succeed.
 func (a *authorizationServer) race(params url.Values) []map[string]any {
 	a.t.Helper()
+	a.recorder.barrier.hold(concurrentRequests)
+	defer a.recorder.barrier.hold(0)
 	start := make(chan struct{})
 	statuses := make([]int, concurrentRequests)
 	bodies := make([]map[string]any, concurrentRequests)
@@ -153,7 +170,7 @@ func TestStoresOnlyReceiveHashes(t *testing.T) {
 	a.wantStoredOnlyAsHashes(code, token, refresh, refreshed, next)
 }
 
-// wantStoredOnlyAsHashes checks that every key the code and token Stores received is the SHA-256 hash of one of values, and that they received the hash of each.
+// wantStoredOnlyAsHashes checks that every key the code and token Stores received is the SHA-256 hash of one of values, that they received the hash of each, and that no entity they received carries one of values.
 func (a *authorizationServer) wantStoredOnlyAsHashes(values ...string) {
 	a.t.Helper()
 	hashes := map[string]bool{}
@@ -170,6 +187,13 @@ func (a *authorizationServer) wantStoredOnlyAsHashes(values ...string) {
 	for h, seen := range hashes {
 		if !seen {
 			a.t.Fatalf("no Store received the hash %s", h)
+		}
+	}
+	for _, e := range a.recorder.recorded() {
+		for _, v := range values {
+			if strings.Contains(e, v) {
+				a.t.Fatalf("a Store received %s, which carries the value %q", e, v)
+			}
 		}
 	}
 }

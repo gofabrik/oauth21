@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/gofabrik/oauth21"
-	"github.com/gofabrik/oauth21/store"
 )
 
 // errorChars reports whether s has only the characters %x20-21 / %x23-5B / %x5D-7E that error, error_description and scope values may have.
@@ -19,9 +18,14 @@ func errorChars(s string) bool {
 // unsupportedResponseType returns the authorization error response for a request with response_type token.
 func (a *authorizationServer) unsupportedResponseType() url.Values {
 	a.t.Helper()
+	return a.authorize(unsupportedParams()).Query()
+}
+
+// unsupportedParams returns an authorization request of the public Client with the unsupported response type token.
+func unsupportedParams() url.Values {
 	params := authorizeParams()
 	params.Set("response_type", "token")
-	return a.authorize(params).Query()
+	return params
 }
 
 // TestAuthorizationEndpointSupportsGet checks that an authorization request sent with GET reaches the login URL.
@@ -35,15 +39,21 @@ func TestAuthorizationEndpointSupportsGet(t *testing.T) {
 	}
 }
 
-// TestEmptyAuthorizationParameterIsOmitted checks that a scope parameter without a value is treated as omitted.
+// TestEmptyAuthorizationParameterIsOmitted checks that a scope or redirect_uri parameter without a value is treated as omitted, also next to a scope with a value.
 //
 //conformance:covers OAUTH21D16-3.1-09
 func TestEmptyAuthorizationParameterIsOmitted(t *testing.T) {
 	a := newAuthorizationServer(t)
-	params := authorizeParams()
-	params.Set("scope", "")
-	if req := a.pending(a.authorize(params)); !slices.Equal(req.Scopes, readScope) {
+	empty := authorizeParams()
+	empty.Set("scope", "")
+	empty.Set("redirect_uri", "")
+	if req := a.pending(a.authorize(empty)); !slices.Equal(req.Scopes, readScope) {
 		t.Fatalf("got requested scopes %q, want the default scopes %q", req.Scopes, readScope)
+	}
+	beside := authorizeParams()
+	beside["scope"] = []string{"read", ""}
+	if req := a.pending(a.authorize(beside)); !slices.Equal(req.Scopes, readScope) {
+		t.Fatalf("got requested scopes %q, want %q", req.Scopes, readScope)
 	}
 }
 
@@ -77,13 +87,24 @@ func TestAuthorizationResponseCarriesState(t *testing.T) {
 	}
 }
 
-// TestAuthorizationResponseCarriesIssuer checks that the authorization response names the issuer in iss.
+// tenantAuthorization sends an authorization request to an Authorization Server whose issuer has the path /tenant and returns the server, its issuer and the redirect location.
+func tenantAuthorization(t *testing.T, params url.Values) (*authorizationServer, string, *url.URL) {
+	t.Helper()
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += "/tenant" })
+	status, header, _ := a.send(http.MethodGet, "/tenant/authorize?"+params.Encode(), "", nil)
+	if status != http.StatusFound {
+		t.Fatalf("got status %d, want a redirect", status)
+	}
+	return a, a.url + "/tenant", a.redirect(header.Get("Location"))
+}
+
+// TestAuthorizationResponseCarriesIssuer checks that the authorization response names the issuer, including its path, in iss.
 //
 //conformance:covers OAUTH21D16-4.1.2-05
 func TestAuthorizationResponseCarriesIssuer(t *testing.T) {
-	a := newAuthorizationServer(t)
-	if u := a.login(a.authorize(authorizeParams()), "alice"); u.Query().Get("iss") != a.url {
-		t.Fatalf("got redirect %s, want iss %q", u, a.url)
+	a, issuer, loc := tenantAuthorization(t, authorizeParams())
+	if u := a.login(loc, "alice"); u.Query().Get("iss") != issuer {
+		t.Fatalf("got redirect %s, want iss %q", u, issuer)
 	}
 }
 
@@ -98,13 +119,15 @@ func TestAuthorizationResponseCarriesNoToken(t *testing.T) {
 	}
 }
 
-// TestAuthorizationErrorCarriesError checks that a redirected error response carries error.
+// TestAuthorizationErrorCarriesError checks that every redirected error response carries its error.
 //
 //conformance:covers OAUTH21D16-4.1.2.1-09
 func TestAuthorizationErrorCarriesError(t *testing.T) {
 	a := newAuthorizationServer(t)
-	if q := a.unsupportedResponseType(); q.Get("error") != "unsupported_response_type" {
-		t.Fatalf("got %v, want error unsupported_response_type", q)
+	for _, q := range a.authorizationErrors() {
+		if q.Get("error") == "" {
+			t.Fatalf("got %v, want an error", q)
+		}
 	}
 }
 
@@ -133,57 +156,68 @@ func TestAuthorizationErrorCodeCharacters(t *testing.T) {
 	}
 }
 
-// TestAuthorizationErrorCarriesState checks that a redirected error response returns the state of the request.
+// TestAuthorizationErrorCarriesState checks that every redirected error response returns the state of the request.
 //
 //conformance:covers OAUTH21D16-4.1.2.1-16
 func TestAuthorizationErrorCarriesState(t *testing.T) {
 	a := newAuthorizationServer(t)
-	if q := a.unsupportedResponseType(); q.Get("state") != state {
-		t.Fatalf("got %v, want state %q", q, state)
+	for _, q := range a.authorizationErrors() {
+		if q.Get("state") != state {
+			t.Fatalf("got %v, want state %q", q, state)
+		}
 	}
 }
 
-// TestAuthorizationErrorCarriesIssuer checks that a redirected error response names the issuer in iss.
+// TestAuthorizationErrorCarriesIssuer checks that a redirected error response names the issuer, including its path, in iss.
 //
 //conformance:covers OAUTH21D16-4.1.2.1-17
 func TestAuthorizationErrorCarriesIssuer(t *testing.T) {
-	a := newAuthorizationServer(t)
-	if q := a.unsupportedResponseType(); q.Get("iss") != a.url {
-		t.Fatalf("got %v, want iss %q", q, a.url)
+	params := authorizeParams()
+	params.Set("response_type", "token")
+	_, issuer, loc := tenantAuthorization(t, params)
+	if q := loc.Query(); q.Get("error") == "" || q.Get("iss") != issuer {
+		t.Fatalf("got %v, want an error with iss %q", q, issuer)
 	}
 }
 
-// TestUnknownAuthorizationParameterIsIgnored checks that a request with an unrecognized parameter reaches the login URL.
+// TestUnknownAuthorizationParameterIsIgnored checks that a request with an unrecognized parameter, sent once or repeated, reaches the login URL.
 //
 //conformance:covers OAUTH21D16-3.1-07
 func TestUnknownAuthorizationParameterIsIgnored(t *testing.T) {
 	a := newAuthorizationServer(t)
-	params := authorizeParams()
-	params.Set("unknown", "value")
-	a.pending(a.authorize(params))
+	for _, values := range [][]string{{"value"}, {"value", "other"}} {
+		params := authorizeParams()
+		params["unknown"] = values
+		a.pending(a.authorize(params))
+	}
 }
 
-// TestRepeatedAuthorizationParameterIsRejected checks that a request with a repeated parameter is neither redirected nor passed to the login URL.
+// TestRepeatedAuthorizationParameterIsRejected checks that a request with a repeated parameter, with different or equal values, is neither redirected nor passed to the login URL.
 //
 //conformance:covers OAUTH21D16-3.1-08
 func TestRepeatedAuthorizationParameterIsRejected(t *testing.T) {
 	a := newAuthorizationServer(t)
-	params := authorizeParams()
-	params.Add("scope", "read")
-	params.Add("scope", "write")
-	if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
-		t.Fatalf("got status %d and Location %q, want 400 without redirect", status, loc)
+	for _, values := range [][]string{{"read", "write"}, {"read", "read"}} {
+		params := authorizeParams()
+		params["scope"] = values
+		if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
+			t.Fatalf("scope %q: got status %d and Location %q, want 400 without redirect", values, status, loc)
+		}
 	}
 }
 
-// TestAuthorizationEndpointHasNoCORS checks that the authorization endpoint answers neither a cross-origin request nor a preflight with CORS headers.
+// TestAuthorizationEndpointHasNoCORS checks that the authorization endpoint answers neither a cross-origin GET or POST request nor a preflight with CORS headers.
 //
 //conformance:covers OAUTH21D16-3.1-11
 func TestAuthorizationEndpointHasNoCORS(t *testing.T) {
 	a := newAuthorizationServer(t)
 	origin := http.Header{"Origin": {"https://other.example"}, "Access-Control-Request-Method": {"GET"}}
-	for _, method := range []string{http.MethodGet, http.MethodOptions} {
-		status, header, _ := a.send(method, "/authorize?"+authorizeParams().Encode(), "", origin)
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodOptions} {
+		path, form := "/authorize?"+authorizeParams().Encode(), ""
+		if method == http.MethodPost {
+			path, form = "/authorize", authorizeParams().Encode()
+		}
+		status, header, _ := a.send(method, path, form, origin)
 		if header.Get("Access-Control-Allow-Origin") != "" || method == http.MethodOptions && status < 300 {
 			t.Fatalf("%s: got status %d and Access-Control-Allow-Origin %q, want no CORS", method, status, header.Get("Access-Control-Allow-Origin"))
 		}
@@ -206,7 +240,7 @@ func TestAuthorizationRequiresClientID(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-4.1.1-08
 func TestRedirectURIRequiredWithSeveralRegistered(t *testing.T) {
-	a := newAuthorizationServer(t, store.Client{ID: "two", Type: store.Public, RedirectURIs: []string{redirectURI, "https://client.example/other"}, AllowedScopes: readScope, DefaultScopes: readScope})
+	a := newAuthorizationServer(t, publicClient("two", redirectURI, "https://client.example/other"))
 	params := authorizeParams()
 	params.Set("client_id", "two")
 	params.Del("redirect_uri")
@@ -240,7 +274,7 @@ func TestLongStateIsKept(t *testing.T) {
 	}
 }
 
-// TestHostileParametersAreContained checks that a state with characters that delimit URL parts is returned unchanged without adding parameters, and that redirect_uri values crafted to reach another host are not redirected to.
+// TestHostileParametersAreContained checks that a state with characters that delimit URL parts is returned unchanged without adding parameters, in an authorization response and in an error response, and that redirect_uri values crafted to reach another host are not redirected to.
 //
 //conformance:covers OAUTH21D16-7.12-01
 func TestHostileParametersAreContained(t *testing.T) {
@@ -248,9 +282,12 @@ func TestHostileParametersAreContained(t *testing.T) {
 	hostile := `x&code=evil&iss=https://evil.example#frag <script>"'`
 	params := authorizeParams()
 	params.Set("state", hostile)
-	u := a.login(a.authorize(params), "alice")
-	if q := u.Query(); q.Get("state") != hostile || q.Get("code") == "evil" || q.Get("iss") != a.url || u.Fragment != "" {
-		t.Fatalf("got redirect %s, want state %q returned unchanged", u, hostile)
+	failing := unsupportedParams()
+	failing.Set("state", hostile)
+	for _, u := range []*url.URL{a.login(a.authorize(params), "alice"), a.authorize(failing)} {
+		if q := u.Query(); q.Get("state") != hostile || q.Get("code") == "evil" || q.Get("iss") != a.url || u.Fragment != "" {
+			t.Fatalf("got redirect %s, want state %q returned unchanged", u, hostile)
+		}
 	}
 	for _, uri := range []string{
 		redirectURI + "#@evil.example",
@@ -277,7 +314,7 @@ func TestResponseParametersAreUTF8(t *testing.T) {
 	}
 }
 
-// TestAuthorizationResponseParametersAppearOnce checks that the redirects of the authorization endpoint and of a completed request carry each parameter once.
+// TestAuthorizationResponseParametersAppearOnce checks that the redirects of the authorization endpoint and of a completed or denied request carry each parameter once.
 //
 //conformance:covers OAUTH21D16-3.1-12
 func TestAuthorizationResponseParametersAppearOnce(t *testing.T) {
@@ -290,7 +327,11 @@ func TestAuthorizationResponseParametersAppearOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, loc := range []string{login, failed, completed} {
+	denied, err := a.srv.Deny(t.Context(), a.pending(a.authorize(authorizeParams())).ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loc := range []string{login, failed, completed, denied} {
 		a.redirect(loc)
 	}
 }
@@ -303,14 +344,16 @@ func (a *authorizationServer) postedAuthorization(params url.Values) (int, strin
 	return status, header.Get("Location")
 }
 
-// TestPostedCredentialsAreNotForwarded checks that redirecting a POST authorization request that carries a password neither repeats the request body nor puts the password in the redirect.
+// TestPostedCredentialsAreNotForwarded checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, neither repeats the request body nor puts the password in the redirect.
 //
 //conformance:covers OAUTH21D16-3.1-10
 func TestPostedCredentialsAreNotForwarded(t *testing.T) {
 	a := newAuthorizationServer(t)
-	status, loc := a.postedAuthorization(authorizeParams())
-	if status != http.StatusFound && status != http.StatusSeeOther || !strings.HasPrefix(loc, a.url+"/login?") || strings.Contains(loc, "hunter2") {
-		t.Fatalf("got status %d and Location %q, want a 302 or 303 to the login URL without the password", status, loc)
+	for target, params := range map[string]url.Values{a.url + "/login?": authorizeParams(), redirectURI + "?": unsupportedParams()} {
+		status, loc := a.postedAuthorization(params)
+		if status != http.StatusFound && status != http.StatusSeeOther || !strings.HasPrefix(loc, target) || strings.Contains(loc, "hunter2") {
+			t.Fatalf("got status %d and Location %q, want a 302 or 303 to %s without the password", status, loc, target)
+		}
 	}
 }
 
@@ -319,9 +362,7 @@ func TestPostedCredentialsAreNotForwarded(t *testing.T) {
 //conformance:covers OAUTH21D16-7.5.4-01
 func TestAuthorizationRedirectsAreNot307(t *testing.T) {
 	a := newAuthorizationServer(t)
-	failing := authorizeParams()
-	failing.Set("response_type", "token")
-	for _, params := range []url.Values{authorizeParams(), failing} {
+	for _, params := range []url.Values{authorizeParams(), unsupportedParams()} {
 		get, _ := a.sendAuthorization(params)
 		post, _ := a.postedAuthorization(params)
 		if get == http.StatusTemporaryRedirect || post == http.StatusTemporaryRedirect || get/100 != 3 || post/100 != 3 {

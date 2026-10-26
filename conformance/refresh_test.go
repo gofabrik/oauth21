@@ -48,21 +48,22 @@ func (a *authorizationServer) publicRefreshToken() string {
 	return a.refreshToken(tokenParams(a.code(authorizeParams())), nil)
 }
 
-// wantReuseRevokesGrant refreshes with token and checks that presenting token again fails and revokes its successor.
+// wantReuseRevokesGrant refreshes with token and checks that presenting token again fails and revokes its successor and the access token the refresh issued.
 func (a *authorizationServer) wantReuseRevokesGrant(token string, request func(string) url.Values, header http.Header) {
 	t := a.t
 	t.Helper()
-	successor := a.refreshToken(request(token), header)
-	if successor == token {
-		t.Fatal("got the presented refresh token back, want a new one")
+	access, successor := a.tokens(request(token), header)
+	if successor == "" || successor == token {
+		t.Fatalf("got refresh token %q, want a new one", successor)
 	}
 	status, _, body := a.token(request(token), header)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 	status, _, body = a.token(request(successor), header)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	a.wantInactive(access)
 }
 
-// TestPublicClientRefreshes checks that a public Client gets a new access token and a new refresh token for its refresh token.
+// TestPublicClientRefreshes checks that a public Client gets a new access token and a new refresh token for its refresh token, and that the presented one no longer refreshes.
 //
 //conformance:covers OAUTH21D16-4.3-04
 func TestPublicClientRefreshes(t *testing.T) {
@@ -75,19 +76,21 @@ func TestPublicClientRefreshes(t *testing.T) {
 	if _, third := a.tokens(refreshParams(second), nil); third == "" || third == second {
 		t.Fatalf("got refresh token %q, want a new one", third)
 	}
+	status, _, body := a.token(refreshParams(first), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
 // TestRotatedRefreshTokenRevokesGrant checks that presenting a rotated refresh token fails and revokes the refresh token that replaced it.
 //
 //conformance:covers INV-0004
 func TestRotatedRefreshTokenRevokesGrant(t *testing.T) {
-	a := newAuthorizationServer(t)
+	a := newIntrospectionServer(t)
 	a.wantReuseRevokesGrant(a.publicRefreshToken(), refreshParams, nil)
 }
 
 // TestCodeReplayRevokesRefreshToken checks that a second redemption of a code revokes the refresh token issued from it.
 //
-//conformance:covers INV-0001
+//conformance:covers OAUTH21D16-4.1.3-07
 func TestCodeReplayRevokesRefreshToken(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := tokenParams(a.code(authorizeParams()))
@@ -132,7 +135,7 @@ func confidentialRefreshParams(refreshToken string) url.Values {
 //
 //conformance:covers INV-0004
 func TestConfidentialClientRotatesByDefault(t *testing.T) {
-	a := newConfidentialServer(t)
+	a := newIntrospectionServer(t)
 	a.wantReuseRevokesGrant(a.confidentialRefreshToken(), confidentialRefreshParams, basic(confidentialID, secret))
 }
 
@@ -155,10 +158,10 @@ func TestPublicClientRotatesWhenConfidentialReuse(t *testing.T) {
 	a.wantReuseRevokesGrant(a.publicRefreshToken(), refreshParams, nil)
 }
 
-// newReusingServer starts an Authorization Server with the confidential Client, on which confidential Clients reuse their refresh tokens.
+// newReusingServer starts an Authorization Server with the confidential Client and the Resource Server Client, on which confidential Clients reuse their refresh tokens.
 func newReusingServer(t *testing.T) *authorizationServer {
 	t.Helper()
-	return newConfiguredServer(t, func(c *oauth21.Config) { c.ReuseConfidentialRefreshTokens = true }, confidentialClient(t))
+	return newConfiguredServer(t, func(c *oauth21.Config) { c.ReuseConfidentialRefreshTokens = true }, newIntrospectionClients(t)...)
 }
 
 // TestConfidentialRefreshRequiresAuthentication checks that a confidential Client must authenticate to refresh.
@@ -287,37 +290,56 @@ func TestRefreshTokenReplayIsDetected(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// TestRefreshKeepsClient checks that an access token from a refresh belongs to the Client the refresh token was issued to.
+// TestRefreshKeepsClient checks that the access tokens from a refresh and from the refresh of its successor belong to the Client the refresh token was issued to.
 //
 //conformance:covers OAUTH21D16-4.3-02
 func TestRefreshKeepsClient(t *testing.T) {
 	a := newIntrospectionServer(t)
-	access, _ := a.tokens(confidentialRefreshParams(a.confidentialRefreshToken()), basic(confidentialID, secret))
-	if body := a.introspect(access); body["client_id"] != confidentialID {
-		t.Fatalf("got %v, want client_id %s", body, confidentialID)
+	for _, access := range a.successiveAccessTokens(a.confidentialRefreshToken(), confidentialRefreshParams, basic(confidentialID, secret)) {
+		if body := a.introspect(access); body["client_id"] != confidentialID {
+			t.Fatalf("got %v, want client_id %s", body, confidentialID)
+		}
 	}
+}
+
+// successiveAccessTokens refreshes refresh and then its successor with params and header, and returns the two access tokens.
+func (a *authorizationServer) successiveAccessTokens(refresh string, params func(string) url.Values, header http.Header) []string {
+	a.t.Helper()
+	var access []string
+	for range 2 {
+		token, next := a.tokens(params(refresh), header)
+		access = append(access, token)
+		refresh = next
+	}
+	return access
 }
 
 // TestRefreshTokenOfAnotherPublicClient checks that a public Client cannot refresh with a refresh token issued to another public Client.
 //
 //conformance:covers OAUTH21D16-4.3.1-05
 func TestRefreshTokenOfAnotherPublicClient(t *testing.T) {
-	a := newAuthorizationServer(t, store.Client{ID: "other", Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope})
+	a := newAuthorizationServer(t, publicClient("other", redirectURI))
 	params := refreshParams(a.publicRefreshToken())
 	params.Set("client_id", "other")
 	status, _, body := a.token(params, nil)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// TestRefreshCannotAddScope checks that a refresh request for a scope the authorization request did not ask for fails with invalid_scope.
+// TestRefreshScopeFollowsGrant checks that a refresh request for a scope the authorization request did not ask for fails with invalid_scope, and that one without scope gets the granted scope.
 //
 //conformance:covers OAUTH21D16-4.3.1-03
-func TestRefreshCannotAddScope(t *testing.T) {
+func TestRefreshScopeFollowsGrant(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := refreshParams(a.publicRefreshToken())
 	params.Set("scope", "read write")
 	status, _, body := a.token(params, nil)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
+	granted := authorizeParams()
+	granted.Set("scope", "read write")
+	_, refresh := a.tokens(tokenParams(a.code(granted)), nil)
+	if status, _, body := a.token(refreshParams(refresh), nil); status != http.StatusOK || body["scope"] != "read write" {
+		t.Fatalf("got status %d and body %v, want scope read write", status, body)
+	}
 }
 
 // TestRotatedRefreshTokenKeepsScope checks that the refresh token issued by a narrowed refresh keeps the scope of the presented one.
@@ -361,7 +383,7 @@ func TestUnknownRefreshTokenIsRejected(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// TestRefreshKeepsAudience checks that the access token from a refresh has the audience of the refresh token's Grant.
+// TestRefreshKeepsAudience checks that the access tokens from a refresh and from the refresh of its successor have the audience of the refresh token's Grant.
 //
 //conformance:covers OAUTH21D16-3.2.3-14
 func TestRefreshKeepsAudience(t *testing.T) {
@@ -370,8 +392,9 @@ func TestRefreshKeepsAudience(t *testing.T) {
 	if err := a.recorder.Store.CreateRefreshToken(t.Context(), store.RefreshToken{Hash: hash, Grant: aliceGrant("audience-grant", resourceServerID), ExpiresAt: a.now().Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	access, _ := a.tokens(refreshParams(refresh), nil)
-	if body := a.introspect(access); body["active"] != true || !reflect.DeepEqual(body["aud"], resourceServerID) && !reflect.DeepEqual(body["aud"], []any{resourceServerID}) {
-		t.Fatalf("got %v, want an active token with audience %s", body, resourceServerID)
+	for _, access := range a.successiveAccessTokens(refresh, refreshParams, nil) {
+		if body := a.introspect(access); body["active"] != true || !reflect.DeepEqual(body["aud"], resourceServerID) && !reflect.DeepEqual(body["aud"], []any{resourceServerID}) {
+			t.Fatalf("got %v, want an active token with audience %s", body, resourceServerID)
+		}
 	}
 }

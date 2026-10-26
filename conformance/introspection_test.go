@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"maps"
 	"net/http"
 	"net/url"
 	"testing"
@@ -135,16 +136,23 @@ func TestIntrospectionRequestErrors(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
-// TestOnlyAuthorizedClientsIntrospectAccessTokens checks that a Client not allowed to introspect learns nothing about an access token issued to another Client.
+// TestOnlyAuthorizedClientsIntrospectAccessTokens checks that a Client not allowed to introspect learns nothing about an access token issued to another Client: it gets the same error for that token as for an unknown one.
 //
 //conformance:covers OAUTH21D16-1.4-05
 func TestOnlyAuthorizedClientsIntrospectAccessTokens(t *testing.T) {
 	a := newIntrospectionServer(t)
 	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
-	status, _, body := a.sendJSON(http.MethodPost, "/introspect", url.Values{"token": {access}}.Encode(), basic(confidentialID, secret))
-	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
-	if len(body) != 2 || body["error_description"] == nil {
-		t.Fatalf("got body %v, want only error and error_description", body)
+	var bodies []map[string]any
+	for _, token := range []string{access, "unknown"} {
+		status, _, body := a.sendJSON(http.MethodPost, "/introspect", url.Values{"token": {token}}.Encode(), basic(confidentialID, secret))
+		a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
+		if len(body) != 2 || body["error_description"] == nil {
+			t.Fatalf("got body %v, want only error and error_description", body)
+		}
+		bodies = append(bodies, body)
+	}
+	if !maps.Equal(bodies[0], bodies[1]) {
+		t.Fatalf("got %v for the access token and %v for an unknown token, want the same", bodies[0], bodies[1])
 	}
 }
 

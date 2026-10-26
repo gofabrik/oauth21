@@ -34,14 +34,17 @@ func TestRequestWithoutScopeOrDefaultsFails(t *testing.T) {
 	a.wantAuthorizationError(a.authorize(params), "invalid_scope", "scope")
 }
 
-// TestScopeMustBeSupportedAndAllowed checks that requesting a scope that is unsupported or not allowed for the Client fails with invalid_scope.
+// TestScopeMustBeSupportedAndAllowed checks that requesting a scope that is unsupported though allowed for the Client, or supported but not allowed for it, fails with invalid_scope.
 //
 //conformance:covers INV-0003
 func TestScopeMustBeSupportedAndAllowed(t *testing.T) {
 	for name, scope := range map[string]string{"unsupported": "read delete", "not allowed": "read admin"} {
 		t.Run(name, func(t *testing.T) {
-			a := newAuthorizationServer(t)
+			deleter := publicClient("deleter", redirectURI)
+			deleter.AllowedScopes = []string{"read", "delete"}
+			a := newAuthorizationServer(t, deleter)
 			params := authorizeParams()
+			params.Set("client_id", "deleter")
 			params.Set("scope", scope)
 			a.wantAuthorizationError(a.authorize(params), "invalid_scope", "scope")
 		})
@@ -102,7 +105,7 @@ func TestTokenResponseNamesDefaultScope(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-7.3.2-02
 func TestAllowedScopesDependOnClient(t *testing.T) {
-	a := newAuthorizationServer(t, store.Client{ID: "reader", Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope})
+	a := newAuthorizationServer(t, publicClient("reader", redirectURI))
 	params := authorizeParams()
 	params.Set("scope", "write")
 	if req := a.pending(a.authorize(params)); !slices.Equal(req.Scopes, []string{"write"}) {

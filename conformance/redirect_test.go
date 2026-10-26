@@ -4,21 +4,22 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
-
-	"github.com/gofabrik/oauth21/store"
 )
 
 // TestLoopbackRedirectURIIgnoresPort checks that loopback IP redirect URIs match with any port.
 //
 //conformance:covers OAUTH21D16-8.4.2-02
 func TestLoopbackRedirectURIIgnoresPort(t *testing.T) {
-	for registered, requested := range map[string]string{
-		"http://127.0.0.1/cb":      "http://127.0.0.1:51004/cb",
-		"http://127.0.0.1:8080/cb": "http://127.0.0.1:51004/cb",
-		"http://[::1]/cb":          "http://[::1]:61023/cb",
+	for requested, registered := range map[string]string{
+		"http://127.0.0.1:51004/cb": "http://127.0.0.1/cb",
+		"http://127.0.0.1:1024/cb":  "http://127.0.0.1:8080/cb",
+		"http://127.0.0.1:8081/cb":  "http://127.0.0.1/cb",
+		"http://127.0.0.1/cb":       "http://127.0.0.1:8080/cb",
+		"http://[::1]:61023/cb":     "http://[::1]/cb",
+		"http://[::1]:8081/cb":      "http://[::1]:8080/cb",
 	} {
 		t.Run(requested, func(t *testing.T) {
-			a := newAuthorizationServer(t, store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{registered}, AllowedScopes: readScope, DefaultScopes: readScope})
+			a := newAuthorizationServer(t, publicClient("native", registered))
 			params := authorizeParams()
 			params.Set("client_id", "native")
 			params.Set("redirect_uri", requested)
@@ -49,9 +50,9 @@ func TestRedirectURIMustMatchExactly(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t,
-				store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{"http://127.0.0.1/cb"}, AllowedScopes: readScope, DefaultScopes: readScope},
-				store.Client{ID: "localhost", Type: store.Public, RedirectURIs: []string{"http://localhost/cb"}, AllowedScopes: readScope, DefaultScopes: readScope},
-				store.Client{ID: "lan", Type: store.Public, RedirectURIs: []string{"http://10.0.0.1/cb"}, AllowedScopes: readScope, DefaultScopes: readScope},
+				publicClient("native", "http://127.0.0.1/cb"),
+				publicClient("localhost", "http://localhost/cb"),
+				publicClient("lan", "http://10.0.0.1/cb"),
 			)
 			params := authorizeParams()
 			params.Set("client_id", tt.clientID)
@@ -67,7 +68,7 @@ func TestRedirectURIMustMatchExactly(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-4.1.3-08
 func TestCodeIsBoundToClient(t *testing.T) {
-	a := newAuthorizationServer(t, store.Client{ID: "other", Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope, DefaultScopes: readScope})
+	a := newAuthorizationServer(t, publicClient("other", redirectURI))
 	params := tokenParams(a.code(authorizeParams()))
 	params.Set("client_id", "other")
 	status, _, body := a.token(params, nil)
@@ -115,7 +116,7 @@ func TestMismatchingRedirectURIIsNotRedirected(t *testing.T) {
 //conformance:covers OAUTH21D16-4.1.1-19
 func TestRedirectURIMustBeRegistered(t *testing.T) {
 	other := "https://client.example/other"
-	a := newAuthorizationServer(t, store.Client{ID: "two", Type: store.Public, RedirectURIs: []string{redirectURI, other}, AllowedScopes: readScope, DefaultScopes: readScope})
+	a := newAuthorizationServer(t, publicClient("two", redirectURI, other))
 	params := withRedirectURI(other)
 	params.Set("client_id", "two")
 	if u := a.login(a.authorize(params), "alice"); endpoint(u) != other {
@@ -152,52 +153,68 @@ func TestInvalidClientIsNotRedirected(t *testing.T) {
 	}
 }
 
-// TestDirectErrorIsBadRequest checks that an error shown to the user agent instead of redirected has status 400.
+// unredirectable returns authorization requests whose errors the server cannot redirect: one with an unregistered redirect URI and one of an unknown Client.
+func unredirectable() map[string]url.Values {
+	unknown := authorizeParams()
+	unknown.Set("client_id", "unknown")
+	return map[string]url.Values{"unregistered redirect URI": withRedirectURI("https://attacker.example/cb"), "unknown client": unknown}
+}
+
+// TestDirectErrorIsBadRequest checks that an error shown to the user agent instead of redirected has status 400, for an unregistered redirect URI and an unknown Client.
 //
 //conformance:covers OAUTH21D16-4.1.2.1-03
 func TestDirectErrorIsBadRequest(t *testing.T) {
 	a := newAuthorizationServer(t)
-	if status, _ := a.sendAuthorization(withRedirectURI("https://attacker.example/cb")); status != http.StatusBadRequest {
-		t.Fatalf("got status %d, want 400", status)
+	for name, params := range unredirectable() {
+		if status, _ := a.sendAuthorization(params); status != http.StatusBadRequest {
+			t.Fatalf("%s: got status %d, want 400", name, status)
+		}
 	}
 }
 
-// TestRedirectURIIsValidatedBeforeErrors checks that a request with an unregistered redirect URI and other errors is not redirected.
+// TestRedirectURIIsValidatedBeforeErrors checks that a request with an unregistered redirect URI or an unknown Client and other errors is not redirected.
 //
 //conformance:covers OAUTH21D16-4.1.2.1-04
 func TestRedirectURIIsValidatedBeforeErrors(t *testing.T) {
 	a := newAuthorizationServer(t)
-	params := withRedirectURI("https://attacker.example/cb")
-	params.Set("response_type", "token")
-	params.Del("code_challenge")
-	params.Set("scope", "delete")
-	if _, loc := a.sendAuthorization(params); loc != "" {
-		t.Fatalf("got Location %q, want no redirect", loc)
+	for name, params := range unredirectable() {
+		params.Set("response_type", "token")
+		params.Del("code_challenge")
+		params.Set("scope", "delete")
+		if _, loc := a.sendAuthorization(params); loc != "" {
+			t.Fatalf("%s: got Location %q, want no redirect", name, loc)
+		}
 	}
 }
 
-// TestLoopbackRedirectURIAllowsVariablePort checks that a loopback redirect URI registered with a port matches a request with another port.
+// TestLoopbackRedirectURIAllowsVariablePort checks that a loopback redirect URI registered with a port matches a request with another port or none.
 //
 //conformance:covers OAUTH21D16-4.1.1-21
 func TestLoopbackRedirectURIAllowsVariablePort(t *testing.T) {
-	a := newAuthorizationServer(t, store.Client{ID: "native", Type: store.Public, RedirectURIs: []string{"http://[::1]:8080/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
-	params := withRedirectURI("http://[::1]:49152/cb")
-	params.Set("client_id", "native")
-	if u := a.login(a.authorize(params), "alice"); endpoint(u) != "http://[::1]:49152/cb" {
-		t.Fatalf("got redirect %s, want http://[::1]:49152/cb", u)
+	a := newAuthorizationServer(t, publicClient("native", "http://[::1]:8080/cb"))
+	for _, uri := range []string{"http://[::1]:49152/cb", "http://[::1]:1024/cb", "http://[::1]:8081/cb", "http://[::1]/cb"} {
+		params := withRedirectURI(uri)
+		params.Set("client_id", "native")
+		if u := a.login(a.authorize(params), "alice"); endpoint(u) != uri {
+			t.Fatalf("got redirect %s, want %s", u, uri)
+		}
 	}
 }
 
-// TestRedirectURIQueryIsKept checks that the authorization response keeps the query of the registered redirect URI.
+// TestRedirectURIQueryIsKept checks that the authorization response and the error response keep the query of the registered redirect URI.
 //
 //conformance:covers OAUTH21D16-2.3-03
 func TestRedirectURIQueryIsKept(t *testing.T) {
 	uri := redirectURI + "?tenant=a"
-	a := newAuthorizationServer(t, store.Client{ID: "tenant", Type: store.Public, RedirectURIs: []string{uri}, AllowedScopes: readScope, DefaultScopes: readScope})
+	a := newAuthorizationServer(t, publicClient("tenant", uri))
 	params := withRedirectURI(uri)
 	params.Set("client_id", "tenant")
 	u := a.login(a.authorize(params), "alice")
 	if q := u.Query(); endpoint(u) != redirectURI || q.Get("tenant") != "a" || q.Get("code") == "" {
 		t.Fatalf("got redirect %s, want tenant=a and a code", u)
+	}
+	u = a.deny(a.pending(a.authorize(params)).ID)
+	if q := u.Query(); endpoint(u) != redirectURI || q.Get("tenant") != "a" || q.Get("error") != "access_denied" {
+		t.Fatalf("got redirect %s, want tenant=a and access_denied", u)
 	}
 }
