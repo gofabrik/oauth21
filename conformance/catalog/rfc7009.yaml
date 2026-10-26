@@ -1,0 +1,134 @@
+document: RFC7009
+title: OAuth 2.0 Token Revocation
+source: ../specs/rfc7009.txt
+requirements:
+  - id: RFC7009-2-01
+    section: "2"
+    keyword: MUST
+    text: Implementations MUST support the revocation of refresh tokens and SHOULD support the revocation of access tokens (see Implementation Note).
+    statement: Implementations MUST support the revocation of refresh tokens.
+    status: applicable
+  - id: RFC7009-2-02
+    section: "2"
+    keyword: SHOULD
+    text: Implementations MUST support the revocation of refresh tokens and SHOULD support the revocation of access tokens (see Implementation Note).
+    statement: Implementations SHOULD support the revocation of access tokens.
+    status: applicable
+  - id: RFC7009-2-03
+    section: "2"
+    keyword: MUST
+    text: This URL MUST conform to the rules given in [RFC6749], Section 3.1.
+    statement: The token revocation endpoint URL MUST conform to the rules given in [RFC6749], Section 3.1.
+    status: applicable
+  - id: RFC7009-2-04
+    section: "2"
+    keyword: MUST
+    text: Clients MUST verify that the URL is an HTTPS URL.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC7009-2-05
+    section: "2"
+    keyword: MUST
+    text: Since requests to the token revocation endpoint result in the transmission of plaintext credentials in the HTTP request, URLs for token revocation endpoints MUST be HTTPS URLs.
+    status: applicable
+  - id: RFC7009-2-06
+    section: "2"
+    keyword: MUST
+    text: The authorization server MUST use Transport Layer Security (TLS) [RFC5246] in a version compliant with [RFC6749], Section 1.6.
+    status: applicable
+    note: Transport security is ticket 50.
+  - id: RFC7009-2-07
+    section: "2"
+    keyword: MAY
+    text: Implementations MAY also support additional transport-layer security mechanisms that meet their security requirements.
+    status: applicable
+  - id: RFC7009-2-08
+    section: "2"
+    keyword: SHOULD
+    text: If the host of the token revocation endpoint can also be reached over HTTP, then the server SHOULD also offer a revocation service at the corresponding HTTP URI, but it MUST NOT publish this URI as a token revocation endpoint.
+    statement: If the host of the token revocation endpoint can also be reached over HTTP, then the server SHOULD also offer a revocation service at the corresponding HTTP URI.
+    status: superseded
+    superseded_by:
+      - OAUTH21D16-1.5-01
+    note: OAuth 2.1 requires TLS for every exchange of tokens.
+  - id: RFC7009-2-09
+    section: "2"
+    keyword: MUST NOT
+    text: If the host of the token revocation endpoint can also be reached over HTTP, then the server SHOULD also offer a revocation service at the corresponding HTTP URI, but it MUST NOT publish this URI as a token revocation endpoint.
+    statement: The server MUST NOT publish the HTTP URI of the revocation service as a token revocation endpoint.
+    status: applicable
+  - id: RFC7009-2.1-01
+    section: "2.1"
+    keyword: REQUIRED
+    text: token REQUIRED.
+    status: applicable
+  - id: RFC7009-2.1-02
+    section: "2.1"
+    keyword: OPTIONAL
+    text: token_type_hint OPTIONAL.
+    status: applicable
+  - id: RFC7009-2.1-03
+    section: "2.1"
+    keyword: MAY
+    text: Clients MAY pass this parameter in order to help the authorization server to optimize the token lookup.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC7009-2.1-04
+    section: "2.1"
+    keyword: MUST
+    text: If the server is unable to locate the token using the given hint, it MUST extend its search across all of its supported token types.
+    status: applicable
+  - id: RFC7009-2.1-05
+    section: "2.1"
+    keyword: MAY
+    text: An authorization server MAY ignore this parameter, particularly if it is able to detect the token type automatically.
+    status: applicable
+    note: The server ignores the hint.
+  - id: RFC7009-2.1-06
+    section: "2.1"
+    keyword: MAY
+    text: Specific implementations, profiles, and extensions of this specification MAY define other values for this parameter using the registry defined in Section 4.1.2.
+    status: informative
+  - id: RFC7009-2.1-07
+    section: "2.1"
+    keyword: SHOULD
+    text: If the particular token is a refresh token and the authorization server supports the revocation of access tokens, then the authorization server SHOULD also invalidate all access tokens based on the same authorization grant (see Implementation Note).
+    status: applicable
+  - id: RFC7009-2.1-08
+    section: "2.1"
+    keyword: MAY
+    text: If the token passed to the request is an access token, the server MAY revoke the respective refresh token as well.
+    status: applicable
+    note: The server revokes only the access token.
+  - id: RFC7009-2.3-01
+    section: "2.3"
+    keyword: MAY
+    text: The revocation endpoint MAY support Cross-Origin Resource Sharing (CORS) [W3C.WD-cors-20120403] if it is aimed at use in combination with user-agent-based applications.
+    status: applicable
+  - id: RFC7009-2.3-02
+    section: "2.3"
+    keyword: MAY
+    text: 'In addition, for interoperability with legacy user-agents, it MAY also offer JSONP (Remote JSON - JSONP) [jsonp] by allowing GET requests with an additional parameter:'
+    status: applicable
+  - id: RFC7009-2.3-03
+    section: "2.3"
+    keyword: OPTIONAL
+    text: callback OPTIONAL.
+    status: applicable
+  - id: RFC7009-5-01
+    section: "5"
+    keyword: MUST
+    text: Appropriate countermeasures, which should be in place for the token endpoint as well, MUST be applied to the revocation endpoint (see [RFC6819], Section 4.4.1.11).
+    status: applicable
+  - id: RFC7009-5-02
+    section: "5"
+    keyword: MUST
+    text: Care MUST be taken to prevent malicious clients from exploiting this feature to launch denial-of-service attacks.
+    statement: Care MUST be taken to prevent malicious clients from exploiting invalid token type hints to launch denial-of-service attacks.
+    status: applicable
+  - id: RFC7009-5-03
+    section: "5"
+    keyword: MUST
+    text: Moreover, in order to detect counterfeit revocation endpoints, clients MUST authenticate the revocation endpoint (certificate validation, etc.).
+    status: out-of-scope
+    reason: client-requirement

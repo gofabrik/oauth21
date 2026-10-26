@@ -3,7 +3,10 @@ package conformance
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
+
+	"github.com/gofabrik/oauth21/store"
 )
 
 // TestLoopbackRedirectURIIgnoresPort checks that loopback IP redirect URIs match with any port.
@@ -217,4 +220,111 @@ func TestRedirectURIQueryIsKept(t *testing.T) {
 	if q := u.Query(); endpoint(u) != redirectURI || q.Get("tenant") != "a" || q.Get("error") != "access_denied" {
 		t.Fatalf("got redirect %s, want tenant=a and access_denied", u)
 	}
+}
+
+// nativeCode runs an authorization request of the public Client id for redirect through login, checks that the code reaches redirect, and returns the code.
+func (a *authorizationServer) nativeCode(id, redirect string) string {
+	a.t.Helper()
+	params := authorizeParams()
+	params.Set("client_id", id)
+	params.Set("redirect_uri", redirect)
+	u := a.login(a.authorize(params), "alice")
+	code := u.Query().Get("code")
+	if !strings.HasPrefix(u.String(), redirect+"?") || code == "" {
+		a.t.Fatalf("got redirect %s, want a code at %s", u, redirect)
+	}
+	return code
+}
+
+// nativeTokenParams returns a token request of the public Client id for the code it gets at redirect.
+func (a *authorizationServer) nativeTokenParams(id, redirect string) url.Values {
+	a.t.Helper()
+	params := tokenParams(a.nativeCode(id, redirect))
+	params.Set("client_id", id)
+	return params
+}
+
+// TestNativeAppPKCE checks that a public native app Client with a loopback redirect URI redeems its code only with the code verifier of its code challenge.
+//
+//conformance:covers RFC8252-6-02
+func TestNativeAppPKCE(t *testing.T) {
+	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1/cb"))
+	for _, v := range []string{"", s256(verifier)[:43]} {
+		status, _, body := a.token(withVerifier(a.nativeTokenParams("native", "http://127.0.0.1:51004/cb"), v), nil)
+		if status == http.StatusOK {
+			t.Fatalf("got body %v for code_verifier %q, want an error", body, v)
+		}
+	}
+	a.tokens(a.nativeTokenParams("native", "http://127.0.0.1:51004/cb"), nil)
+}
+
+// TestNativeAppRedirectOptions checks that native app Clients can use a private-use URI scheme, a claimed https URI and a loopback IP redirect URI.
+//
+//conformance:covers RFC8252-7-01
+func TestNativeAppRedirectOptions(t *testing.T) {
+	for registered, requested := range map[string]string{
+		"com.example.app:/oauth2redirect/example-provider": "com.example.app:/oauth2redirect/example-provider",
+		"https://app.example.com/oauth2redirect":           "https://app.example.com/oauth2redirect",
+		"http://127.0.0.1/oauth2redirect":                  "http://127.0.0.1:51004/oauth2redirect",
+	} {
+		t.Run(registered, func(t *testing.T) {
+			a := newAuthorizationServer(t, publicClient("native", registered))
+			a.tokens(a.nativeTokenParams("native", requested), nil)
+		})
+	}
+}
+
+// TestLoopbackRedirectAllowsAnyPort checks that a loopback IP redirect URI registered without a port matches with any port, the lowest and the highest included.
+//
+//conformance:covers RFC8252-7.3-01
+func TestLoopbackRedirectAllowsAnyPort(t *testing.T) {
+	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1/cb", "http://[::1]/cb"))
+	for _, host := range []string{"127.0.0.1", "[::1]"} {
+		for _, port := range []string{"1", "80", "8080", "49152", "65535"} {
+			a.nativeCode("native", "http://"+host+":"+port+"/cb")
+		}
+	}
+}
+
+// TestClientTypeDecidesAuthentication checks that the recorded Client type decides how a token request is processed: a public Client redeems its code with only its client_id, a confidential one with the same registration must authenticate.
+//
+//conformance:covers RFC8252-8.4-02
+func TestClientTypeDecidesAuthentication(t *testing.T) {
+	confidential := confidentialClient(t)
+	public := confidential
+	public.ID, public.Type, public.SecretHash = "public-twin", store.Public, ""
+	a := newAuthorizationServer(t, confidential, public)
+	redeem := func(id string) (int, map[string]any) {
+		params := authorizeParams()
+		params.Set("client_id", id)
+		token := tokenParams(a.code(params))
+		token.Set("client_id", id)
+		status, _, body := a.token(token, nil)
+		return status, body
+	}
+	if status, body := redeem(public.ID); status != http.StatusOK {
+		t.Fatalf("got status %d and body %v for the public Client, want 200", status, body)
+	}
+	status, body := redeem(confidential.ID)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_client")
+}
+
+// TestRedirectURIMatchesRegistrationExactly checks that a redirect URI that differs from the registered one in any component is rejected without a redirect, except for the port of a loopback redirect URI.
+//
+//conformance:covers RFC8252-8.4-07
+func TestRedirectURIMatchesRegistrationExactly(t *testing.T) {
+	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1/cb", "com.example.app:/cb"))
+	for id, uris := range map[string][]string{
+		clientID: {redirectURI + "/x", "https://client.example/c", redirectURI + "?a=b", "https://client.example:8443/cb", "http://client.example/cb", "https://other.example/cb"},
+		"native": {"http://127.0.0.1:51004/cb/x", "http://127.0.0.1:51004/", "http://127.0.0.2:51004/cb", "com.example.app:/cb/x", "com.example.other:/cb"},
+	} {
+		for _, uri := range uris {
+			params := withRedirectURI(uri)
+			params.Set("client_id", id)
+			if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
+				t.Fatalf("got status %d and Location %q for %s, want 400 without redirect", status, loc, uri)
+			}
+		}
+	}
+	a.nativeCode("native", "http://127.0.0.1:51004/cb")
 }

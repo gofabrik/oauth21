@@ -1,0 +1,155 @@
+document: RFC9207
+title: OAuth 2.0 Authorization Server Issuer Identification
+source: ../specs/rfc9207.txt
+requirements:
+  - id: RFC9207-2-01
+    section: "2"
+    keyword: MUST
+    text: In authorization responses to the client, including error responses, an authorization server supporting this specification MUST indicate its identity by including the iss parameter in the response.
+    status: applicable
+  - id: RFC9207-2-02
+    section: "2"
+    keyword: MUST
+    text: Its value MUST be a URL that uses the "https" scheme without any query or fragment components.
+    status: applicable
+  - id: RFC9207-2.3-01
+    section: "2.3"
+    keyword: MUST
+    text: Authorization servers supporting this specification MUST provide their issuer identifier to enable clients to validate the iss parameter effectively.
+    status: applicable
+  - id: RFC9207-2.3-02
+    section: "2.3"
+    keyword: MUST
+    text: 'For authorization servers publishing metadata according to [RFC8414], the following rules apply: The issuer identifier included in the server''s metadata value issuer MUST be identical to the iss parameter''s value. The server MUST indicate its support for the iss parameter by setting the metadata parameter authorization_response_iss_parameter_supported, defined in Section 3, to true.'
+    statement: 'The issuer identifier included in the server''s metadata value issuer MUST be identical to the iss parameter''s value.'
+    status: applicable
+  - id: RFC9207-2.3-03
+    section: "2.3"
+    keyword: MUST
+    text: 'For authorization servers publishing metadata according to [RFC8414], the following rules apply: The issuer identifier included in the server''s metadata value issuer MUST be identical to the iss parameter''s value. The server MUST indicate its support for the iss parameter by setting the metadata parameter authorization_response_iss_parameter_supported, defined in Section 3, to true.'
+    statement: The server MUST indicate its support for the iss parameter by setting the metadata parameter authorization_response_iss_parameter_supported to true.
+    status: applicable
+  - id: RFC9207-2.3-04
+    section: "2.3"
+    keyword: MAY
+    text: Authorization servers MAY additionally provide the issuer identifier to clients by any other mechanism, which is outside of the scope of this specification.
+    status: applicable
+  - id: RFC9207-2.4-01
+    section: "2.4"
+    keyword: MUST
+    text: Clients that support this specification MUST extract the value of the iss parameter from authorization responses they receive if the parameter is present.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-02
+    section: "2.4"
+    keyword: MUST
+    text: Clients MUST then decode the value from its "application/x-www-form-urlencoded" form according to Appendix B of [RFC6749] and compare the result to the issuer identifier of the authorization server where the authorization request was sent to.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-03
+    section: "2.4"
+    keyword: MUST
+    text: This comparison MUST use simple string comparison as defined in Section 6.2.1 of [RFC3986].
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-04
+    section: "2.4"
+    keyword: MUST
+    text: If the value does not match the expected issuer identifier, clients MUST reject the authorization response and MUST NOT proceed with the authorization grant.
+    statement: If the value does not match the expected issuer identifier, clients MUST reject the authorization response.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-05
+    section: "2.4"
+    keyword: MUST NOT
+    text: If the value does not match the expected issuer identifier, clients MUST reject the authorization response and MUST NOT proceed with the authorization grant.
+    statement: If the value does not match the expected issuer identifier, clients MUST NOT proceed with the authorization grant.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-06
+    section: "2.4"
+    keyword: MUST NOT
+    text: For error responses, clients MUST NOT assume that the error originates from the intended authorization server.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-07
+    section: "2.4"
+    keyword: MUST
+    text: More precisely, clients that interact with authorization servers supporting OAuth metadata [RFC8414] MUST compare the iss parameter value to the issuer value in the server's metadata document.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-08
+    section: "2.4"
+    keyword: MUST
+    text: If OAuth metadata is not used, clients MUST use deployment-specific ways (for example, a static configuration) to decide if the returned iss value is the expected value in the current flow (see also Section 4).
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-09
+    section: "2.4"
+    keyword: MUST
+    text: If clients interact with both authorization servers supporting this specification and authorization servers not supporting this specification, clients MUST retain state about whether each authorization server supports the iss parameter.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-10
+    section: "2.4"
+    keyword: MUST
+    text: Clients MUST reject authorization responses without the iss parameter from authorization servers that do support the parameter according to the client's configuration.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-11
+    section: "2.4"
+    keyword: SHOULD
+    text: Clients SHOULD discard authorization responses with the iss parameter from authorization servers that do not indicate their support for the parameter.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-12
+    section: "2.4"
+    keyword: MAY
+    text: In general, clients that support this specification MAY accept authorization responses that do not contain the iss parameter or reject them and exclusively support authorization servers that provide the iss parameter in the authorization response.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-2.4-13
+    section: "2.4"
+    keyword: MUST
+    text: In OpenID Connect [OIDC.Core] flows where an ID Token is returned from the authorization endpoint, the value in the iss parameter MUST always be identical to the iss claim in the ID Token.
+    status: out-of-scope
+    reason: excluded
+    feature: openid-connect
+  - id: RFC9207-2.4-14
+    section: "2.4"
+    keyword: MUST
+    text: Section 4.1.2 of [RFC6749] already mandates that clients that do not support this specification MUST ignore the unrecognized iss parameter.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-4-01
+    section: "4"
+    keyword: MUST
+    text: Clients MUST validate the iss parameter precisely as described in Section 2.4 and MUST NOT allow multiple authorization servers to use the same issuer identifier.
+    statement: Clients MUST validate the iss parameter precisely as described in Section 2.4.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-4-02
+    section: "4"
+    keyword: MUST NOT
+    text: Clients MUST validate the iss parameter precisely as described in Section 2.4 and MUST NOT allow multiple authorization servers to use the same issuer identifier.
+    statement: Clients MUST NOT allow multiple authorization servers to use the same issuer identifier.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-4-03
+    section: "4"
+    keyword: MUST
+    text: In particular, when authorization server details can be manually configured in the client, the client MUST ensure that the accepted iss values are unique for each authorization server.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-4-04
+    section: "4"
+    keyword: MAY
+    text: When an authorization response already includes an authorization server's issuer identifier by other means and this identifier is checked as laid out in Section 2.4, the use and verification of the iss parameter is not necessary and MAY be omitted.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC9207-4-05
+    section: "4"
+    keyword: MUST
+    text: However, if a client receives an authorization response that contains multiple issuer identifiers, the client MUST reject the response if these issuer identifiers do not match.
+    status: out-of-scope
+    reason: client-requirement

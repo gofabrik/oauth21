@@ -91,11 +91,17 @@ func TestAuthorizationResponseCarriesState(t *testing.T) {
 func tenantAuthorization(t *testing.T, params url.Values) (*authorizationServer, string, *url.URL) {
 	t.Helper()
 	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += "/tenant" })
-	status, header, _ := a.send(http.MethodGet, "/tenant/authorize?"+params.Encode(), "", nil)
+	return a, a.url + "/tenant", a.authorizationRedirect(params)
+}
+
+// authorizationRedirect sends the authorization request params to the authorization endpoint under the Issuer and returns its redirect.
+func (a *authorizationServer) authorizationRedirect(params url.Values) *url.URL {
+	a.t.Helper()
+	status, header, _ := a.send(http.MethodGet, a.srv.Paths().Authorization+"?"+params.Encode(), "", nil)
 	if status != http.StatusFound {
-		t.Fatalf("got status %d, want a redirect", status)
+		a.t.Fatalf("got status %d, want a redirect", status)
 	}
-	return a, a.url + "/tenant", a.redirect(header.Get("Location"))
+	return a.redirect(header.Get("Location"))
 }
 
 // TestAuthorizationResponseCarriesIssuer checks that the authorization response names the issuer, including its path, in iss.
@@ -391,6 +397,37 @@ func TestAuthorizationErrorURICharacters(t *testing.T) {
 	for _, q := range a.authorizationErrors() {
 		if q.Has("error_uri") && !uriChars(q.Get("error_uri")) {
 			t.Fatalf("got error_uri %q, want only the allowed characters", q.Get("error_uri"))
+		}
+	}
+}
+
+// TestAuthorizationResponsesCarryIss checks that both a successful authorization response and a redirected error response carry iss with the issuer.
+//
+//conformance:covers RFC9207-2-01
+func TestAuthorizationResponsesCarryIss(t *testing.T) {
+	a := newAuthorizationServer(t)
+	params := authorizeParams()
+	params.Set("scope", "unknown")
+	for _, u := range []*url.URL{a.login(a.authorize(authorizeParams()), "alice"), a.authorize(params)} {
+		if u.Query().Get("iss") != a.url {
+			t.Fatalf("got redirect %s, want iss %q", u, a.url)
+		}
+	}
+}
+
+// TestIssIsHTTPSURLWithoutQueryOrFragment checks that iss of an authorization response and of an error response is an https URL without query or fragment.
+//
+//conformance:covers RFC9207-2-02
+func TestIssIsHTTPSURLWithoutQueryOrFragment(t *testing.T) {
+	params := authorizeParams()
+	params.Set("response_type", "token")
+	a, _, loc := tenantAuthorization(t, authorizeParams())
+	_, _, errLoc := tenantAuthorization(t, params)
+	for _, u := range []*url.URL{a.login(loc, "alice"), errLoc} {
+		iss := u.Query().Get("iss")
+		parsed, err := url.Parse(iss)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.ContainsAny(iss, "?#") {
+			t.Fatalf("got iss %q, want an https URL without query or fragment", iss)
 		}
 	}
 }

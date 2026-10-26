@@ -1,0 +1,236 @@
+document: RFC8252
+title: OAuth 2.0 for Native Apps
+source: ../specs/rfc8252.txt
+requirements:
+  - id: RFC8252-5-01
+    section: "5"
+    keyword: MUST
+    text: To conform to this best practice, native apps MUST use an external user-agent to perform OAuth authorization requests.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-6-01
+    section: "6"
+    keyword: MUST
+    text: Public native app clients MUST implement the Proof Key for Code Exchange (PKCE [RFC7636]) extension to OAuth, and authorization servers MUST support PKCE for such clients, for the reasons detailed in Section 8.1.
+    statement: Public native app clients MUST implement the Proof Key for Code Exchange (PKCE) extension to OAuth.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-6-02
+    section: "6"
+    keyword: MUST
+    text: Public native app clients MUST implement the Proof Key for Code Exchange (PKCE [RFC7636]) extension to OAuth, and authorization servers MUST support PKCE for such clients, for the reasons detailed in Section 8.1.
+    statement: Authorization servers MUST support PKCE for public native app clients.
+    status: applicable
+  - id: RFC8252-6-03
+    section: "6"
+    keyword: MAY
+    text: Typically, the external user-agent used is the default browser, that is, the application configured for handling "http" and "https" scheme URIs on the system; however, different browser selection criteria and other categories of external user-agents MAY be used.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-6-04
+    section: "6"
+    keyword: RECOMMENDED
+    text: This best practice focuses on the browser as the RECOMMENDED external user-agent for native apps.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-6-05
+    section: "6"
+    keyword: MAY
+    text: An external user-agent designed specifically for user authorization and capable of processing authorization requests and responses like a browser MAY also be used.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-6-06
+    section: "6"
+    keyword: RECOMMENDED
+    text: On platforms where they are supported, it is RECOMMENDED, for usability reasons, that apps use in-app browser tabs for the authorization request.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-7-01
+    section: "7"
+    keyword: MUST
+    text: To fully support this best practice, authorization servers MUST offer at least the three redirect URI options described in the following subsections to native apps.
+    status: applicable
+  - id: RFC8252-7-02
+    section: "7"
+    keyword: MAY
+    text: Native apps MAY use whichever redirect option suits their needs best, taking into account platform-specific implementation details.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-7.1-01
+    section: "7.1"
+    keyword: MUST
+    text: When choosing a URI scheme to associate with the app, apps MUST use a URI scheme based on a domain name under their control, expressed in reverse order, as recommended by Section 3.8 of [RFC7595] for private-use URI schemes.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-7.2-01
+    section: "7.2"
+    keyword: REQUIRED
+    text: As the redirect URI alone is not enough to distinguish public native app clients from confidential web clients, it is REQUIRED in Section 8.4 that the client type be recorded during client registration to enable the server to determine the client type and act accordingly.
+    status: informative
+    note: Restates RFC8252-8.4-02.
+  - id: RFC8252-7.2-02
+    section: "7.2"
+    keyword: SHOULD
+    text: For this reason, native apps SHOULD use them over the other options where possible.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-7.3-01
+    section: "7.3"
+    keyword: MUST
+    text: The authorization server MUST allow any port to be specified at the time of the request for loopback IP redirect URIs, to accommodate clients that obtain an available ephemeral port from the operating system at the time of the request.
+    status: applicable
+  - id: RFC8252-7.3-02
+    section: "7.3"
+    keyword: SHOULD NOT
+    text: Clients SHOULD NOT assume that the device supports a particular version of the Internet Protocol.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-7.3-03
+    section: "7.3"
+    keyword: RECOMMENDED
+    text: It is RECOMMENDED that clients attempt to bind to the loopback interface using both IPv4 and IPv6 and use whichever is available.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.1-01
+    section: "8.1"
+    keyword: SHOULD
+    text: Authorization servers SHOULD reject authorization requests from native apps that don't use PKCE by returning an error message, as defined in Section 4.4.1 of PKCE [RFC7636].
+    status: applicable
+    note: The server requires PKCE from every Client.
+  - id: RFC8252-8.2-01
+    section: "8.2"
+    keyword: NOT RECOMMENDED
+    text: However, as the implicit flow cannot be protected by PKCE [RFC7636] (which is required in Section 8.1), the use of the Implicit Flow with native apps is NOT RECOMMENDED.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.3-01
+    section: "8.3"
+    keyword: NOT RECOMMENDED
+    text: While redirect URIs using localhost (i.e., "http://localhost:{port}/{path}") function similarly to loopback IP redirects described in Section 7.3, the use of localhost is NOT RECOMMENDED.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.4-01
+    section: "8.4"
+    keyword: MUST
+    text: Except when using a mechanism like Dynamic Client Registration [RFC7591] to provision per-instance secrets, native apps are classified as public clients, as defined by Section 2.1 of OAuth 2.0 [RFC6749]; they MUST be registered with the authorization server as such.
+    status: applicable
+  - id: RFC8252-8.4-02
+    section: "8.4"
+    keyword: MUST
+    text: Authorization servers MUST record the client type in the client registration details in order to identify and process requests accordingly.
+    status: applicable
+  - id: RFC8252-8.4-03
+    section: "8.4"
+    keyword: MUST
+    text: Authorization servers MUST require clients to register their complete redirect URI (including the path component) and reject authorization requests that specify a redirect URI that doesn't exactly match the one that was registered; the exception is loopback redirects, where an exact match is required except for the port URI component.
+    statement: Authorization servers MUST require clients to register their complete redirect URI (including the path component).
+    status: applicable
+  - id: RFC8252-8.4-07
+    section: "8.4"
+    keyword: MUST
+    text: Authorization servers MUST require clients to register their complete redirect URI (including the path component) and reject authorization requests that specify a redirect URI that doesn't exactly match the one that was registered; the exception is loopback redirects, where an exact match is required except for the port URI component.
+    statement: 'Authorization servers MUST reject authorization requests that specify a redirect URI that doesn''t exactly match the one that was registered, except for the port URI component of loopback redirects.'
+    status: applicable
+  - id: RFC8252-8.4-04
+    section: "8.4"
+    keyword: SHOULD
+    text: For private-use URI scheme-based redirects, authorization servers SHOULD enforce the requirement in Section 7.1 that clients use schemes that are reverse domain name based.
+    status: applicable
+  - id: RFC8252-8.4-05
+    section: "8.4"
+    keyword: SHOULD
+    text: SHOULD be rejected.
+    statement: 'At a minimum, any private-use URI scheme that doesn''t contain a period character (.) SHOULD be rejected.'
+    status: applicable
+  - id: RFC8252-8.4-06
+    section: "8.4"
+    keyword: MAY
+    text: Authorization servers MAY request the inclusion of other platform-specific information, such as the app package or bundle name, or other information that may be useful for verifying the calling app's identity on operating systems that support such functions.
+    status: applicable
+  - id: RFC8252-8.5-01
+    section: "8.5"
+    keyword: NOT RECOMMENDED
+    text: For this reason, and those stated in Section 5.3.1 of [RFC6819], it is NOT RECOMMENDED for authorization servers to require client authentication of public native apps clients using a shared secret, as this serves little value beyond client identification which is already provided by the "client_id" request parameter.
+    status: applicable
+  - id: RFC8252-8.5-02
+    section: "8.5"
+    keyword: MUST
+    text: Authorization servers that still require a statically included shared secret for native app clients MUST treat the client as a public client (as defined by Section 2.1 of OAuth 2.0 [RFC6749]), and not accept the secret as proof of the client's identity.
+    status: applicable
+  - id: RFC8252-8.6-01
+    section: "8.6"
+    keyword: SHOULD NOT
+    text: As stated in Section 10.2 of OAuth 2.0 [RFC6749], the authorization server SHOULD NOT process authorization requests automatically without user consent or interaction, except when the identity of the client can be assured.
+    status: applicable
+  - id: RFC8252-8.6-02
+    section: "8.6"
+    keyword: SHOULD
+    text: This includes the case where the user has previously approved an authorization request for a given client id --unless the identity of the client can be proven, the request SHOULD be processed as if no previous request had been approved.
+    status: applicable
+  - id: RFC8252-8.6-03
+    section: "8.6"
+    keyword: MAY
+    text: Measures such as claimed "https" scheme redirects MAY be accepted by authorization servers as identity proof.
+    status: applicable
+  - id: RFC8252-8.6-04
+    section: "8.6"
+    keyword: MAY
+    text: Some operating systems may offer alternative platform-specific identity features that MAY be accepted, as appropriate.
+    status: applicable
+  - id: RFC8252-8.9-01
+    section: "8.9"
+    keyword: RECOMMENDED
+    text: To mitigate CSRF-style attacks over inter-app URI communication channels (so called "cross-app request forgery"), it is similarly RECOMMENDED that native apps include a high-entropy secure random number in the "state" parameter of the authorization request and reject any incoming authorization responses without a state value that matches a pending outgoing authorization request.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.10-01
+    section: "8.10"
+    keyword: REQUIRED
+    text: To protect against a compromised or malicious authorization server attacking another authorization server used by the same app, it is REQUIRED that a unique redirect URI is used for each authorization server used by the app (for example, by varying the path component), and that authorization responses are rejected if the redirect URI they were received on doesn't match the redirect URI in an outgoing authorization request.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.10-02
+    section: "8.10"
+    keyword: MUST
+    text: The native app MUST store the redirect URI used in the authorization request with the authorization session data (i.e., along with "state" and other related data) and MUST verify that the URI on which the authorization response was received exactly matches it.
+    statement: The native app MUST store the redirect URI used in the authorization request with the authorization session data.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.10-03
+    section: "8.10"
+    keyword: MUST
+    text: The native app MUST store the redirect URI used in the authorization request with the authorization session data (i.e., along with "state" and other related data) and MUST verify that the URI on which the authorization response was received exactly matches it.
+    statement: The native app MUST verify that the URI on which the authorization response was received exactly matches the stored redirect URI.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.12-01
+    section: "8.12"
+    keyword: MUST NOT
+    text: This best current practice requires that native apps MUST NOT use embedded user-agents to perform authorization requests and allows that authorization endpoints MAY take steps to detect and block authorization requests in embedded user-agents.
+    statement: Native apps MUST NOT use embedded user-agents to perform authorization requests.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-8.12-02
+    section: "8.12"
+    keyword: MAY
+    text: This best current practice requires that native apps MUST NOT use embedded user-agents to perform authorization requests and allows that authorization endpoints MAY take steps to detect and block authorization requests in embedded user-agents.
+    statement: Authorization endpoints MAY take steps to detect and block authorization requests in embedded user-agents.
+    status: applicable
+  - id: RFC8252-B.3-01
+    section: B.3
+    keyword: SHOULD
+    text: When creating the loopback network socket, apps SHOULD set the "SO_EXCLUSIVEADDRUSE" socket option to prevent other apps binding to the same socket.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-B.3-02
+    section: B.3
+    keyword: MUST
+    text: To qualify as an external user-agent, the broker MUST be used in SSO mode.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8252-B.5-01
+    section: B.5
+    keyword: SHOULD NOT
+    text: Apps SHOULD NOT set the "SO_REUSEPORT" or "SO_REUSEADDR" socket options in order to prevent other apps binding to the same socket.
+    status: out-of-scope
+    reason: client-requirement

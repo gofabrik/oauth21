@@ -681,3 +681,61 @@ func TestBearerChallengeErrorURICharacters(t *testing.T) {
 		}
 	})
 }
+
+// TestRemoteValidationChecksIntrospectionCertificate checks that the remote validator does not accept an active access token from an introspection endpoint whose TLS certificate it does not trust.
+//
+//conformance:covers RFC7662-4-13
+func TestRemoteValidationChecksIntrospectionCertificate(t *testing.T) {
+	a := newIntrospectionServer(t)
+	r := a.remote(resourceServerID, secret)
+	r.Client = &http.Client{}
+	a.resource(r)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.wantActive(access)
+	if status, _, _ := a.access(bearerHeader(access)); status != http.StatusInternalServerError {
+		t.Fatalf("got status %d, want 500 for a failed introspection", status)
+	}
+}
+
+// TestRemoteValidationDoesNotCache checks that the remote validator refuses an access token as soon as it is revoked, after serving it.
+//
+//conformance:covers RFC7662-4-17
+func TestRemoteValidationDoesNotCache(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resource(a.remote(resourceServerID, secret))
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.wantAccess(access, http.StatusOK)
+	a.revoke(revocationParams(access), nil)
+	a.wantAccess(access, http.StatusUnauthorized)
+}
+
+// TestRemoteValidationRefusesAfterExp checks that the remote validator refuses an access token it served once one second has passed after its exp.
+//
+//conformance:covers RFC7662-4-18
+func TestRemoteValidationRefusesAfterExp(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resource(a.remote(resourceServerID, secret))
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	exp, _ := a.introspect(access)["exp"].(float64)
+	a.wantAccess(access, http.StatusOK)
+	a.advance(time.Unix(int64(exp)+1, 0).Sub(a.now()))
+	a.wantAccess(access, http.StatusUnauthorized)
+}
+
+// TestAccessTokenLifetimeIsLimited checks that an access token stops being valid once the lifetime its token response states has passed.
+//
+//conformance:covers RFC6750-5.2-10
+func TestAccessTokenLifetimeIsLimited(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		status, _, body := a.token(tokenParams(a.code(authorizeParams())), nil)
+		access, _ := body["access_token"].(string)
+		expiresIn, ok := body["expires_in"].(float64)
+		if status != http.StatusOK || !ok || expiresIn <= 0 {
+			t.Fatalf("got status %d and body %v, want an access token with expires_in", status, body)
+		}
+		a.wantAccess(access, http.StatusOK)
+		a.advance(time.Duration(expiresIn) * time.Second)
+		a.wantAccess(access, http.StatusUnauthorized)
+	})
+}

@@ -4,6 +4,8 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +79,8 @@ func TestActiveAccessTokenIntrospection(t *testing.T) {
 }
 
 // TestInactiveTokenIntrospection checks that unknown, expired and revoked access tokens and refresh tokens introspect as inactive with no other details.
+//
+//conformance:covers RFC7662-2.2-19
 func TestInactiveTokenIntrospection(t *testing.T) {
 	t.Run("unknown", func(t *testing.T) {
 		newIntrospectionServer(t).wantInactive("unknown")
@@ -128,11 +132,22 @@ func TestIntrospectionRequiresAuthorizedClient(t *testing.T) {
 	}
 }
 
-// TestIntrospectionRequestErrors checks that an introspection request without a token or not sent with POST fails with invalid_request.
-func TestIntrospectionRequestErrors(t *testing.T) {
+// TestIntrospectionRequiresToken checks that an introspection request without a token fails with invalid_request.
+//
+//conformance:covers RFC7662-2.1-01
+func TestIntrospectionRequiresToken(t *testing.T) {
 	a := newIntrospectionServer(t)
 	a.wantIntrospectionError(url.Values{}, basic(resourceServerID, secret), http.StatusBadRequest, "invalid_request")
-	status, _, body := a.sendJSON(http.MethodGet, "/introspect?token=unknown", "", basic(resourceServerID, secret))
+	a.wantIntrospectionError(url.Values{"token": {""}}, basic(resourceServerID, secret), http.StatusBadRequest, "invalid_request")
+}
+
+// TestIntrospectionRequiresPost checks that an introspection request not sent with POST fails with invalid_request.
+//
+//conformance:covers RFC7662-4-14
+func TestIntrospectionRequiresPost(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	status, _, body := a.sendJSON(http.MethodGet, "/introspect?"+url.Values{"token": {access}}.Encode(), "", basic(resourceServerID, secret))
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
 }
 
@@ -164,4 +179,261 @@ func TestRefreshTokenIsNotIntrospected(t *testing.T) {
 	refresh := a.publicRefreshToken()
 	a.wantInactive(refresh)
 	a.tokens(refreshParams(refresh), nil)
+}
+
+// introspectWith sends an introspection request for token with header and params and returns its status and decoded JSON body.
+func (a *authorizationServer) introspectWith(token string, params url.Values, header http.Header) (int, map[string]any) {
+	a.t.Helper()
+	form := url.Values{"token": {token}}
+	maps.Copy(form, params)
+	status, _, body := a.sendJSON(http.MethodPost, "/introspect", form.Encode(), header)
+	return status, body
+}
+
+// wantActive checks that token introspects as active.
+func (a *authorizationServer) wantActive(token string) {
+	a.t.Helper()
+	if body := a.introspect(token); body["active"] != true {
+		a.t.Fatalf("got %v, want an active token", body)
+	}
+}
+
+// TestIntrospectionSearchesBeyondHint checks that an active access token introspects as active whatever token_type_hint names.
+//
+//conformance:covers RFC7662-2.1-04
+func TestIntrospectionSearchesBeyondHint(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	for _, hint := range []string{"access_token", "refresh_token", "unknown"} {
+		status, body := a.introspectWith(access, url.Values{"token_type_hint": {hint}}, basic(resourceServerID, secret))
+		if status != http.StatusOK || body["active"] != true {
+			t.Fatalf("got status %d and body %v with hint %s, want an active token", status, body, hint)
+		}
+	}
+}
+
+// TestIntrospectionRequiresAuthorization checks that a request without client authentication, also one carrying the access token as a bearer token, is refused and learns nothing about the token.
+//
+//conformance:covers RFC7662-2.1-09
+func TestIntrospectionRequiresAuthorization(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	for _, header := range []http.Header{nil, bearerHeader(access)} {
+		status, body := a.introspectWith(access, nil, header)
+		a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
+		if _, ok := body["active"]; ok {
+			t.Fatalf("got body %v, want no active member", body)
+		}
+	}
+}
+
+// TestIntrospectionResponseHasActive checks that the introspection responses for an active and an inactive token carry active as a boolean.
+//
+//conformance:covers RFC7662-2.2-01
+func TestIntrospectionResponseHasActive(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	for token, want := range map[string]bool{access: true, "unknown": false} {
+		if body := a.introspect(token); body["active"] != want {
+			t.Fatalf("got %v, want active %v", body, want)
+		}
+	}
+}
+
+// introspectionNames are the names of the initial OAuth Token Introspection Response registry (RFC 7662 3.2).
+var introspectionNames = []string{"active", "username", "client_id", "scope", "token_type", "exp", "iat", "nbf", "sub", "aud", "iss", "jti"}
+
+// TestIntrospectionResponseNamesAreRegistered checks that the introspection response of an active token with an audience uses only registered names.
+//
+//conformance:covers RFC7662-2.2-14
+func TestIntrospectionResponseNamesAreRegistered(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	for _, token := range []string{access, a.audienceToken(resourceServerID)} {
+		body := a.introspect(token)
+		for name := range body {
+			if !slices.Contains(introspectionNames, name) {
+				t.Fatalf("got member %q in %v, want only registered names", name, body)
+			}
+		}
+	}
+}
+
+// TestNotActiveTokenIntrospectsInactive checks that an expired and a revoked access token get a response with active false.
+//
+//conformance:covers RFC7662-2.2-18
+func TestNotActiveTokenIntrospectsInactive(t *testing.T) {
+	a := newIntrospectionServer(t)
+	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(revoked), nil)
+	if body := a.introspect(revoked); body["active"] != false {
+		t.Fatalf("got %v for a revoked token, want active false", body)
+	}
+	expired, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.advance(time.Hour)
+	if body := a.introspect(expired); body["active"] != false {
+		t.Fatalf("got %v for an expired token, want active false", body)
+	}
+}
+
+// TestUnknownTokenIntrospectsInactive checks that a token the server never issued, also one of the form of its tokens, gets a response with active false.
+//
+//conformance:covers RFC7662-2.2-20
+func TestUnknownTokenIntrospectsInactive(t *testing.T) {
+	a := newIntrospectionServer(t)
+	for _, token := range []string{"unknown", random(t)} {
+		if body := a.introspect(token); body["active"] != false {
+			t.Fatalf("got %v, want active false", body)
+		}
+	}
+}
+
+// TestTokenForOtherResourceServerIntrospectsInactive checks that an access token whose audience names only other Resource Servers gets a response with active false.
+//
+//conformance:covers RFC7662-2.2-21
+func TestTokenForOtherResourceServerIntrospectsInactive(t *testing.T) {
+	a := newIntrospectionServer(t)
+	for _, audience := range otherAudiences {
+		if body := a.introspect(a.audienceToken(audience...)); body["active"] != false {
+			t.Fatalf("got %v for audience %q, want active false", body, audience)
+		}
+	}
+}
+
+// TestInactiveTokenIsNoError checks that an authorized request for an unknown, expired, revoked or foreign token gets a 200 introspection response, not an error.
+//
+//conformance:covers RFC7662-2.3-01
+func TestInactiveTokenIsNoError(t *testing.T) {
+	a := newIntrospectionServer(t)
+	wantNoError := func(token string) {
+		t.Helper()
+		status, body := a.introspectWith(token, nil, basic(resourceServerID, secret))
+		if _, isError := body["error"]; status != http.StatusOK || isError || body["active"] != false {
+			t.Fatalf("got status %d and body %v, want 200 with active false", status, body)
+		}
+	}
+	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(revoked), nil)
+	for _, token := range []string{"unknown", revoked, a.audienceToken("other"), a.publicRefreshToken()} {
+		wantNoError(token)
+	}
+	expired, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.advance(time.Hour)
+	wantNoError(expired)
+}
+
+// TestIntrospectionChecksTokenState checks that an access token introspects as active only while it is unexpired, unrevoked, of a live Grant and meant for the Resource Server.
+func TestIntrospectionChecksTokenState(t *testing.T) {
+	a := newIntrospectionServer(t)
+	live, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(revoked), nil)
+	ofRevokedGrant, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(refresh), nil)
+	a.wantActive(live)
+	a.wantActive(a.audienceToken(resourceServerID))
+	for _, token := range []string{revoked, ofRevokedGrant, a.audienceToken("other")} {
+		a.wantInactive(token)
+	}
+	a.advance(time.Hour)
+	a.wantInactive(live)
+}
+
+// TestIntrospectionChecksExpiry checks that an access token introspects as active until its expiry and as inactive from then on.
+//
+//conformance:covers RFC7662-4-02
+func TestIntrospectionChecksExpiry(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.advance(time.Hour - time.Second)
+	a.wantActive(access)
+	a.advance(time.Second)
+	a.wantInactive(access)
+}
+
+// TestIntrospectionChecksRevocation checks that a revoked access token and the access tokens of a revoked Grant introspect as inactive.
+//
+//conformance:covers RFC7662-4-04
+func TestIntrospectionChecksRevocation(t *testing.T) {
+	a := newIntrospectionServer(t)
+	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.wantActive(revoked)
+	a.revoke(revocationParams(revoked), nil)
+	a.wantInactive(revoked)
+	access, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.wantActive(access)
+	a.revoke(revocationParams(refresh), nil)
+	a.wantInactive(access)
+}
+
+// TestIntrospectionChecksAudience checks that an access token introspects as active for a Resource Server its audience names, alone or with others, and as inactive when it names only others.
+//
+//conformance:covers RFC7662-4-06
+func TestIntrospectionChecksAudience(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.wantActive(a.audienceToken(resourceServerID))
+	a.wantActive(a.audienceToken("other", resourceServerID))
+	a.wantInactive(a.audienceToken("other"))
+}
+
+// TestIntrospectionRequiresAuthentication checks that a Resource Server allowed to introspect must authenticate: no credentials, its client_id alone or a wrong secret get 401.
+//
+//conformance:covers RFC7662-4-07
+func TestIntrospectionRequiresAuthentication(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	for _, c := range []struct {
+		params url.Values
+		header http.Header
+	}{
+		{nil, nil},
+		{url.Values{"client_id": {resourceServerID}}, nil},
+		{url.Values{"client_id": {resourceServerID}, "client_secret": {"wrong"}}, nil},
+		{nil, basic(resourceServerID, "wrong")},
+	} {
+		status, body := a.introspectWith(access, c.params, c.header)
+		a.wantOAuthError(status, body, http.StatusUnauthorized, "invalid_client")
+	}
+}
+
+// TestIntrospectionRequiresPermission checks that an authenticated confidential Client not allowed to introspect gets unauthorized_client.
+//
+//conformance:covers RFC7662-4-08
+func TestIntrospectionRequiresPermission(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	status, body := a.introspectWith(access, nil, basic(confidentialID, secret))
+	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
+}
+
+// TestIntrospectionDisclosesSubjectOnlyToResourceServer checks that the subject of an access token reaches only the authenticated Resource Server allowed to introspect, never an unauthenticated caller or another Client.
+//
+//conformance:covers RFC7662-5-01
+func TestIntrospectionDisclosesSubjectOnlyToResourceServer(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	if body := a.introspect(access); body["sub"] != "alice" {
+		t.Fatalf("got %v, want the subject alice", body)
+	}
+	for _, header := range []http.Header{nil, basic(confidentialID, secret), basic(resourceServerID, "wrong")} {
+		_, _, raw := a.send(http.MethodPost, "/introspect", url.Values{"token": {access}}.Encode(), header)
+		if strings.Contains(string(raw), "alice") {
+			t.Fatalf("got body %s, want no subject", raw)
+		}
+	}
+}
+
+// TestInactiveTokenHasOnlyActive checks that the introspection responses for an unknown, an expired, a revoked and a foreign token carry only active.
+//
+//conformance:covers RFC7662-4-15
+func TestInactiveTokenHasOnlyActive(t *testing.T) {
+	a := newIntrospectionServer(t)
+	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(revoked), nil)
+	for _, token := range []string{"unknown", revoked, a.audienceToken("other")} {
+		a.wantInactive(token)
+	}
+	expired, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.advance(time.Hour)
+	a.wantInactive(expired)
 }

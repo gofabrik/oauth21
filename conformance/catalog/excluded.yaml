@@ -8,6 +8,8 @@ features:
   - dpop
   - jwt-access-tokens
   - private-key-jwt
+  - client-secret-jwt
+  - signed-metadata
   - device-grant
   - dynamic-client-registration
   - token-exchange

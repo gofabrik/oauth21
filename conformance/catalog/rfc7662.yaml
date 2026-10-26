@@ -1,0 +1,383 @@
+document: RFC7662
+title: OAuth 2.0 Token Introspection
+source: ../specs/rfc7662.txt
+requirements:
+  - id: RFC7662-1.1-01
+    section: "1.1"
+    keyword: MUST
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word MUST in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-02
+    section: "1.1"
+    keyword: MUST NOT
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word MUST NOT in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-03
+    section: "1.1"
+    keyword: REQUIRED
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word REQUIRED in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-04
+    section: "1.1"
+    keyword: SHALL
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word SHALL in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-05
+    section: "1.1"
+    keyword: SHALL NOT
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word SHALL NOT in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-06
+    section: "1.1"
+    keyword: SHOULD
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word SHOULD in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-07
+    section: "1.1"
+    keyword: SHOULD NOT
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word SHOULD NOT in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-08
+    section: "1.1"
+    keyword: RECOMMENDED
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word RECOMMENDED in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-09
+    section: "1.1"
+    keyword: NOT RECOMMENDED
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word NOT RECOMMENDED in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-10
+    section: "1.1"
+    keyword: MAY
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word MAY in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-1.1-11
+    section: "1.1"
+    keyword: OPTIONAL
+    text: The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED', 'MAY', and 'OPTIONAL' in this document are to be interpreted as described in [RFC2119].
+    statement: The key word OPTIONAL in this document is to be interpreted as described in [RFC2119].
+    status: informative
+    note: The BCP 14 boilerplate.
+  - id: RFC7662-2-01
+    section: "2"
+    keyword: MUST
+    text: The introspection endpoint MUST be protected by a transport-layer security mechanism as described in Section 4.
+    status: applicable
+    note: Transport security is ticket 50.
+  - id: RFC7662-2.1-01
+    section: "2.1"
+    keyword: REQUIRED
+    text: token REQUIRED.
+    status: applicable
+  - id: RFC7662-2.1-02
+    section: "2.1"
+    keyword: OPTIONAL
+    text: token_type_hint OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.1-03
+    section: "2.1"
+    keyword: MAY
+    text: The protected resource MAY pass this parameter to help the authorization server optimize the token lookup.
+    status: applicable
+    note: bearer.Remote sends no hint.
+  - id: RFC7662-2.1-04
+    section: "2.1"
+    keyword: MUST
+    text: If the server is unable to locate the token using the given hint, it MUST extend its search across all of its supported token types.
+    status: applicable
+  - id: RFC7662-2.1-05
+    section: "2.1"
+    keyword: MAY
+    text: An authorization server MAY ignore this parameter, particularly if it is able to detect the token type automatically.
+    status: applicable
+    note: The server ignores the hint.
+  - id: RFC7662-2.1-06
+    section: "2.1"
+    keyword: MAY
+    text: The introspection endpoint MAY accept other OPTIONAL parameters to provide further context to the query.
+    statement: The introspection endpoint MAY accept other parameters to provide further context to the query.
+    status: applicable
+  - id: RFC7662-2.1-07
+    section: "2.1"
+    keyword: OPTIONAL
+    text: The introspection endpoint MAY accept other OPTIONAL parameters to provide further context to the query.
+    statement: Other parameters of the introspection request are OPTIONAL.
+    status: informative
+  - id: RFC7662-2.1-08
+    section: "2.1"
+    keyword: SHOULD
+    text: If the authorization server is unable to determine the state of the token without additional information, it SHOULD return an introspection response indicating the token is not active as described in Section 2.2.
+    status: applicable
+  - id: RFC7662-2.1-09
+    section: "2.1"
+    keyword: MUST
+    text: To prevent token scanning attacks, the endpoint MUST also require some form of authorization to access this endpoint, such as client authentication as described in OAuth 2.0 [RFC6749] or a separate OAuth 2.0 access token such as the bearer token described in OAuth 2.0 Bearer Token Usage [RFC6750].
+    status: applicable
+  - id: RFC7662-2.2-01
+    section: "2.2"
+    keyword: REQUIRED
+    text: active REQUIRED.
+    status: applicable
+  - id: RFC7662-2.2-02
+    section: "2.2"
+    keyword: OPTIONAL
+    text: scope OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-03
+    section: "2.2"
+    keyword: OPTIONAL
+    text: client_id OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-04
+    section: "2.2"
+    keyword: OPTIONAL
+    text: username OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-05
+    section: "2.2"
+    keyword: OPTIONAL
+    text: token_type OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-06
+    section: "2.2"
+    keyword: OPTIONAL
+    text: exp OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-07
+    section: "2.2"
+    keyword: OPTIONAL
+    text: iat OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-08
+    section: "2.2"
+    keyword: OPTIONAL
+    text: nbf OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-09
+    section: "2.2"
+    keyword: OPTIONAL
+    text: sub OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-10
+    section: "2.2"
+    keyword: OPTIONAL
+    text: aud OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-11
+    section: "2.2"
+    keyword: OPTIONAL
+    text: iss OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-12
+    section: "2.2"
+    keyword: OPTIONAL
+    text: jti OPTIONAL.
+    status: applicable
+  - id: RFC7662-2.2-13
+    section: "2.2"
+    keyword: MAY
+    text: Specific implementations MAY extend this structure with their own service-specific response names as top-level members of this JSON object.
+    status: applicable
+  - id: RFC7662-2.2-14
+    section: "2.2"
+    keyword: MUST
+    text: Response names intended to be used across domains MUST be registered in the "OAuth Token Introspection Response" registry defined in Section 3.1.
+    status: applicable
+  - id: RFC7662-2.2-15
+    section: "2.2"
+    keyword: MAY
+    text: The authorization server MAY respond differently to different protected resources making the same request.
+    status: applicable
+  - id: RFC7662-2.2-16
+    section: "2.2"
+    keyword: MAY
+    text: For instance, an authorization server MAY limit which scopes from a given token are returned for each protected resource to prevent a protected resource from learning more about the larger network than is necessary for its operation.
+    status: applicable
+  - id: RFC7662-2.2-17
+    section: "2.2"
+    keyword: MAY
+    text: The response MAY be cached by the protected resource to improve performance and reduce load on the introspection endpoint, but at the cost of liveness of the information used by the protected resource to make authorization decisions.
+    status: applicable
+    note: bearer.Remote does not cache introspection responses.
+  - id: RFC7662-2.2-18
+    section: "2.2"
+    keyword: MUST
+    text: If the introspection call is properly authorized but the token is not active, does not exist on this server, or the protected resource is not allowed to introspect this particular token, then the authorization server MUST return an introspection response with the "active" field set to "false".
+    statement: If the introspection call is properly authorized but the token is not active, then the authorization server MUST return an introspection response with the active field set to false.
+    status: applicable
+  - id: RFC7662-2.2-20
+    section: "2.2"
+    keyword: MUST
+    text: If the introspection call is properly authorized but the token is not active, does not exist on this server, or the protected resource is not allowed to introspect this particular token, then the authorization server MUST return an introspection response with the "active" field set to "false".
+    statement: If the introspection call is properly authorized but the token does not exist on this server, then the authorization server MUST return an introspection response with the active field set to false.
+    status: applicable
+  - id: RFC7662-2.2-21
+    section: "2.2"
+    keyword: MUST
+    text: If the introspection call is properly authorized but the token is not active, does not exist on this server, or the protected resource is not allowed to introspect this particular token, then the authorization server MUST return an introspection response with the "active" field set to "false".
+    statement: If the introspection call is properly authorized but the token is one the protected resource is not allowed to introspect, then the authorization server MUST return an introspection response with the active field set to false.
+    status: applicable
+  - id: RFC7662-2.2-19
+    section: "2.2"
+    keyword: SHOULD NOT
+    text: Note that to avoid disclosing too much of the authorization server's state to a third party, the authorization server SHOULD NOT include any additional information about an inactive token, including why the token is inactive.
+    status: applicable
+  - id: RFC7662-2.3-01
+    section: "2.3"
+    keyword: MUST
+    text: In these cases, the authorization server MUST instead respond with an introspection response with the "active" field set to "false" as described in Section 2.2.
+    status: applicable
+  - id: RFC7662-3.1.1-01
+    section: 3.1.1
+    keyword: SHOULD NOT
+    text: Names that match other registered names in a case insensitive manner SHOULD NOT be accepted.
+    status: informative
+  - id: RFC7662-3.1.1-02
+    section: 3.1.1
+    keyword: SHOULD
+    text: Names that match claims registered in the "JSON Web Token Claims" registry established by [RFC7519] SHOULD have comparable definitions and semantics.
+    status: informative
+  - id: RFC7662-4-01
+    section: "4"
+    keyword: MUST
+    text: However, since resource servers using token introspection rely on the authorization server to determine the state of a token, the authorization server MUST perform all applicable checks against a token's state.
+    status: applicable
+    note: Includes the check of RFC7662-4-03.
+  - id: RFC7662-4-02
+    section: "4"
+    keyword: MUST
+    text: 'For instance, these tests include the following: If the token can expire, the authorization server MUST determine whether or not the token has expired. If the token can be issued before it is able to be used, the authorization server MUST determine whether or not a token''s valid period has started yet. If the token can be revoked after it was issued, the authorization server MUST determine whether or not such a revocation has taken place. If the token has been signed, the authorization server MUST validate the signature. If the token can be used only at certain resource servers, the authorization server MUST determine whether or not the token can be used at the resource server making the introspection call.'
+    statement: If the token can expire, the authorization server MUST determine whether or not the token has expired.
+    status: applicable
+  - id: RFC7662-4-03
+    section: "4"
+    keyword: MUST
+    text: 'For instance, these tests include the following: If the token can expire, the authorization server MUST determine whether or not the token has expired. If the token can be issued before it is able to be used, the authorization server MUST determine whether or not a token''s valid period has started yet. If the token can be revoked after it was issued, the authorization server MUST determine whether or not such a revocation has taken place. If the token has been signed, the authorization server MUST validate the signature. If the token can be used only at certain resource servers, the authorization server MUST determine whether or not the token can be used at the resource server making the introspection call.'
+    statement: 'If the token can be issued before it is able to be used, the authorization server MUST determine whether or not a token''s valid period has started yet.'
+    status: applicable
+  - id: RFC7662-4-04
+    section: "4"
+    keyword: MUST
+    text: 'For instance, these tests include the following: If the token can expire, the authorization server MUST determine whether or not the token has expired. If the token can be issued before it is able to be used, the authorization server MUST determine whether or not a token''s valid period has started yet. If the token can be revoked after it was issued, the authorization server MUST determine whether or not such a revocation has taken place. If the token has been signed, the authorization server MUST validate the signature. If the token can be used only at certain resource servers, the authorization server MUST determine whether or not the token can be used at the resource server making the introspection call.'
+    statement: If the token can be revoked after it was issued, the authorization server MUST determine whether or not such a revocation has taken place.
+    status: applicable
+  - id: RFC7662-4-05
+    section: "4"
+    keyword: MUST
+    text: 'For instance, these tests include the following: If the token can expire, the authorization server MUST determine whether or not the token has expired. If the token can be issued before it is able to be used, the authorization server MUST determine whether or not a token''s valid period has started yet. If the token can be revoked after it was issued, the authorization server MUST determine whether or not such a revocation has taken place. If the token has been signed, the authorization server MUST validate the signature. If the token can be used only at certain resource servers, the authorization server MUST determine whether or not the token can be used at the resource server making the introspection call.'
+    statement: If the token has been signed, the authorization server MUST validate the signature.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: Access tokens are opaque.
+  - id: RFC7662-4-06
+    section: "4"
+    keyword: MUST
+    text: 'For instance, these tests include the following: If the token can expire, the authorization server MUST determine whether or not the token has expired. If the token can be issued before it is able to be used, the authorization server MUST determine whether or not a token''s valid period has started yet. If the token can be revoked after it was issued, the authorization server MUST determine whether or not such a revocation has taken place. If the token has been signed, the authorization server MUST validate the signature. If the token can be used only at certain resource servers, the authorization server MUST determine whether or not the token can be used at the resource server making the introspection call.'
+    statement: If the token can be used only at certain resource servers, the authorization server MUST determine whether or not the token can be used at the resource server making the introspection call.
+    status: applicable
+  - id: RFC7662-4-07
+    section: "4"
+    keyword: MUST
+    text: To prevent this, the authorization server MUST require authentication of protected resources that need to access the introspection endpoint and SHOULD require protected resources to be specifically authorized to call the introspection endpoint.
+    statement: The authorization server MUST require authentication of protected resources that need to access the introspection endpoint.
+    status: applicable
+  - id: RFC7662-4-08
+    section: "4"
+    keyword: SHOULD
+    text: To prevent this, the authorization server MUST require authentication of protected resources that need to access the introspection endpoint and SHOULD require protected resources to be specifically authorized to call the introspection endpoint.
+    statement: The authorization server SHOULD require protected resources to be specifically authorized to call the introspection endpoint.
+    status: applicable
+  - id: RFC7662-4-09
+    section: "4"
+    keyword: MAY
+    text: A single piece of software acting as both a client and a protected resource MAY reuse the same credentials between the token endpoint and the introspection endpoint, though doing so potentially conflates the activities of the client and protected resource portions of the software and the authorization server MAY require separate credentials for each mode.
+    statement: A single piece of software acting as both a client and a protected resource MAY reuse the same credentials between the token endpoint and the introspection endpoint.
+    status: applicable
+  - id: RFC7662-4-10
+    section: "4"
+    keyword: MAY
+    text: A single piece of software acting as both a client and a protected resource MAY reuse the same credentials between the token endpoint and the introspection endpoint, though doing so potentially conflates the activities of the client and protected resource portions of the software and the authorization server MAY require separate credentials for each mode.
+    statement: The authorization server MAY require separate credentials for the client and the protected resource modes of a single piece of software.
+    status: applicable
+  - id: RFC7662-4-11
+    section: "4"
+    keyword: MUST
+    text: Since the introspection endpoint takes in OAuth 2.0 tokens as parameters and responds with information used to make authorization decisions, the server MUST support Transport Layer Security (TLS) 1.2 [RFC5246] and MAY support additional transport-layer mechanisms meeting its security requirements.
+    statement: The server MUST support Transport Layer Security (TLS) 1.2.
+    status: applicable
+    note: Transport security is ticket 50.
+  - id: RFC7662-4-12
+    section: "4"
+    keyword: MAY
+    text: Since the introspection endpoint takes in OAuth 2.0 tokens as parameters and responds with information used to make authorization decisions, the server MUST support Transport Layer Security (TLS) 1.2 [RFC5246] and MAY support additional transport-layer mechanisms meeting its security requirements.
+    statement: The server MAY support additional transport-layer mechanisms meeting its security requirements.
+    status: applicable
+  - id: RFC7662-4-13
+    section: "4"
+    keyword: MUST
+    text: When using TLS, the client or protected resource MUST perform a TLS/SSL server certificate check, as specified in [RFC6125].
+    statement: When using TLS, the protected resource MUST perform a TLS/SSL server certificate check.
+    status: applicable
+  - id: RFC7662-4-19
+    section: "4"
+    keyword: MUST
+    text: When using TLS, the client or protected resource MUST perform a TLS/SSL server certificate check, as specified in [RFC6125].
+    statement: When using TLS, the client MUST perform a TLS/SSL server certificate check.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC7662-4-14
+    section: "4"
+    keyword: MAY
+    text: To prevent the values of access tokens from leaking into server-side logs via query parameters, an authorization server offering token introspection MAY disallow the use of HTTP GET on the introspection endpoint and instead require the HTTP POST method to be used at the introspection endpoint.
+    status: applicable
+  - id: RFC7662-4-15
+    section: "4"
+    keyword: SHOULD NOT
+    text: To avoid disclosing the internal state of the authorization server, an introspection response for an inactive token SHOULD NOT contain any additional claims beyond the required "active" claim (with its value set to "false").
+    status: applicable
+  - id: RFC7662-4-16
+    section: "4"
+    keyword: MAY
+    text: Since a protected resource MAY cache the response of the introspection endpoint, designers of an OAuth 2.0 system using this protocol MUST consider the performance and security trade-offs inherent in caching security information such as this.
+    statement: A protected resource MAY cache the response of the introspection endpoint.
+    status: applicable
+    note: bearer.Remote does not cache introspection responses.
+  - id: RFC7662-4-17
+    section: "4"
+    keyword: MUST
+    text: Since a protected resource MAY cache the response of the introspection endpoint, designers of an OAuth 2.0 system using this protocol MUST consider the performance and security trade-offs inherent in caching security information such as this.
+    statement: Designers of an OAuth 2.0 system using this protocol MUST consider the performance and security trade-offs inherent in caching security information such as this.
+    status: applicable
+    note: bearer.Remote does not cache introspection responses.
+  - id: RFC7662-4-18
+    section: "4"
+    keyword: MUST NOT
+    text: If the response contains the "exp" parameter (expiration), the response MUST NOT be cached beyond the time indicated therein.
+    status: applicable
+  - id: RFC7662-5-01
+    section: "5"
+    keyword: MUST
+    text: When this is the case, measures MUST be taken to prevent disclosure of this information to unintended parties.
+    status: applicable

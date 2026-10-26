@@ -3,6 +3,7 @@ package conformance
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,10 +166,133 @@ func TestRevocationOfAnotherClientsTokenFails(t *testing.T) {
 	a.tokens(refreshParams(refresh), nil)
 }
 
-// TestRevocationRequestErrors checks that a revocation request without a token or not sent with POST fails with invalid_request.
-func TestRevocationRequestErrors(t *testing.T) {
+// TestRevocationRequiresToken checks that a revocation request without a token fails with invalid_request.
+//
+//conformance:covers RFC7009-2.1-01
+func TestRevocationRequiresToken(t *testing.T) {
 	a := newAuthorizationServer(t)
 	a.wantRevocationError(url.Values{"client_id": {clientID}}, nil, http.StatusBadRequest, "invalid_request")
+	a.wantRevocationError(url.Values{"client_id": {clientID}, "token": {""}}, nil, http.StatusBadRequest, "invalid_request")
+}
+
+// TestRevocationRequiresPost checks that a revocation request not sent with POST fails with invalid_request.
+func TestRevocationRequiresPost(t *testing.T) {
+	a := newAuthorizationServer(t)
 	status, _, body := a.sendJSON(http.MethodGet, "/revoke?"+revocationParams("unknown").Encode(), "", nil)
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+}
+
+// TestRefreshTokenRevocation checks that a revoked refresh token, of a public or a confidential Client, can no longer refresh.
+//
+//conformance:covers RFC7009-2-01
+func TestRefreshTokenRevocation(t *testing.T) {
+	a := newConfidentialServer(t)
+	public := a.publicRefreshToken()
+	a.revoke(revocationParams(public), nil)
+	status, _, body := a.token(refreshParams(public), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	confidential := a.confidentialRefreshToken()
+	a.revoke(url.Values{"token": {confidential}}, basic(confidentialID, secret))
+	status, _, body = a.token(confidentialRefreshParams(confidential), basic(confidentialID, secret))
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}
+
+// TestAccessTokenRevocation checks that a revoked access token introspects as inactive.
+//
+//conformance:covers RFC7009-2-02
+func TestAccessTokenRevocation(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(access), nil)
+	a.wantInactive(access)
+}
+
+// TestRevocationEndpointIsAbsoluteWithoutFragment checks that the revocation endpoint URL in the metadata is an absolute URL without a fragment.
+//
+//conformance:covers RFC7009-2-03
+func TestRevocationEndpointIsAbsoluteWithoutFragment(t *testing.T) {
+	raw := metadataURL(t, "revocation_endpoint")
+	if u, err := url.Parse(raw); err != nil || !u.IsAbs() || u.Host == "" || strings.Contains(raw, "#") {
+		t.Fatalf("got revocation_endpoint %s, want an absolute URL without a fragment", raw)
+	}
+}
+
+// TestRevocationEndpointIsHTTPS checks that the revocation endpoint URL in the metadata is an https URL, also with an issuer path and a configured revocation path.
+//
+//conformance:covers RFC7009-2-05
+func TestRevocationEndpointIsHTTPS(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) {
+		c.Issuer += "/tenant"
+		c.Paths.Revocation = "/oauth/revoke"
+	})
+	if u, _ := a.metadata(a.url + "/tenant")["revocation_endpoint"].(string); !strings.HasPrefix(u, "https://") {
+		t.Fatalf("got revocation_endpoint %q, want an https URL", u)
+	}
+}
+
+// TestNoHTTPRevocationEndpointIsPublished checks that no member of the metadata names an http URL of the revocation endpoint.
+//
+//conformance:covers RFC7009-2-09
+func TestNoHTTPRevocationEndpointIsPublished(t *testing.T) {
+	a := newAuthorizationServer(t)
+	for name, v := range a.metadata(a.url) {
+		if s, ok := v.(string); ok && strings.HasPrefix(s, "http:") {
+			t.Fatalf("got %s %s, want no http URL", name, s)
+		}
+	}
+}
+
+// TestRevocationSearchesBeyondHint checks that a token is revoked whatever token_type_hint names.
+//
+//conformance:covers RFC7009-2.1-04
+func TestRevocationSearchesBeyondHint(t *testing.T) {
+	for _, hint := range []string{"access_token", "refresh_token", "unknown"} {
+		t.Run(hint, func(t *testing.T) {
+			a := newIntrospectionServer(t)
+			access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+			refresh := a.publicRefreshToken()
+			for _, token := range []string{access, refresh} {
+				params := revocationParams(token)
+				params.Set("token_type_hint", hint)
+				a.revoke(params, nil)
+			}
+			a.wantInactive(access)
+			status, _, body := a.token(refreshParams(refresh), nil)
+			a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+		})
+	}
+}
+
+// TestRevokedRefreshTokenInvalidatesAccessTokens checks that revoking a refresh token invalidates the access tokens of its Grant.
+//
+//conformance:covers RFC7009-2.1-07
+func TestRevokedRefreshTokenInvalidatesAccessTokens(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	a.revoke(revocationParams(refresh), nil)
+	a.wantInactive(access)
+}
+
+// TestHintCausesNoExtraLookups checks that a revocation request with a token_type_hint that does not match its token makes no more Store lookups than one without a hint.
+func TestHintCausesNoExtraLookups(t *testing.T) {
+	lookups := func(kind, hint string) int {
+		a := newAuthorizationServer(t)
+		access, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		tokens := map[string]string{"access_token": access, "refresh_token": refresh, "unknown": "unknown"}
+		params := revocationParams(tokens[kind])
+		if hint != "" {
+			params.Set("token_type_hint", hint)
+		}
+		before := len(a.recorder.keys())
+		a.revoke(params, nil)
+		return len(a.recorder.keys()) - before
+	}
+	for _, kind := range []string{"access_token", "refresh_token", "unknown"} {
+		want := lookups(kind, "")
+		for _, hint := range []string{"access_token", "refresh_token", "unknown"} {
+			if got := lookups(kind, hint); got > want {
+				t.Fatalf("got %d Store lookups for %s with hint %s, want at most %d as without a hint", got, kind, hint, want)
+			}
+		}
+	}
 }

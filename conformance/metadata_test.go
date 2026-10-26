@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -162,5 +163,196 @@ func TestAuthorizationEndpointHasNoFragment(t *testing.T) {
 func TestTokenEndpointHasNoFragment(t *testing.T) {
 	if u := metadataURL(t, "token_endpoint"); strings.Contains(u, "#") {
 		t.Fatalf("got token_endpoint %s, want no fragment", u)
+	}
+}
+
+// TestMetadataProvidesIssuer checks that the metadata document provides the issuer identifier, also one with a path.
+//
+//conformance:covers RFC9207-2.3-01
+func TestMetadataProvidesIssuer(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += "/tenant" })
+	if got := a.metadata(a.url + "/tenant")["issuer"]; got != a.url+"/tenant" {
+		t.Fatalf("got issuer %v, want %s", got, a.url+"/tenant")
+	}
+}
+
+// TestMetadataIssuerIsIss checks that the issuer of the metadata document is identical to iss in authorization responses and error responses, also for an issuer with a path and a trailing slash.
+//
+//conformance:covers RFC9207-2.3-02
+func TestMetadataIssuerIsIss(t *testing.T) {
+	for _, path := range []string{"", "/tenant", "/tenant/"} {
+		t.Run(path, func(t *testing.T) {
+			a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += path })
+			issuer := a.metadata(a.url + path)["issuer"]
+			unsupported := authorizeParams()
+			unsupported.Set("response_type", "token")
+			success := a.login(a.authorizationRedirect(authorizeParams()), "alice")
+			for _, u := range []*url.URL{success, a.authorizationRedirect(unsupported)} {
+				if got := u.Query().Get("iss"); got != issuer {
+					t.Fatalf("got iss %q, want the metadata issuer %v", got, issuer)
+				}
+			}
+		})
+	}
+}
+
+// TestMetadataAnnouncesIss checks that the metadata document sets authorization_response_iss_parameter_supported to true.
+//
+//conformance:covers RFC9207-2.3-03
+func TestMetadataAnnouncesIss(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if got := a.metadata(a.url)["authorization_response_iss_parameter_supported"]; got != true {
+		t.Fatalf("got authorization_response_iss_parameter_supported %v, want true", got)
+	}
+}
+
+// TestMetadataHasIssuer checks that the metadata document has the issuer.
+//
+//conformance:covers RFC8414-2-01
+func TestMetadataHasIssuer(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if got := a.metadata(a.url)["issuer"]; got != a.url {
+		t.Fatalf("got issuer %v, want %s", got, a.url)
+	}
+}
+
+// TestMetadataHasAuthorizationEndpoint checks that the metadata document names the authorization endpoint.
+//
+//conformance:covers RFC8414-2-02
+func TestMetadataHasAuthorizationEndpoint(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if got := a.metadata(a.url)["authorization_endpoint"]; got != a.url+a.srv.Paths().Authorization {
+		t.Fatalf("got authorization_endpoint %v, want %s", got, a.url+a.srv.Paths().Authorization)
+	}
+}
+
+// TestMetadataHasTokenEndpoint checks that the metadata document names the token endpoint.
+//
+//conformance:covers RFC8414-2-03
+func TestMetadataHasTokenEndpoint(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if got := a.metadata(a.url)["token_endpoint"]; got != a.url+a.srv.Paths().Token {
+		t.Fatalf("got token_endpoint %v, want %s", got, a.url+a.srv.Paths().Token)
+	}
+}
+
+// TestMetadataHasResponseTypes checks that the metadata document names code as the only supported response type.
+//
+//conformance:covers RFC8414-2-11
+func TestMetadataHasResponseTypes(t *testing.T) {
+	a := newAuthorizationServer(t)
+	if got := a.metadata(a.url)["response_types_supported"]; !reflect.DeepEqual(got, []any{"code"}) {
+		t.Fatalf("got response_types_supported %v, want [code]", got)
+	}
+}
+
+// TestMetadataAtWellKnownPath checks that the metadata document of an issuer with a path is served with the well-known URI string inserted between the host and the path, and not after the path.
+//
+//conformance:covers RFC8414-3-01
+func TestMetadataAtWellKnownPath(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += "/tenant" })
+	if got := a.metadata(a.url + "/tenant")["issuer"]; got != a.url+"/tenant" {
+		t.Fatalf("got issuer %v, want %s", got, a.url+"/tenant")
+	}
+	if status, _, _ := a.send(http.MethodGet, "/tenant/.well-known/oauth-authorization-server", "", nil); status != http.StatusNotFound {
+		t.Fatalf("got status %d after the path, want 404", status)
+	}
+}
+
+// TestMetadataURLIsHTTPS checks that the metadata URL formed from the published issuer, also one with a path, is an https URL that serves the metadata document.
+//
+//conformance:covers RFC8414-3-02
+func TestMetadataURLIsHTTPS(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += "/tenant" })
+	issuer, _ := a.metadata(a.url + "/tenant")["issuer"].(string)
+	u, err := url.Parse(issuer)
+	if err != nil || u.Scheme != "https" {
+		t.Fatalf("got issuer %q, want an https URL", issuer)
+	}
+	u.Path = "/.well-known/oauth-authorization-server" + strings.TrimSuffix(u.Path, "/")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK || resp.TLS == nil {
+		t.Fatalf("got status %d from %s, want 200 over TLS", resp.StatusCode, u)
+	}
+}
+
+// TestMetadataPathDropsTrailingSlash checks that the metadata path of an issuer whose path ends in a slash drops the slash.
+//
+//conformance:covers RFC8414-3.1-02
+func TestMetadataPathDropsTrailingSlash(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += "/tenant/" })
+	status, _, body := a.sendJSON(http.MethodGet, "/.well-known/oauth-authorization-server/tenant", "", nil)
+	if status != http.StatusOK || body["issuer"] != a.url+"/tenant/" {
+		t.Fatalf("got status %d and issuer %v, want 200 and %s", status, body["issuer"], a.url+"/tenant/")
+	}
+	if status, _, _ := a.send(http.MethodGet, "/.well-known/oauth-authorization-server/tenant/", "", nil); status != http.StatusNotFound {
+		t.Fatalf("got status %d with the trailing slash, want 404", status)
+	}
+}
+
+// metadataNames are the metadata names of RFC 8414 2 and authorization_response_iss_parameter_supported of RFC 9207 3.
+var metadataNames = []string{
+	"issuer", "authorization_endpoint", "token_endpoint", "jwks_uri", "registration_endpoint", "scopes_supported",
+	"response_types_supported", "response_modes_supported", "grant_types_supported", "token_endpoint_auth_methods_supported",
+	"token_endpoint_auth_signing_alg_values_supported", "service_documentation", "ui_locales_supported", "op_policy_uri", "op_tos_uri",
+	"revocation_endpoint", "revocation_endpoint_auth_methods_supported", "revocation_endpoint_auth_signing_alg_values_supported",
+	"introspection_endpoint", "introspection_endpoint_auth_methods_supported", "introspection_endpoint_auth_signing_alg_values_supported",
+	"code_challenge_methods_supported", "authorization_response_iss_parameter_supported",
+}
+
+// TestMetadataResponse checks that the metadata document is a 200 response with an application/json object of metadata values.
+//
+//conformance:covers RFC8414-3.2-01
+func TestMetadataResponse(t *testing.T) {
+	a := newAuthorizationServer(t)
+	status, header, raw := a.send(http.MethodGet, a.srv.MetadataPath(), "", nil)
+	if status != http.StatusOK || header.Get("Content-Type") != "application/json" {
+		t.Fatalf("got status %d and Content-Type %q, want 200 and application/json", status, header.Get("Content-Type"))
+	}
+	names, err := members(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		if !slices.Contains(metadataNames, name) {
+			t.Fatalf("got member %q, want only metadata values", name)
+		}
+	}
+}
+
+// TestMetadataOmitsEmptyClaims checks that no member of the metadata document is empty or null, also with configured endpoint paths and one scope.
+//
+//conformance:covers RFC8414-3.2-03
+func TestMetadataOmitsEmptyClaims(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) {
+		c.Scopes = []string{"read"}
+		c.Paths = oauth21.Paths{Authorization: "/oauth/authorize", Token: "/oauth/token"} // #nosec G101 -- endpoint paths, not credentials
+	})
+	for name, v := range a.metadata(a.url) {
+		if values, ok := v.([]any); v == nil || v == "" || ok && len(values) == 0 {
+			t.Fatalf("got %s %v, want it omitted", name, v)
+		}
+	}
+}
+
+// TestMetadataIssuerMatchesWellKnownURL checks that the issuer of the metadata document is identical to the issuer its URL was formed from, also with a path and a trailing slash.
+//
+//conformance:covers RFC8414-3.3-01
+func TestMetadataIssuerMatchesWellKnownURL(t *testing.T) {
+	for _, path := range []string{"", "/tenant", "/tenant/", "/a/b"} {
+		t.Run(path, func(t *testing.T) {
+			a := newConfiguredServer(t, func(c *oauth21.Config) { c.Issuer += path })
+			if got := a.metadata(a.url + path)["issuer"]; got != a.url+path {
+				t.Fatalf("got issuer %v, want %s", got, a.url+path)
+			}
+		})
 	}
 }

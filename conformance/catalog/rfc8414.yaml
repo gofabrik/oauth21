@@ -1,0 +1,415 @@
+document: RFC8414
+title: OAuth 2.0 Authorization Server Metadata
+source: ../specs/rfc8414.txt
+requirements:
+  - id: RFC8414-2-01
+    section: "2"
+    keyword: REQUIRED
+    text: issuer REQUIRED.
+    status: applicable
+  - id: RFC8414-2-02
+    section: "2"
+    keyword: REQUIRED
+    text: This is REQUIRED unless no grant types are supported that use the authorization endpoint.
+    statement: authorization_endpoint is REQUIRED unless no grant types are supported that use the authorization endpoint.
+    status: applicable
+  - id: RFC8414-2-03
+    section: "2"
+    keyword: REQUIRED
+    text: This is REQUIRED unless only the implicit grant type is supported.
+    statement: token_endpoint is REQUIRED unless only the implicit grant type is supported.
+    status: applicable
+  - id: RFC8414-2-04
+    section: "2"
+    keyword: OPTIONAL
+    text: jwks_uri OPTIONAL.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: The server signs nothing.
+  - id: RFC8414-2-05
+    section: "2"
+    keyword: MUST
+    text: This URL MUST use the "https" scheme.
+    statement: The jwks_uri URL MUST use the https scheme.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: The server signs nothing.
+  - id: RFC8414-2-06
+    section: "2"
+    keyword: MAY
+    text: The JWK Set MAY also contain the server's encryption key or keys, which are used by clients to encrypt requests to the server.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: The server signs nothing.
+  - id: RFC8414-2-07
+    section: "2"
+    keyword: REQUIRED
+    text: When both signing and encryption keys are made available, a "use" (public key use) parameter value is REQUIRED for all keys in the referenced JWK Set to indicate each key's intended usage.
+    status: out-of-scope
+    reason: excluded
+    feature: jwt-access-tokens
+    note: The server signs nothing.
+  - id: RFC8414-2-08
+    section: "2"
+    keyword: OPTIONAL
+    text: registration_endpoint OPTIONAL.
+    status: out-of-scope
+    reason: excluded
+    feature: dynamic-client-registration
+  - id: RFC8414-2-09
+    section: "2"
+    keyword: RECOMMENDED
+    text: scopes_supported RECOMMENDED.
+    status: applicable
+  - id: RFC8414-2-10
+    section: "2"
+    keyword: MAY
+    text: Servers MAY choose not to advertise some supported scope values even when this parameter is used.
+    status: applicable
+  - id: RFC8414-2-11
+    section: "2"
+    keyword: REQUIRED
+    text: response_types_supported REQUIRED.
+    status: applicable
+  - id: RFC8414-2-12
+    section: "2"
+    keyword: OPTIONAL
+    text: response_modes_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-13
+    section: "2"
+    keyword: OPTIONAL
+    text: grant_types_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-14
+    section: "2"
+    keyword: OPTIONAL
+    text: token_endpoint_auth_methods_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-15
+    section: "2"
+    keyword: OPTIONAL
+    text: token_endpoint_auth_signing_alg_values_supported OPTIONAL.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-16
+    section: "2"
+    keyword: MUST
+    text: This metadata entry MUST be present if either of these authentication methods are specified in the "token_endpoint_auth_methods_supported" entry.
+    statement: token_endpoint_auth_signing_alg_values_supported MUST be present if private_key_jwt or client_secret_jwt is specified in token_endpoint_auth_methods_supported.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-17
+    section: "2"
+    keyword: SHOULD
+    text: Servers SHOULD support "RS256".
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-18
+    section: "2"
+    keyword: MUST NOT
+    text: The value "none" MUST NOT be used.
+    statement: The value none MUST NOT be used in token_endpoint_auth_signing_alg_values_supported.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-19
+    section: "2"
+    keyword: OPTIONAL
+    text: service_documentation OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-20
+    section: "2"
+    keyword: OPTIONAL
+    text: ui_locales_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-21
+    section: "2"
+    keyword: OPTIONAL
+    text: op_policy_uri OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-22
+    section: "2"
+    keyword: SHOULD
+    text: The registration process SHOULD display this URL to the person registering the client if it is given.
+    statement: The registration process SHOULD display the op_policy_uri URL to the person registering the client if it is given.
+    status: out-of-scope
+    reason: excluded
+    feature: dynamic-client-registration
+  - id: RFC8414-2-23
+    section: "2"
+    keyword: OPTIONAL
+    text: op_tos_uri OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-24
+    section: "2"
+    keyword: SHOULD
+    text: The registration process SHOULD display this URL to the person registering the client if it is given.
+    statement: The registration process SHOULD display the op_tos_uri URL to the person registering the client if it is given.
+    status: out-of-scope
+    reason: excluded
+    feature: dynamic-client-registration
+  - id: RFC8414-2-25
+    section: "2"
+    keyword: OPTIONAL
+    text: revocation_endpoint OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-26
+    section: "2"
+    keyword: OPTIONAL
+    text: revocation_endpoint_auth_methods_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-27
+    section: "2"
+    keyword: OPTIONAL
+    text: revocation_endpoint_auth_signing_alg_values_supported OPTIONAL.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-28
+    section: "2"
+    keyword: MUST
+    text: This metadata entry MUST be present if either of these authentication methods are specified in the "revocation_endpoint_auth_methods_supported" entry.
+    statement: revocation_endpoint_auth_signing_alg_values_supported MUST be present if private_key_jwt or client_secret_jwt is specified in revocation_endpoint_auth_methods_supported.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-29
+    section: "2"
+    keyword: MUST NOT
+    text: The value "none" MUST NOT be used.
+    statement: The value none MUST NOT be used in revocation_endpoint_auth_signing_alg_values_supported.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-30
+    section: "2"
+    keyword: OPTIONAL
+    text: introspection_endpoint OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-31
+    section: "2"
+    keyword: OPTIONAL
+    text: introspection_endpoint_auth_methods_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-32
+    section: "2"
+    keyword: MUST
+    text: If omitted, the set of supported authentication methods MUST be determined by other means.
+    statement: If introspection_endpoint_auth_methods_supported is omitted, the set of supported authentication methods MUST be determined by other means.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-2-33
+    section: "2"
+    keyword: OPTIONAL
+    text: introspection_endpoint_auth_signing_alg_values_supported OPTIONAL.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-34
+    section: "2"
+    keyword: MUST
+    text: This metadata entry MUST be present if either of these authentication methods are specified in the "introspection_endpoint_auth_methods_supported" entry.
+    statement: introspection_endpoint_auth_signing_alg_values_supported MUST be present if private_key_jwt or client_secret_jwt is specified in introspection_endpoint_auth_methods_supported.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-35
+    section: "2"
+    keyword: MUST NOT
+    text: The value "none" MUST NOT be used.
+    statement: The value none MUST NOT be used in introspection_endpoint_auth_signing_alg_values_supported.
+    status: out-of-scope
+    reason: excluded
+    feature: private-key-jwt
+  - id: RFC8414-2-36
+    section: "2"
+    keyword: OPTIONAL
+    text: code_challenge_methods_supported OPTIONAL.
+    status: applicable
+  - id: RFC8414-2-37
+    section: "2"
+    keyword: MAY
+    text: Additional authorization server metadata parameters MAY also be used.
+    status: applicable
+  - id: RFC8414-2.1-01
+    section: "2.1"
+    keyword: MAY
+    text: In addition to JSON elements, metadata values MAY also be provided as a "signed_metadata" value, which is a JSON Web Token (JWT) [JWT] that asserts metadata values about the authorization server as a bundle.
+    status: out-of-scope
+    reason: excluded
+    feature: signed-metadata
+  - id: RFC8414-2.1-02
+    section: "2.1"
+    keyword: MUST
+    text: The signed metadata MUST be digitally signed or MACed using JSON Web Signature (JWS) [JWS] and MUST contain an "iss" (issuer) claim denoting the party attesting to the claims in the signed metadata.
+    statement: The signed metadata MUST be digitally signed or MACed using JSON Web Signature (JWS).
+    status: out-of-scope
+    reason: excluded
+    feature: signed-metadata
+  - id: RFC8414-2.1-03
+    section: "2.1"
+    keyword: MUST
+    text: The signed metadata MUST be digitally signed or MACed using JSON Web Signature (JWS) [JWS] and MUST contain an "iss" (issuer) claim denoting the party attesting to the claims in the signed metadata.
+    statement: The signed metadata MUST contain an iss (issuer) claim denoting the party attesting to the claims in the signed metadata.
+    status: out-of-scope
+    reason: excluded
+    feature: signed-metadata
+  - id: RFC8414-2.1-04
+    section: "2.1"
+    keyword: MAY
+    text: Consumers of the metadata MAY ignore the signed metadata if they do not support this feature.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-2.1-05
+    section: "2.1"
+    keyword: MUST
+    text: If the consumer of the metadata supports signed metadata, metadata values conveyed in the signed metadata MUST take precedence over the corresponding values conveyed using plain JSON elements.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-2.1-06
+    section: "2.1"
+    keyword: OPTIONAL
+    text: 'Signed metadata is included in the authorization server metadata JSON object using this OPTIONAL member:'
+    status: out-of-scope
+    reason: excluded
+    feature: signed-metadata
+  - id: RFC8414-2.1-07
+    section: "2.1"
+    keyword: SHOULD NOT
+    text: A "signed_metadata" metadata value SHOULD NOT appear as a claim in the JWT.
+    status: out-of-scope
+    reason: excluded
+    feature: signed-metadata
+  - id: RFC8414-3-01
+    section: "3"
+    keyword: MUST
+    text: Authorization servers supporting metadata MUST make a JSON document containing metadata as specified in Section 2 available at a path formed by inserting a well-known URI string into the authorization server's issuer identifier between the host component and the path component, if any.
+    status: applicable
+  - id: RFC8414-3-02
+    section: "3"
+    keyword: MUST
+    text: This path MUST use the "https" scheme.
+    statement: The path of the metadata document MUST use the https scheme.
+    status: applicable
+  - id: RFC8414-3-03
+    section: "3"
+    keyword: MUST
+    text: The well-known URI suffix used MUST be registered in the IANA "Well-Known URIs" registry [IANA.well-known].
+    status: informative
+    note: oauth-authorization-server is registered.
+  - id: RFC8414-3-04
+    section: "3"
+    keyword: MUST
+    text: An OAuth 2.0 application using this specification MUST specify what well-known URI suffix it will use for this purpose.
+    status: informative
+    note: A Requirement on specifications that profile RFC 8414.
+  - id: RFC8414-3-05
+    section: "3"
+    keyword: MAY
+    text: The same authorization server MAY choose to publish its metadata at multiple well-known locations derived from its issuer identifier, for example, publishing metadata at both "/.well-known/example-configuration" and "/.well-known/oauth-authorization-server".
+    status: applicable
+  - id: RFC8414-3.1-01
+    section: "3.1"
+    keyword: MUST
+    text: An authorization server metadata document MUST be queried using an HTTP "GET" request at the previously specified path.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-3.1-02
+    section: "3.1"
+    keyword: MUST
+    text: If the issuer identifier value contains a path component, any terminating "/" MUST be removed before inserting "/.well-known/" and the well-known URI suffix between the host component and the path component.
+    status: applicable
+  - id: RFC8414-3.2-01
+    section: "3.2"
+    keyword: MUST
+    text: A successful response MUST use the 200 OK HTTP status code and return a JSON object using the "application/json" content type that contains a set of claims as its members that are a subset of the metadata values defined in Section 2.
+    status: applicable
+  - id: RFC8414-3.2-02
+    section: "3.2"
+    keyword: MAY
+    text: Other claims MAY also be returned.
+    status: applicable
+  - id: RFC8414-3.2-03
+    section: "3.2"
+    keyword: MUST
+    text: Claims with zero elements MUST be omitted from the response.
+    status: applicable
+  - id: RFC8414-3.3-01
+    section: "3.3"
+    keyword: MUST
+    text: The "issuer" value returned MUST be identical to the authorization server's issuer identifier value into which the well-known URI string was inserted to create the URL used to retrieve the metadata.
+    status: applicable
+  - id: RFC8414-3.3-02
+    section: "3.3"
+    keyword: MUST NOT
+    text: If these values are not identical, the data contained in the response MUST NOT be used.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-4-01
+    section: "4"
+    keyword: MUST
+    text: 'Therefore, comparisons between JSON strings and other Unicode strings MUST be performed as specified below:'
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-4-02
+    section: "4"
+    keyword: MUST NOT
+    text: Unicode Normalization [USA15] MUST NOT be applied at any point to either the JSON string or the string it is to be compared against.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-4-03
+    section: "4"
+    keyword: MUST
+    text: Comparisons between the two strings MUST be performed as a Unicode code-point-to-code-point equality comparison.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-6.1-01
+    section: "6.1"
+    keyword: MUST
+    text: Implementations MUST support TLS.
+    status: applicable
+    note: Transport security is ticket 50.
+  - id: RFC8414-6.1-02
+    section: "6.1"
+    keyword: MUST
+    text: The authorization server MUST support TLS version 1.2 [RFC5246] and MAY support additional TLS mechanisms meeting its security requirements.
+    statement: The authorization server MUST support TLS version 1.2.
+    status: applicable
+    note: Transport security is ticket 50.
+  - id: RFC8414-6.1-03
+    section: "6.1"
+    keyword: MAY
+    text: The authorization server MUST support TLS version 1.2 [RFC5246] and MAY support additional TLS mechanisms meeting its security requirements.
+    statement: The authorization server MAY support additional TLS mechanisms meeting its security requirements.
+    status: applicable
+  - id: RFC8414-6.1-04
+    section: "6.1"
+    keyword: MUST
+    text: When using TLS, the client MUST perform a TLS/SSL server certificate check, per RFC 6125 [RFC6125].
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-6.1-05
+    section: "6.1"
+    keyword: MUST
+    text: To protect against information disclosure and tampering, confidentiality protection MUST be applied using TLS with a ciphersuite that provides confidentiality and integrity protection.
+    status: applicable
+    note: Transport security is ticket 50.
+  - id: RFC8414-6.2-01
+    section: "6.2"
+    keyword: MUST
+    text: TLS certificate checking MUST be performed by the client, as described in Section 6.1, when making an authorization server metadata request.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8414-6.2-02
+    section: "6.2"
+    keyword: MUST
+    text: To prevent this, the client MUST ensure that the issuer identifier URL it is using as the prefix for the metadata request exactly matches the value of the "issuer" metadata value in the authorization server metadata document received by the client.
+    status: out-of-scope
+    reason: client-requirement
