@@ -175,6 +175,8 @@ type AuthorizationRequest struct {
 	ID     string
 	Client store.Client
 	Scopes []string
+	// Lifetime is how long the Client can use the Grant once completed.
+	Lifetime time.Duration
 }
 
 // Completion is the Host Application's answer to an Authorization Request.
@@ -194,7 +196,8 @@ func (s *Server) AuthorizationRequest(ctx context.Context, id string) (Authoriza
 	if err != nil {
 		return AuthorizationRequest{}, err
 	}
-	return AuthorizationRequest{ID: r.ID, Client: client, Scopes: r.Scopes}, nil
+	lifetime := protocol.GrantLifetime(protocolClient(client), s.config.AccessTokenLifetime, s.config.RefreshTokenLifetime)
+	return AuthorizationRequest{ID: r.ID, Client: client, Scopes: r.Scopes, Lifetime: lifetime}, nil
 }
 
 // Complete completes the Authorization Request with identifier id and returns the redirect for the Resource Owner.
@@ -231,6 +234,11 @@ func (s *Server) Deny(ctx context.Context, id string) (string, error) {
 		return "", err
 	}
 	return s.authorizationResponse(r.RedirectURI, r.State).Error(oauthError(protocol.Denied()))
+}
+
+// RevokeGrant revokes the Grant with identifier grantID, which the Host Application finds in its Stores: every token of it and any new one.
+func (s *Server) RevokeGrant(ctx context.Context, grantID string) error {
+	return s.config.Tokens.RevokeGrant(ctx, grantID)
 }
 
 // pendingRequest loads the Authorization Request id with load and applies protocol's lifecycle decision on it.

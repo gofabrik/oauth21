@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"encoding/base64"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -314,5 +315,32 @@ func TestHeaderAuthenticationFailureChallengesScheme(t *testing.T) {
 		if got.scheme != scheme {
 			t.Fatalf("got a %q challenge, want the %s scheme", got.scheme, scheme)
 		}
+	}
+}
+
+// TestEveryGrantAuthenticatesConfidentialClients checks that a confidential Client gets invalid_client without credentials or with a wrong secret for every grant type, and tokens with its secret.
+//
+//conformance:covers RFC9700-2.5-01
+func TestEveryGrantAuthenticatesConfidentialClients(t *testing.T) {
+	a := newServiceServer(t)
+	for name, request := range map[string]func() (string, url.Values){
+		"authorization_code": func() (string, url.Values) { return confidentialID, a.confidentialCode() },
+		"refresh_token": func() (string, url.Values) {
+			return confidentialID, confidentialRefreshParams(a.confidentialRefreshToken())
+		},
+		"client_credentials": func() (string, url.Values) { return serviceID, clientCredentialsParams("") },
+	} {
+		id, params := request()
+		withID := maps.Clone(params)
+		withID.Set("client_id", id)
+		status, _, body := a.token(withID, nil)
+		if status != http.StatusBadRequest || body["error"] != "invalid_client" {
+			t.Fatalf("%s: got status %d and body %v without credentials, want 400 and invalid_client", name, status, body)
+		}
+		status, _, body = a.token(params, basic(id, "wrong"))
+		if status != http.StatusUnauthorized || body["error"] != "invalid_client" {
+			t.Fatalf("%s: got status %d and body %v with a wrong secret, want 401 and invalid_client", name, status, body)
+		}
+		a.tokens(params, basic(id, secret))
 	}
 }

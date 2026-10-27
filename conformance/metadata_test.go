@@ -386,3 +386,13 @@ func TestListedChallengeMethodsAreAccepted(t *testing.T) {
 		}
 	}
 }
+
+// TestMetadataDocumentsScopes checks that the metadata document lists the configured scopes in scopes_supported.
+//
+//conformance:covers OAUTH21D16-1.4.1-04
+func TestMetadataDocumentsScopes(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Scopes = []string{"read", "write", "profile", "email"} })
+	if got := a.metadata(a.url)["scopes_supported"]; !reflect.DeepEqual(got, []any{"read", "write", "profile", "email"}) {
+		t.Fatalf("got scopes_supported %v, want read, write, profile and email", got)
+	}
+}

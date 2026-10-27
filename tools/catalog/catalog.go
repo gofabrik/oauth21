@@ -60,9 +60,11 @@ const (
 	Informative Status = "informative"
 	// Deviates is a recommended Requirement the library deliberately does not follow.
 	Deviates Status = "deviates"
+	// HostDuty is a server Requirement that only the Host Application can meet.
+	HostDuty Status = "host-duty"
 )
 
-var statuses = []Status{Applicable, Superseded, OutOfScope, Informative, Deviates}
+var statuses = []Status{Applicable, Superseded, OutOfScope, Informative, Deviates, HostDuty}
 
 // Reason is why a Requirement is out-of-scope.
 type Reason string
@@ -240,8 +242,8 @@ func (c *Catalog) Validate() error {
 			if r.Status == Deviates && !r.Keyword.Recommended() {
 				fail("%s: status %q needs a recommended keyword, not %q", r.ID, Deviates, r.Keyword)
 			}
-			if r.Status == Deviates && r.Note == "" {
-				fail("%s: note must be set when status is %q", r.ID, Deviates)
+			if (r.Status == Deviates || r.Status == HostDuty) && r.Note == "" {
+				fail("%s: note must be set when status is %q", r.ID, r.Status)
 			}
 			if r.Reason != "" && !slices.Contains(reasons, r.Reason) {
 				fail("%s: unknown reason %q", r.ID, r.Reason)

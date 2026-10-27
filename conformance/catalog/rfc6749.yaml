@@ -1911,7 +1911,8 @@ requirements:
     keyword: MUST
     text: The authorization server MUST implement CSRF protection for its authorization endpoint and ensure that a malicious client cannot obtain authorization without the awareness and explicit consent of the resource owner.
     statement: The authorization server MUST implement CSRF protection for its authorization endpoint.
-    status: applicable
+    status: host-duty
+    note: The Host Application binds each pending Authorization Request to the browser session that brought it to the login page, and protects its login and consent pages against CSRF.
   - id: RFC6749-10.12-06
     section: "10.12"
     keyword: MUST

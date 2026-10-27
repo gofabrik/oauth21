@@ -32,7 +32,8 @@ requirements:
     keyword: MUST
     text: Access tokens (as well as any confidential access token attributes) MUST be kept confidential in transit and storage, and only shared among the authorization server, the resource servers the access token is valid for, and the client to which the access token is issued.
     statement: Confidential access token attributes MUST be kept confidential in storage.
-    status: applicable
+    status: host-duty
+    note: The Host Application's Stores keep the Grants and scopes of tokens confidential.
   - id: OAUTH21D16-1.4-03
     section: "1.4"
     keyword: MUST
@@ -71,7 +72,15 @@ requirements:
     section: 1.4.1
     keyword: SHOULD
     text: The authorization server SHOULD document its scope requirements and default value (if defined).
+    statement: The authorization server SHOULD document its scope requirements.
     status: applicable
+  - id: OAUTH21D16-1.4.1-05
+    section: 1.4.1
+    keyword: SHOULD
+    text: The authorization server SHOULD document its scope requirements and default value (if defined).
+    statement: The authorization server SHOULD document its default scope value (if defined).
+    status: host-duty
+    note: The Host Application documents the default scopes it gives each Client.
   - id: OAUTH21D16-1.4.2-01
     section: 1.4.2
     keyword: MUST
@@ -176,8 +185,16 @@ requirements:
     section: "2.1"
     keyword: SHOULD
     text: Authorization servers SHOULD consider the level of confidence in a client's identity when deciding whether they allow a client access to more sensitive resources and operations such as the Client Credentials grant type and how often to prompt the user for consent.
+    statement: Authorization servers SHOULD consider the level of confidence in a client's identity when deciding whether they allow a client the Client Credentials grant type.
     status: applicable
     note: Only confidential Clients may use client credentials.
+  - id: OAUTH21D16-2.1-04
+    section: "2.1"
+    keyword: SHOULD
+    text: Authorization servers SHOULD consider the level of confidence in a client's identity when deciding whether they allow a client access to more sensitive resources and operations such as the Client Credentials grant type and how often to prompt the user for consent.
+    statement: Authorization servers SHOULD consider the level of confidence in a client's identity when deciding how often to prompt the user for consent.
+    status: host-duty
+    note: The Host Application decides on its consent page when to prompt the Resource Owner; the library hands it every Authorization Request.
   - id: OAUTH21D16-2.1-03
     section: "2.1"
     keyword: SHOULD NOT
@@ -326,7 +343,8 @@ requirements:
     section: "2.4"
     keyword: MUST
     text: The authorization server MUST only rely on client authentication if the process of issuance/registration and distribution of the underlying credentials ensures their confidentiality.
-    status: applicable
+    status: host-duty
+    note: The Host Application registers Clients and distributes their secrets; the library receives only secret hashes.
   - id: OAUTH21D16-2.4-02
     section: "2.4"
     keyword: MAY
@@ -369,7 +387,8 @@ requirements:
     section: "2.4"
     keyword: MUST
     text: The privileges an authorization server associates with a certain client identity MUST depend on the assessment of the overall process for client identification and client credential lifecycle management.
-    status: applicable
+    status: host-duty
+    note: The Host Application sets each Client's privileges, which are its type, grant types and allowed scopes.
   - id: OAUTH21D16-2.4.1-01
     section: 2.4.1
     keyword: MUST
@@ -1165,6 +1184,7 @@ requirements:
     keyword: MAY
     text: 'Authorization servers MAY revoke refresh tokens automatically in case of a security event, such as: password change logout at the authorization server'
     status: applicable
+    note: The Host Application detects the security event and calls Server.RevokeGrant.
   - id: OAUTH21D16-4.3.3-04
     section: 4.3.3
     keyword: SHOULD
@@ -1662,7 +1682,8 @@ requirements:
     keyword: SHOULD
     text: The authorization server SHOULD enforce explicit resource owner authentication and provide the resource owner with information about the client and the requested authorization scope and lifetime.
     statement: The authorization server SHOULD enforce explicit resource owner authentication.
-    status: applicable
+    status: host-duty
+    note: The Host Application authenticates the Resource Owner on its login page, where the library sends every Authorization Request, before completing it.
   - id: OAUTH21D16-7.3-03
     section: "7.3"
     keyword: SHOULD
@@ -1689,11 +1710,13 @@ requirements:
     keyword: MAY
     text: Measures such as claimed https scheme redirects MAY be accepted by authorization servers as identity proof.
     status: applicable
+    note: The library processes no authorization request automatically, so it needs no identity proof.
   - id: OAUTH21D16-7.3.1-04
     section: 7.3.1
     keyword: MAY
     text: Some operating systems may offer alternative platform-specific identity features that MAY be accepted, as appropriate.
     status: applicable
+    note: The library processes no authorization request automatically, so it needs no identity proof.
   - id: OAUTH21D16-7.3.2-01
     section: 7.3.2
     keyword: SHOULD
@@ -1739,6 +1762,14 @@ requirements:
     section: "7.4"
     keyword: SHOULD NOT
     text: If the authorization server has a common namespace for client IDs and user identifiers, causing the resource server to be unable to distinguish an access token authorized by a resource owner from an access token authorized by a client itself, authorization servers SHOULD NOT allow clients to influence their client_id or any other Claim if that can cause confusion with a genuine resource owner.
+    statement: If the authorization server has a common namespace for client IDs and user identifiers, authorization servers SHOULD NOT allow clients to influence their client_id if that can cause confusion with a genuine resource owner.
+    status: host-duty
+    note: The Host Application registers Clients and chooses their client_id.
+  - id: OAUTH21D16-7.4-03
+    section: "7.4"
+    keyword: SHOULD NOT
+    text: If the authorization server has a common namespace for client IDs and user identifiers, causing the resource server to be unable to distinguish an access token authorized by a resource owner from an access token authorized by a client itself, authorization servers SHOULD NOT allow clients to influence their client_id or any other Claim if that can cause confusion with a genuine resource owner.
+    statement: If the authorization server has a common namespace for client IDs and user identifiers, authorization servers SHOULD NOT allow clients to influence any other Claim if that can cause confusion with a genuine resource owner.
     status: applicable
   - id: OAUTH21D16-7.4-02
     section: "7.4"
@@ -1781,7 +1812,8 @@ requirements:
     section: 7.5.2
     keyword: SHOULD
     text: Deployments with existing clients that cannot support S256 SHOULD issue extended-lifetime refresh tokens before discontinuing support for legacy authorization methods, as the refresh token grant (Section 4.3) does not require PKCE.
-    status: applicable
+    status: deviates
+    note: spec.md accepts S256 only, so the library supports no legacy method and issues no extended-lifetime refresh tokens for leaving one.
   - id: OAUTH21D16-7.5.3-01
     section: 7.5.3
     keyword: SHOULD NOT
@@ -1808,7 +1840,8 @@ requirements:
     keyword: MUST
     text: The authorization server MUST prevent attackers from guessing access tokens, authorization codes, refresh tokens, resource owner passwords, and client credentials.
     statement: The authorization server MUST prevent attackers from guessing resource owner passwords.
-    status: applicable
+    status: host-duty
+    note: The Host Application authenticates the Resource Owner; the library never receives Resource Owner credentials.
   - id: OAUTH21D16-7.7-06
     section: "7.7"
     keyword: MUST
@@ -1843,7 +1876,8 @@ requirements:
     section: "7.7"
     keyword: MUST
     text: The authorization server MUST utilize other means to protect credentials intended for end-user usage.
-    status: applicable
+    status: host-duty
+    note: The Host Application authenticates the Resource Owner; the library never receives Resource Owner credentials.
   - id: OAUTH21D16-7.9-01
     section: "7.9"
     keyword: SHOULD
@@ -1853,7 +1887,8 @@ requirements:
     section: "7.9"
     keyword: SHOULD
     text: Where possible, authorization servers SHOULD verify the identity of client developers prior to granting access to sensitive scopes.
-    status: applicable
+    status: host-duty
+    note: The Host Application registers Clients and verifies their developers.
   - id: OAUTH21D16-7.9-03
     section: "7.9"
     keyword: SHOULD
@@ -1870,6 +1905,14 @@ requirements:
     section: "7.9"
     keyword: SHOULD
     text: Authorization servers SHOULD allow administrators and resource owners to view the set of clients that have been granted access to their resources and to revoke those grants (see [RFC7009]), thereby limiting the window of exposure if a resource owner is deceived into approving a malicious authorization request.
+    statement: Authorization servers SHOULD allow administrators and resource owners to view the set of clients that have been granted access to their resources.
+    status: host-duty
+    note: The Host Application lists the Grants its Stores hold.
+  - id: OAUTH21D16-7.9-06
+    section: "7.9"
+    keyword: SHOULD
+    text: Authorization servers SHOULD allow administrators and resource owners to view the set of clients that have been granted access to their resources and to revoke those grants (see [RFC7009]), thereby limiting the window of exposure if a resource owner is deceived into approving a malicious authorization request.
+    statement: Authorization servers SHOULD allow administrators and resource owners to revoke the grants of clients to their resources.
     status: applicable
   - id: OAUTH21D16-7.10-01
     section: "7.10"
@@ -2053,7 +2096,8 @@ requirements:
     section: 8.1.1
     keyword: MUST
     text: Except when using a mechanism like Dynamic Client Registration [RFC7591] to provision per-instance credentials, native apps are classified as public clients, as defined in Section 2.1, and MUST be registered with the authorization server as such.
-    status: applicable
+    status: host-duty
+    note: The Host Application registers native apps as public Clients.
   - id: OAUTH21D16-8.1.1-02
     section: 8.1.1
     keyword: MUST

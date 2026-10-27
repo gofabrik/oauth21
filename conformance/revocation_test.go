@@ -296,3 +296,40 @@ func TestHintCausesNoExtraLookups(t *testing.T) {
 		}
 	}
 }
+
+// grantOf returns the identifier of the Grant of the access token value, as the Host Application's Store holds it.
+func (a *authorizationServer) grantOf(value string) string {
+	a.t.Helper()
+	token, err := a.recorder.Store.Token(a.t.Context(), hashOf(value))
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	return token.Grant.ID
+}
+
+// TestHostRevokesGrant checks that the Host Application can revoke a Grant it found in its Store, which deactivates its access token.
+//
+//conformance:covers OAUTH21D16-7.9-06
+func TestHostRevokesGrant(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	other, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	if err := a.srv.RevokeGrant(t.Context(), a.grantOf(access)); err != nil {
+		t.Fatal(err)
+	}
+	a.wantInactive(access)
+	a.wantActive(other)
+}
+
+// TestHostRevokesRefreshTokens checks that revoking a Grant on a security event refuses its refresh token.
+//
+//conformance:covers OAUTH21D16-4.3.3-03
+func TestHostRevokesRefreshTokens(t *testing.T) {
+	a := newAuthorizationServer(t)
+	access, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+	if err := a.srv.RevokeGrant(t.Context(), a.grantOf(access)); err != nil {
+		t.Fatal(err)
+	}
+	status, _, body := a.token(refreshParams(refresh), nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+}

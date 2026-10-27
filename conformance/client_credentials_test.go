@@ -125,3 +125,17 @@ func TestClientCredentialsWithoutScopeOrDefaultsFails(t *testing.T) {
 	status, _, body := a.token(clientCredentialsParams(""), basic(confidentialID, secret))
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_scope")
 }
+
+// TestClientCredentialsFollowClientConfidence checks that of two Clients registered alike and allowed client credentials, only the confidential one gets an access token.
+//
+//conformance:covers OAUTH21D16-2.1-02
+func TestClientCredentialsFollowClientConfidence(t *testing.T) {
+	public := serviceClient(t)
+	public.ID, public.Type = "public service", store.Public
+	a := newAuthorizationServer(t, serviceClient(t), public)
+	a.tokens(clientCredentialsParams(""), basic(serviceID, secret))
+	params := clientCredentialsParams("")
+	params.Set("client_id", "public service")
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "unauthorized_client")
+}

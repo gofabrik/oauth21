@@ -267,6 +267,14 @@ requirements:
     section: "2.6"
     keyword: SHOULD NOT
     text: Under the conditions described in Section 4.15.1, authorization servers SHOULD NOT allow clients to influence their client_id or any other claim that could cause confusion with a genuine resource owner.
+    statement: Under the conditions described in Section 4.15.1, authorization servers SHOULD NOT allow clients to influence their client_id that could cause confusion with a genuine resource owner.
+    status: host-duty
+    note: The Host Application registers Clients and chooses their client_id.
+  - id: RFC9700-2.6-10
+    section: "2.6"
+    keyword: SHOULD NOT
+    text: Under the conditions described in Section 4.15.1, authorization servers SHOULD NOT allow clients to influence their client_id or any other claim that could cause confusion with a genuine resource owner.
+    statement: Under the conditions described in Section 4.15.1, authorization servers SHOULD NOT allow clients to influence any other claim that could cause confusion with a genuine resource owner.
     status: applicable
   - id: RFC9700-2.6-03
     section: "2.6"
@@ -671,6 +679,14 @@ requirements:
     section: 4.15.1
     keyword: SHOULD NOT
     text: Authorization servers SHOULD NOT allow clients to influence their client_id or any other claim that could cause confusion with a genuine resource owner if a common namespace for client IDs and user identifiers exists, such as in the sub claim example from [RFC9068] shown in Section 4.15 above.
+    statement: Authorization servers SHOULD NOT allow clients to influence their client_id that could cause confusion with a genuine resource owner if a common namespace for client IDs and user identifiers exists.
+    status: host-duty
+    note: The Host Application registers Clients and chooses their client_id.
+  - id: RFC9700-4.15.1-03
+    section: 4.15.1
+    keyword: SHOULD NOT
+    text: Authorization servers SHOULD NOT allow clients to influence their client_id or any other claim that could cause confusion with a genuine resource owner if a common namespace for client IDs and user identifiers exists, such as in the sub claim example from [RFC9068] shown in Section 4.15 above.
+    statement: Authorization servers SHOULD NOT allow clients to influence any other claim that could cause confusion with a genuine resource owner if a common namespace for client IDs and user identifiers exists.
     status: applicable
   - id: RFC9700-4.15.1-02
     section: 4.15.1

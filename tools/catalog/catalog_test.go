@@ -81,6 +81,19 @@ requirements:
     note: spec.md accepts S256 only.
 `
 
+const hostDuty = `
+document: OAUTH21D16
+title: The OAuth 2.1 Authorization Framework
+source: specs/draft-ietf-oauth-v2-1-16.txt
+requirements:
+  - id: OAUTH21D16-7.7-05
+    section: "7.7"
+    keyword: MUST
+    text: The authorization server MUST prevent attackers from guessing resource owner passwords.
+    status: host-duty
+    note: The Host Application authenticates the Resource Owner.
+`
+
 const excluded = `
 features:
   - resource-indicators
@@ -123,6 +136,12 @@ func TestLoadDeviates(t *testing.T) {
 		if err := load(map[string]string{"a.yaml": strings.Replace(deviates, "keyword: SHOULD", "keyword: "+string(k), 1)}); err != nil {
 			t.Errorf("%s: %v", k, err)
 		}
+	}
+}
+
+func TestLoadHostDuty(t *testing.T) {
+	if err := load(map[string]string{"a.yaml": hostDuty}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -290,6 +309,11 @@ func TestLoadInvalid(t *testing.T) {
 			name:  "deviates with reason",
 			files: map[string]string{"a.yaml": deviates + "    reason: client-requirement\n"},
 			want:  "OAUTH21D16-4.1.1-01: reason must be set exactly when status is \"out-of-scope\"",
+		},
+		{
+			name:  "host-duty without note",
+			files: map[string]string{"a.yaml": strings.Replace(hostDuty, "    note: The Host Application authenticates the Resource Owner.\n", "", 1)},
+			want:  `OAUTH21D16-7.7-05: note must be set when status is "host-duty"`,
 		},
 		{
 			name:  "unknown reason",

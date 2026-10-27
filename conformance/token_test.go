@@ -420,8 +420,13 @@ func random(t *testing.T) string {
 // randomWithHash returns random(t) and its SHA-256 hash, the key a Store holds a code or token by.
 func randomWithHash(t *testing.T) (string, []byte) {
 	value := random(t)
-	sum := sha256.Sum256([]byte(value))
-	return value, sum[:]
+	return value, hashOf(value)
+}
+
+// hashOf returns the hash the Stores receive instead of the value v.
+func hashOf(v string) []byte {
+	sum := sha256.Sum256([]byte(v))
+	return sum[:]
 }
 
 // aliceGrant returns a Grant of alice and the public Client with scope read and audience.

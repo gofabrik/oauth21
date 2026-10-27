@@ -762,6 +762,15 @@ func TestIssueRefreshToken(t *testing.T) {
 	}
 }
 
+func TestGrantLifetime(t *testing.T) {
+	if got := GrantLifetime(Client{}, time.Hour, 30*time.Hour); got != 30*time.Hour {
+		t.Errorf("got %v for a Client that may use refresh tokens, want the refresh token lifetime", got)
+	}
+	if got := GrantLifetime(Client{GrantTypes: []string{AuthorizationCodeGrant}}, time.Hour, 30*time.Hour); got != time.Hour {
+		t.Errorf("got %v for a Client that may not use refresh tokens, want the access token lifetime", got)
+	}
+}
+
 func TestSuccessorKeepsScopesAndExpiry(t *testing.T) {
 	token := RefreshToken{ClientID: "client", Scopes: []string{"read", "write"}, ExpiresAt: time.Unix(1_000_000, 0), Rotated: true}
 	want := token

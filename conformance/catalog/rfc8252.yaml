@@ -113,7 +113,8 @@ requirements:
     section: "8.4"
     keyword: MUST
     text: Except when using a mechanism like Dynamic Client Registration [RFC7591] to provision per-instance secrets, native apps are classified as public clients, as defined by Section 2.1 of OAuth 2.0 [RFC6749]; they MUST be registered with the authorization server as such.
-    status: applicable
+    status: host-duty
+    note: The Host Application registers native apps as public Clients.
   - id: RFC8252-8.4-02
     section: "8.4"
     keyword: MUST

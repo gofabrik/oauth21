@@ -26,6 +26,10 @@ type Client struct {
 	ID           string
 	Type         ClientType
 	RedirectURIs []string
+	// Name is shown to the Resource Owner when asking for consent.
+	Name string
+	// Developer is the developer or organization that registered the Client, shown with its Name.
+	Developer string
 	// SecretHash is the SecretHasher hash of a confidential Client's secret.
 	SecretHash string
 	// AllowedScopes are the scopes the Client may request.

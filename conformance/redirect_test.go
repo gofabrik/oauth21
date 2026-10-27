@@ -22,9 +22,9 @@ func TestLoopbackRedirectURIIgnoresPort(t *testing.T) {
 		"http://[::1]:8081/cb":      "http://[::1]:8080/cb",
 	} {
 		t.Run(requested, func(t *testing.T) {
-			a := newAuthorizationServer(t, publicClient("native", registered))
+			a := newAuthorizationServer(t, publicClient(nativeID, registered))
 			params := authorizeParams()
-			params.Set("client_id", "native")
+			params.Set("client_id", nativeID)
 			params.Set("redirect_uri", requested)
 			u := a.login(a.authorize(params), "alice")
 			if got := endpoint(u); got != requested || u.Query().Get("code") == "" {
@@ -45,15 +45,15 @@ func TestRedirectURIMustMatchExactly(t *testing.T) {
 		"port added":       {clientID, "https://client.example:443/cb"},
 		"trailing slash":   {clientID, redirectURI + "/"},
 		"localhost":        {"localhost", "http://localhost:51004/cb"},
-		"loopback scheme":  {"native", "https://127.0.0.1:51004/cb"},
-		"loopback path":    {"native", "http://127.0.0.1:51004/other"},
+		"loopback scheme":  {nativeID, "https://127.0.0.1:51004/cb"},
+		"loopback path":    {nativeID, "http://127.0.0.1:51004/other"},
 		"non-loopback ip":  {"lan", "http://10.0.0.1:51004/cb"},
-		"loopback as host": {"native", "http://127.0.0.1.example:51004/cb"},
+		"loopback as host": {nativeID, "http://127.0.0.1.example:51004/cb"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t,
-				publicClient("native", "http://127.0.0.1/cb"),
+				publicClient(nativeID, nativeRedirectURI),
 				publicClient("localhost", "http://localhost/cb"),
 				publicClient("lan", "http://10.0.0.1/cb"),
 			)
@@ -194,10 +194,10 @@ func TestRedirectURIIsValidatedBeforeErrors(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-4.1.1-21
 func TestLoopbackRedirectURIAllowsVariablePort(t *testing.T) {
-	a := newAuthorizationServer(t, publicClient("native", "http://[::1]:8080/cb"))
+	a := newAuthorizationServer(t, publicClient(nativeID, "http://[::1]:8080/cb"))
 	for _, uri := range []string{"http://[::1]:49152/cb", "http://[::1]:1024/cb", "http://[::1]:8081/cb", "http://[::1]/cb"} {
 		params := withRedirectURI(uri)
-		params.Set("client_id", "native")
+		params.Set("client_id", nativeID)
 		if u := a.login(a.authorize(params), "alice"); endpoint(u) != uri {
 			t.Fatalf("got redirect %s, want %s", u, uri)
 		}
@@ -248,14 +248,14 @@ func (a *authorizationServer) nativeTokenParams(id, redirect string) url.Values 
 //
 //conformance:covers RFC8252-6-02
 func TestNativeAppPKCE(t *testing.T) {
-	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1/cb"))
+	a := newAuthorizationServer(t, publicClient(nativeID, nativeRedirectURI))
 	for _, v := range []string{"", s256(verifier)[:43]} {
-		status, _, body := a.token(withVerifier(a.nativeTokenParams("native", "http://127.0.0.1:51004/cb"), v), nil)
+		status, _, body := a.token(withVerifier(a.nativeTokenParams(nativeID, "http://127.0.0.1:51004/cb"), v), nil)
 		if status == http.StatusOK {
 			t.Fatalf("got body %v for code_verifier %q, want an error", body, v)
 		}
 	}
-	a.tokens(a.nativeTokenParams("native", "http://127.0.0.1:51004/cb"), nil)
+	a.tokens(a.nativeTokenParams(nativeID, "http://127.0.0.1:51004/cb"), nil)
 }
 
 // TestNativeAppRedirectOptions checks that native app Clients can use a private-use URI scheme, a claimed https URI and a loopback IP redirect URI.
@@ -268,8 +268,8 @@ func TestNativeAppRedirectOptions(t *testing.T) {
 		"http://127.0.0.1/oauth2redirect":                  "http://127.0.0.1:51004/oauth2redirect",
 	} {
 		t.Run(registered, func(t *testing.T) {
-			a := newAuthorizationServer(t, publicClient("native", registered))
-			a.tokens(a.nativeTokenParams("native", requested), nil)
+			a := newAuthorizationServer(t, publicClient(nativeID, registered))
+			a.tokens(a.nativeTokenParams(nativeID, requested), nil)
 		})
 	}
 }
@@ -278,10 +278,10 @@ func TestNativeAppRedirectOptions(t *testing.T) {
 //
 //conformance:covers RFC8252-7.3-01
 func TestLoopbackRedirectAllowsAnyPort(t *testing.T) {
-	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1/cb", "http://[::1]/cb"))
+	a := newAuthorizationServer(t, publicClient(nativeID, nativeRedirectURI, "http://[::1]/cb"))
 	for _, host := range []string{"127.0.0.1", "[::1]"} {
 		for _, port := range []string{"1", "80", "8080", "49152", "65535"} {
-			a.nativeCode("native", "http://"+host+":"+port+"/cb")
+			a.nativeCode(nativeID, "http://"+host+":"+port+"/cb")
 		}
 	}
 }
@@ -313,10 +313,10 @@ func TestClientTypeDecidesAuthentication(t *testing.T) {
 //
 //conformance:covers RFC8252-8.4-07
 func TestRedirectURIMatchesRegistrationExactly(t *testing.T) {
-	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1/cb", "com.example.app:/cb"))
+	a := newAuthorizationServer(t, publicClient(nativeID, nativeRedirectURI, "com.example.app:/cb"))
 	for id, uris := range map[string][]string{
 		clientID: {redirectURI + "/x", "https://client.example/c", redirectURI + "?a=b", "https://client.example:8443/cb", "http://client.example/cb", "https://other.example/cb"},
-		"native": {"http://127.0.0.1:51004/cb/x", "http://127.0.0.1:51004/", "http://127.0.0.2:51004/cb", "com.example.app:/cb/x", "com.example.other:/cb"},
+		nativeID: {"http://127.0.0.1:51004/cb/x", "http://127.0.0.1:51004/", "http://127.0.0.2:51004/cb", "com.example.app:/cb/x", "com.example.other:/cb"},
 	} {
 		for _, uri := range uris {
 			params := withRedirectURI(uri)
@@ -326,7 +326,7 @@ func TestRedirectURIMatchesRegistrationExactly(t *testing.T) {
 			}
 		}
 	}
-	a.nativeCode("native", "http://127.0.0.1:51004/cb")
+	a.nativeCode(nativeID, "http://127.0.0.1:51004/cb")
 }
 
 // TestRedirectURIUsesExactStringMatching checks that a redirect URI differing from the registered one in any character is not redirected to.
@@ -357,8 +357,24 @@ func TestRedirectURIIsComparedBySimpleStringComparison(t *testing.T) {
 //
 //conformance:covers RFC9700-4.1.3-02
 func TestLoopbackRedirectURIAcceptsAnyPort(t *testing.T) {
-	a := newAuthorizationServer(t, publicClient("native", "http://127.0.0.1:8080/cb"))
+	a := newAuthorizationServer(t, publicClient(nativeID, "http://127.0.0.1:8080/cb"))
 	for _, uri := range []string{"http://127.0.0.1:65535/cb", "http://127.0.0.1:8080/cb", "http://127.0.0.1:1/cb", "http://127.0.0.1/cb"} {
-		a.nativeCode("native", uri)
+		a.nativeCode(nativeID, uri)
+	}
+}
+
+// TestPublicClientIsBoundToRegisteredRedirectURIs checks that a public Client gets the login URL only for a registered redirect URI, and no redirect without one registered.
+//
+//conformance:covers OAUTH21D16-2.4-05
+func TestPublicClientIsBoundToRegisteredRedirectURIs(t *testing.T) {
+	a := newAuthorizationServer(t, publicClient("unregistered"))
+	a.pending(a.authorize(authorizeParams()))
+	if _, loc := a.sendAuthorization(withRedirectURI("https://attacker.example/cb")); loc != "" {
+		t.Fatalf("got Location %q for an unregistered redirect URI, want no redirect", loc)
+	}
+	params := authorizeParams()
+	params.Set("client_id", "unregistered")
+	if _, loc := a.sendAuthorization(params); loc != "" {
+		t.Fatalf("got Location %q for a Client without redirect URIs, want no redirect", loc)
 	}
 }

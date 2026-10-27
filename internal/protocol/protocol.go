@@ -422,6 +422,14 @@ func IssueRefreshToken(client Client, code Code, now time.Time, lifetime time.Du
 	return &RefreshToken{ClientID: code.ClientID, Scopes: code.Scopes, ExpiresAt: TokenExpiry(now, lifetime, code.RetainUntil)}
 }
 
+// GrantLifetime is how long client can use a Grant: the Refresh Token Family lifetime when it may use refresh tokens, else the access token lifetime.
+func GrantLifetime(client Client, access, refresh time.Duration) time.Duration {
+	if client.Allows(RefreshTokenGrant) {
+		return refresh
+	}
+	return access
+}
+
 // Successor is the refresh token that replaces token in its Refresh Token Family.
 func Successor(token RefreshToken) RefreshToken {
 	token.Rotated = false
