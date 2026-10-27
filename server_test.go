@@ -3,6 +3,7 @@ package oauth21_test
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -87,9 +88,9 @@ func tokenRequest(body string) *http.Request {
 	return formRequest("/token", body)
 }
 
-// formRequest returns a POST of the form body to path.
+// formRequest returns a POST of the form body to path over TLS.
 func formRequest(path, body string) *http.Request {
-	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, strings.NewReader(body))
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "https://as.example"+path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return r
 }
@@ -109,7 +110,7 @@ func accessToken(t testing.TB, w *httptest.ResponseRecorder) string {
 // requestID sends an authorization request and returns the identifier of the pending Authorization Request.
 func requestID(t rapid.TB, srv *oauth21.Server) string {
 	t.Helper()
-	loc, err := url.Parse(do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/authorize?"+authorizeQuery, nil)).Header().Get("Location"))
+	loc, err := url.Parse(do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://as.example/authorize?"+authorizeQuery, nil)).Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,10 +523,10 @@ func FuzzAuthorizationHandler(f *testing.F) {
 	m := memstore.New()
 	h := newServer(f, m, m, m).AuthorizationHandler()
 	f.Fuzz(func(t *testing.T, post bool, params string) {
-		r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/authorize", nil)
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://as.example/authorize", nil)
 		r.URL.RawQuery = params
 		if post {
-			r = httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/authorize", strings.NewReader(params))
+			r = httptest.NewRequestWithContext(context.Background(), http.MethodPost, "https://as.example/authorize", strings.NewReader(params))
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 		w := do(h, r)
@@ -677,7 +678,7 @@ func TestUntrustedErrorsAreRendered(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+tt.query, nil))
+			w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/authorize?"+tt.query, nil))
 			if w.Code != http.StatusTeapot || got.Status != tt.status || got.Code != tt.code {
 				t.Fatalf("got status %d and rendered error %+v, want the renderer called with %d and %q", w.Code, got, tt.status, tt.code)
 			}
@@ -692,7 +693,7 @@ func TestStoreFailureAfterTrustIsRedirected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+authorizeQuery, nil))
+	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/authorize?"+authorizeQuery, nil))
 	loc, err := url.Parse(w.Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
@@ -848,7 +849,7 @@ func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
 	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{""}, AllowedScopes: readScope, DefaultScopes: readScope})
-	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/authorize?"+authorizeQuery, nil))
+	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/authorize?"+authorizeQuery, nil))
 	if w.Code != http.StatusBadRequest || w.Header().Get("Location") != "" {
 		t.Fatalf("got status %d and Location %q, want 400 without redirect", w.Code, w.Header().Get("Location"))
 	}
@@ -1102,7 +1103,7 @@ func FuzzMetadataHandler(f *testing.F) {
 	f.Fuzz(func(t *testing.T, method string) {
 		m := memstore.New()
 		srv := newServer(t, m, m, m)
-		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/.well-known/oauth-authorization-server", nil)
 		r.Method = method
 		w := do(srv.MetadataHandler(), r)
 		switch {
@@ -1149,4 +1150,54 @@ func FuzzNewAcceptsOnlyMountablePaths(f *testing.F) {
 			}
 		}
 	})
+}
+
+// newSecureServer returns a server without Clients whose Transport Declaration is secure.
+func newSecureServer(t testing.TB, secure func(*http.Request) bool) *oauth21.Server {
+	t.Helper()
+	m := memstore.New()
+	srv, err := oauth21.New(oauth21.Config{
+		Issuer:                issuer,
+		LoginURL:              "/login",
+		Clients:               m,
+		AuthorizationRequests: m,
+		Codes:                 m,
+		Tokens:                m,
+		Scopes:                readScope,
+		Secure:                secure,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+func TestSecureAsksOnlyWithoutTLS(t *testing.T) {
+	var asked []string
+	srv := newSecureServer(t, func(r *http.Request) bool {
+		asked = append(asked, r.URL.String())
+		return true
+	})
+	legacy := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://legacy.example/.well-known/oauth-authorization-server", nil)
+	legacy.TLS.Version = tls.VersionTLS10
+	for _, r := range []*http.Request{
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/.well-known/oauth-authorization-server", nil),
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://as.example/.well-known/oauth-authorization-server", nil),
+		legacy,
+	} {
+		if w := do(srv.MetadataHandler(), r); w.Code != http.StatusOK {
+			t.Fatalf("%s: got status %d, want 200", r.URL, w.Code)
+		}
+	}
+	if !slices.Equal(asked, []string{"http://as.example/.well-known/oauth-authorization-server", "https://legacy.example/.well-known/oauth-authorization-server"}) {
+		t.Fatalf("got Secure asked for %q, want it asked for the requests without TLS 1.2 only", asked)
+	}
+}
+
+func TestSecureRefusalIsTLSRequired(t *testing.T) {
+	srv := newSecureServer(t, func(*http.Request) bool { return false })
+	w := do(srv.MetadataHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://as.example/.well-known/oauth-authorization-server", nil))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "TLS required") {
+		t.Fatalf("got status %d and body %q, want 400 with TLS required", w.Code, w.Body.String())
+	}
 }

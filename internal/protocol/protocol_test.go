@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"net/netip"
@@ -1088,6 +1089,40 @@ func TestAccess(t *testing.T) {
 	} {
 		if got := errorCode(Access(c.active, c.scopes, c.required)); got != c.want {
 			t.Errorf("active %v with %q requiring %q: got %q, want %q", c.active, c.scopes, c.required, got, c.want)
+		}
+	}
+}
+
+func TestSecureTLS(t *testing.T) {
+	for _, c := range []struct {
+		state *tls.ConnectionState
+		want  bool
+	}{
+		{&tls.ConnectionState{Version: tls.VersionTLS13, CipherSuite: tls.TLS_AES_128_GCM_SHA256}, true},
+		{&tls.ConnectionState{Version: tls.VersionTLS12, CipherSuite: tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}, true},
+		{&tls.ConnectionState{Version: tls.VersionTLS12, CipherSuite: tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA}, false},
+		{&tls.ConnectionState{Version: tls.VersionTLS12, CipherSuite: tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA}, false},
+		{&tls.ConnectionState{Version: tls.VersionTLS11, CipherSuite: tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA}, false},
+		{&tls.ConnectionState{Version: tls.VersionTLS10, CipherSuite: tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA}, false},
+		{nil, false},
+	} {
+		if got := SecureTLS(c.state); got != c.want {
+			t.Errorf("%+v: got %v, want %v", c.state, got, c.want)
+		}
+	}
+}
+
+func TestSecureEndpoint(t *testing.T) {
+	for endpoint, want := range map[string]bool{
+		"https://as.example/introspect": true,
+		"HTTPS://as.example/introspect": true,
+		"http://as.example/introspect":  false,
+		"as.example/introspect":         false,
+		"://":                           false,
+		"":                              false,
+	} {
+		if got := SecureEndpoint(endpoint); got != want {
+			t.Errorf("%q: got %v, want %v", endpoint, got, want)
 		}
 	}
 }

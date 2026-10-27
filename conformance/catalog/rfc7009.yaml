@@ -36,7 +36,6 @@ requirements:
     keyword: MUST
     text: The authorization server MUST use Transport Layer Security (TLS) [RFC5246] in a version compliant with [RFC6749], Section 1.6.
     status: applicable
-    note: Transport security is ticket 50.
   - id: RFC7009-2-07
     section: "2"
     keyword: MAY

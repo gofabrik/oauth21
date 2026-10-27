@@ -375,14 +375,12 @@ requirements:
     keyword: MUST
     text: Implementations MUST support TLS.
     status: applicable
-    note: Transport security is ticket 50.
   - id: RFC8414-6.1-02
     section: "6.1"
     keyword: MUST
     text: The authorization server MUST support TLS version 1.2 [RFC5246] and MAY support additional TLS mechanisms meeting its security requirements.
     statement: The authorization server MUST support TLS version 1.2.
     status: applicable
-    note: Transport security is ticket 50.
   - id: RFC8414-6.1-03
     section: "6.1"
     keyword: MAY
@@ -400,7 +398,6 @@ requirements:
     keyword: MUST
     text: To protect against information disclosure and tampering, confidentiality protection MUST be applied using TLS with a ciphersuite that provides confidentiality and integrity protection.
     status: applicable
-    note: Transport security is ticket 50.
   - id: RFC8414-6.2-01
     section: "6.2"
     keyword: MUST

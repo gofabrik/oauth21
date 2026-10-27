@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"slices"
 	"strings"
@@ -52,9 +54,12 @@ func s256(v string) string {
 
 // authorizationServer is an Authorization Server under test, reached over HTTP.
 type authorizationServer struct {
-	t        *testing.T
-	srv      *oauth21.Server
-	url      string
+	t   *testing.T
+	srv *oauth21.Server
+	// url is the Issuer.
+	url string
+	// origin is the server a sends its requests to.
+	origin   string
 	mux      *http.ServeMux
 	client   *http.Client
 	skew     atomic.Int64
@@ -232,8 +237,8 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	mux := http.NewServeMux()
 	ts := httptest.NewTLSServer(mux)
 	t.Cleanup(ts.Close)
-	a.url, a.mux, a.client, a.recorder = ts.URL, mux, ts.Client(), &recorder{Store: m}
-	a.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	a.url, a.origin, a.mux, a.client, a.recorder = ts.URL, ts.URL, mux, ts.Client(), &recorder{Store: m}
+	a.client.CheckRedirect = noRedirect
 	t.Cleanup(a.client.CloseIdleConnections)
 	c := oauth21.Config{
 		Issuer:                ts.URL,
@@ -258,6 +263,60 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	mux.Handle(paths.Introspection, srv.IntrospectionHandler())
 	mux.Handle(srv.MetadataPath(), srv.MetadataHandler())
 	return a
+}
+
+// via starts a server of h with start, and runs do while a sends its requests to that server.
+func (a *authorizationServer) via(h http.Handler, start func(*httptest.Server), do func()) {
+	a.t.Helper()
+	ts := httptest.NewUnstartedServer(h)
+	start(ts)
+	defer ts.Close()
+	origin, client := a.origin, a.client
+	defer func() { a.origin, a.client = origin, client }()
+	a.origin, a.client = ts.URL, ts.Client()
+	a.client.CheckRedirect = noRedirect
+	defer a.client.CloseIdleConnections()
+	do()
+}
+
+// noRedirect makes a client return redirects instead of following them.
+func noRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
+// overPlainHTTP runs do while a sends its requests over plain HTTP.
+func (a *authorizationServer) overPlainHTTP(do func()) {
+	a.t.Helper()
+	a.via(a.mux, (*httptest.Server).Start, do)
+}
+
+// overTLS runs do while a sends its requests over TLS that config limits, also on the client side.
+func (a *authorizationServer) overTLS(config *tls.Config, do func()) {
+	a.t.Helper()
+	a.via(a.mux, func(ts *httptest.Server) {
+		ts.TLS = config.Clone()
+		ts.StartTLS()
+	}, func() {
+		c := a.client.Transport.(*http.Transport).TLSClientConfig
+		c.MinVersion, c.MaxVersion, c.CipherSuites = config.MinVersion, config.MaxVersion, config.CipherSuites
+		do()
+	})
+}
+
+// behindTLSProxy runs do while a sends its requests to a proxy that terminates TLS and forwards them over plain HTTP with X-Forwarded headers.
+func (a *authorizationServer) behindTLSProxy(do func()) {
+	a.t.Helper()
+	a.overPlainHTTP(func() {
+		backend, err := url.Parse(a.origin)
+		if err != nil {
+			a.t.Fatal(err)
+		}
+		proxy := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(backend)
+			r.SetXForwarded()
+		}}
+		a.via(proxy, (*httptest.Server).StartTLS, do)
+	})
 }
 
 // seededRandom is a deterministic randomness source: the SHA-256 counter stream of its seed, with one bit inverted when flip is set.
@@ -335,7 +394,7 @@ func (a *authorizationServer) send(method, path, form string, header http.Header
 
 // trySend is send for goroutines other than the test's, returning the error instead of failing the test.
 func (a *authorizationServer) trySend(method, path, form string, header http.Header) (int, http.Header, []byte, error) {
-	req, err := http.NewRequestWithContext(a.t.Context(), method, a.url+path, strings.NewReader(form))
+	req, err := http.NewRequestWithContext(a.t.Context(), method, a.origin+path, strings.NewReader(form))
 	if err != nil {
 		return 0, nil, nil, err
 	}

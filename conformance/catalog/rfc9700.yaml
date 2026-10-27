@@ -285,7 +285,15 @@ requirements:
     section: "2.6"
     keyword: MUST NOT
     text: Authorization responses MUST NOT be transmitted over unencrypted network connections.
+    statement: Authorization responses of the authorization endpoint MUST NOT be transmitted over unencrypted network connections.
     status: applicable
+  - id: RFC9700-2.6-11
+    section: "2.6"
+    keyword: MUST NOT
+    text: Authorization responses MUST NOT be transmitted over unencrypted network connections.
+    statement: Authorization responses that the Host Application's pages send MUST NOT be transmitted over unencrypted network connections.
+    status: host-duty
+    note: The Host Application serves the pages that send the redirects of Complete and Deny over TLS.
   - id: RFC9700-2.6-05
     section: "2.6"
     keyword: MUST NOT
@@ -603,12 +611,14 @@ requirements:
     section: "4.13"
     keyword: MUST
     text: A reverse proxy MUST therefore sanitize any inbound requests to ensure the authenticity and integrity of all header values relevant for the security of the application servers.
-    status: applicable
+    status: host-duty
+    note: The Host Application's reverse proxy sanitizes the headers it forwards. The endpoints and the bearer middleware never trust forwarded headers (INV-0016).
   - id: RFC9700-4.13-02
     section: "4.13"
     keyword: MUST
     text: Furthermore, the communication link between the reverse proxy and application server MUST be protected against eavesdropping, injection, and replay of messages.
-    status: applicable
+    status: host-duty
+    note: The Host Application protects the link from its reverse proxy and declares it with Config.Secure or bearer.SecureMiddleware.
   - id: RFC9700-4.14.2-01
     section: 4.14.2
     keyword: MUST

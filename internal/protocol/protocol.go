@@ -3,6 +3,7 @@ package protocol
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/base64"
 	"net/netip"
 	"net/url"
@@ -635,6 +636,25 @@ func Access(active bool, scopes, required []string) *Error {
 		return &Error{insufficientScope, "access token lacks a required scope"}
 	}
 	return nil
+}
+
+// SecureTLS reports whether state, nil without TLS, is TLS 1.2 or later with a secure cipher suite.
+func SecureTLS(state *tls.ConnectionState) bool {
+	if state == nil || state.Version < tls.VersionTLS12 {
+		return false
+	}
+	return !slices.ContainsFunc(tls.InsecureCipherSuites(), func(c *tls.CipherSuite) bool { return c.ID == state.CipherSuite })
+}
+
+// InsecureTransport returns the error response for a request without SecureTLS that the Host Application does not declare secure.
+func InsecureTransport() *Error {
+	return &Error{invalidRequest, "TLS required"}
+}
+
+// SecureEndpoint decides whether access tokens may be sent to endpoint: only to an https URL.
+func SecureEndpoint(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	return err == nil && u.Scheme == "https"
 }
 
 // TokenCreated decides on the result of creating a token, which fails when its Grant was revoked.

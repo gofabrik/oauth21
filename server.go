@@ -58,6 +58,8 @@ type Config struct {
 	SecretHasher SecretHasher
 	// RenderError writes an authorization endpoint error that cannot be redirected to the Client. It defaults to a plain text response.
 	RenderError func(w http.ResponseWriter, r *http.Request, e AuthorizationError)
+	// Secure reports whether r arrived over a secure transport. It is asked only for requests without TLS 1.2 or later with a secure cipher suite.
+	Secure func(r *http.Request) bool
 	// Clock defaults to time.Now. Stores that remove expired entities must use the same clock, such as memstore.NewWithClock(Clock).
 	Clock func() time.Time
 	// Random defaults to crypto/rand.Reader.
@@ -260,14 +262,13 @@ func (s *Server) pendingRequest(ctx context.Context, id string, load func(contex
 
 // AuthorizationHandler returns the authorization endpoint.
 func (s *Server) AuthorizationHandler() http.Handler {
-	return http.HandlerFunc(s.authorize)
+	return s.secured(s.authorize, s.renderAuthorizationError)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	loc, err := s.authorizationRedirect(r)
 	if err != nil {
-		e := responseError(err)
-		s.config.RenderError(w, r, AuthorizationError{Status: e.Status(), Code: e.Code, Description: e.Description})
+		s.renderAuthorizationError(w, r, responseError(err))
 		return
 	}
 	http.Redirect(w, r, loc, http.StatusFound) // #nosec G710 -- loc is the login URL or a registered redirect URI
@@ -320,7 +321,7 @@ func (s *Server) handOff(ctx context.Context, a protocol.AuthorizationRequest) (
 
 // TokenHandler returns the token endpoint.
 func (s *Server) TokenHandler() http.Handler {
-	return http.HandlerFunc(s.token)
+	return s.secured(s.token, writeJSONError)
 }
 
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
@@ -454,7 +455,7 @@ func (s *Server) clientCredentials(ctx context.Context, client protocol.Client, 
 
 // RevocationHandler returns the revocation endpoint.
 func (s *Server) RevocationHandler() http.Handler {
-	return http.HandlerFunc(s.revoke)
+	return s.secured(s.revoke, writeJSONError)
 }
 
 func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
@@ -497,7 +498,7 @@ func (s *Server) revocation(r *http.Request) error {
 
 // IntrospectionHandler returns the introspection endpoint, which answers invalid client credentials with 401.
 func (s *Server) IntrospectionHandler() http.Handler {
-	return http.HandlerFunc(s.introspect)
+	return s.secured(s.introspect, writeJSONError)
 }
 
 func (s *Server) introspect(w http.ResponseWriter, r *http.Request) {
@@ -559,9 +560,9 @@ func (s *Server) MetadataPath() string {
 
 // MetadataHandler returns the metadata endpoint of the Authorization Server, to be mounted at MetadataPath.
 func (s *Server) MetadataHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return s.secured(func(w http.ResponseWriter, r *http.Request) {
 		wire.WriteMetadata(w, r, s.metadata())
-	})
+	}, writeJSONError)
 }
 
 // metadata returns the metadata document derived from the Config.
@@ -707,6 +708,27 @@ func (s *Server) secret() (string, []byte, error) {
 func hash(v string) []byte {
 	sum := sha256.Sum256([]byte(v))
 	return sum[:]
+}
+
+// secured passes on to h the requests over SecureTLS or a transport Secure declares secure, and answers the others with fail.
+func (s *Server) secured(h http.HandlerFunc, fail func(http.ResponseWriter, *http.Request, *wire.Error)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !protocol.SecureTLS(r.TLS) && (s.config.Secure == nil || !s.config.Secure(r)) {
+			fail(w, r, oauthError(protocol.InsecureTransport()))
+			return
+		}
+		h(w, r)
+	})
+}
+
+// renderAuthorizationError renders the authorization endpoint error e with RenderError.
+func (s *Server) renderAuthorizationError(w http.ResponseWriter, r *http.Request, e *wire.Error) {
+	s.config.RenderError(w, r, AuthorizationError{Status: e.Status(), Code: e.Code, Description: e.Description})
+}
+
+// writeJSONError writes the endpoint error e as JSON without a challenge.
+func writeJSONError(w http.ResponseWriter, _ *http.Request, e *wire.Error) {
+	wire.WriteError(w, e, "")
 }
 
 // responseError returns the error response for err, server_error unless it is an OAuth error.

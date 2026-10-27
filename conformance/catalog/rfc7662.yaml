@@ -84,7 +84,6 @@ requirements:
     keyword: MUST
     text: The introspection endpoint MUST be protected by a transport-layer security mechanism as described in Section 4.
     status: applicable
-    note: Transport security is ticket 50.
   - id: RFC7662-2.1-01
     section: "2.1"
     keyword: REQUIRED
@@ -327,7 +326,6 @@ requirements:
     text: Since the introspection endpoint takes in OAuth 2.0 tokens as parameters and responds with information used to make authorization decisions, the server MUST support Transport Layer Security (TLS) 1.2 [RFC5246] and MAY support additional transport-layer mechanisms meeting its security requirements.
     statement: The server MUST support Transport Layer Security (TLS) 1.2.
     status: applicable
-    note: Transport security is ticket 50.
   - id: RFC7662-4-12
     section: "4"
     keyword: MAY

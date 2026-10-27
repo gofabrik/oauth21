@@ -65,7 +65,7 @@ func (l Local) Validate(ctx context.Context, token string) (Token, error) {
 
 // Remote validates access tokens through the introspection endpoint of an Authorization Server (RFC 7662).
 type Remote struct {
-	// Endpoint is the URL of the introspection endpoint.
+	// Endpoint is the https URL of the introspection endpoint.
 	Endpoint string
 	// ClientID and ClientSecret authenticate the Resource Server as a Client allowed to introspect.
 	ClientID     string
@@ -79,6 +79,9 @@ const defaultTimeout = 10 * time.Second
 
 // Validate returns the access token with value token while the introspection endpoint answers that it is active for the Resource Server.
 func (r Remote) Validate(ctx context.Context, token string) (Token, error) {
+	if !protocol.SecureEndpoint(r.Endpoint) {
+		return Token{}, errors.New("bearer: the introspection endpoint must be an https URL")
+	}
 	req, err := wire.NewIntrospectionRequest(ctx, r.Endpoint, token, r.ClientID, r.ClientSecret)
 	if err != nil {
 		return Token{}, fmt.Errorf("bearer: %w", err)
@@ -111,8 +114,13 @@ func FromContext(ctx context.Context) (Token, bool) {
 	return t, ok
 }
 
-// Middleware returns a middleware that passes on only requests whose Authorization header carries an access token that v validates and that has every scope in required, which must be scope-tokens.
+// Middleware returns a middleware that passes on only requests that arrive over TLS 1.2 or later with a secure cipher suite and whose Authorization header carries an access token that v validates and that has every scope in required, which must be scope-tokens.
 func Middleware(v Validator, required ...string) func(http.Handler) http.Handler {
+	return SecureMiddleware(nil, v, required...)
+}
+
+// SecureMiddleware is Middleware that also passes on requests that secure reports arrived over a secure transport, asking it only for requests Middleware refuses for their transport.
+func SecureMiddleware(secure func(r *http.Request) bool, v Validator, required ...string) func(http.Handler) http.Handler {
 	if slices.ContainsFunc(required, func(s string) bool { return !protocol.ScopeToken(s) }) {
 		panic("bearer: scopes must be scope-tokens")
 	}
@@ -120,6 +128,10 @@ func Middleware(v Validator, required ...string) func(http.Handler) http.Handler
 	scope := strings.Join(required, " ")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !protocol.SecureTLS(r.TLS) && (secure == nil || !secure(r)) {
+				wire.WriteBearerError(w, (*wire.Error)(protocol.InsecureTransport()), scope)
+				return
+			}
 			value, werr := wire.ParseBearer(r)
 			switch {
 			case werr != nil:

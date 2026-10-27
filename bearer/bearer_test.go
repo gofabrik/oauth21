@@ -46,8 +46,9 @@ func protected(v bearer.Validator) http.Handler {
 	}))
 }
 
+// request returns a GET of the protected resource over TLS with the Authorization header.
 func request(header string) *http.Request {
-	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/resource", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://rs.example/resource", nil)
 	r.Header.Set("Authorization", header)
 	return r
 }
@@ -94,7 +95,7 @@ func TestHandlerGetsAudience(t *testing.T) {
 // remote returns a Remote for an introspection endpoint that answers every request with status and body.
 func remote(t *testing.T, status int, body string) bearer.Remote {
 	t.Helper()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
 	}))
@@ -151,6 +152,50 @@ func TestStoreFailureIsServerError(t *testing.T) {
 	protected(bearer.Local{Tokens: failingTokens{}}).ServeHTTP(w, request("Bearer token"))
 	if w.Code != http.StatusInternalServerError || w.Header().Get("WWW-Authenticate") != "" {
 		t.Fatalf("got status %d and WWW-Authenticate %q, want 500 without a challenge", w.Code, w.Header().Get("WWW-Authenticate"))
+	}
+}
+
+func TestSecureMiddlewareAsksOnlyWithoutTLS(t *testing.T) {
+	m := memstore.New()
+	seed(t, m, nil)
+	var asked []string
+	secure := func(r *http.Request) bool {
+		asked = append(asked, r.URL.String())
+		return true
+	}
+	h := bearer.SecureMiddleware(secure, bearer.Local{Tokens: m})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, target := range []string{"https://rs.example/resource", "http://rs.example/resource"} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+		r.Header.Set("Authorization", "Bearer token")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: got status %d, want 200", target, w.Code)
+		}
+	}
+	if len(asked) != 1 || strings.HasPrefix(asked[0], "https") {
+		t.Fatalf("got secure asked for %q, want it asked only for the request without TLS", asked)
+	}
+}
+
+func TestSecureMiddlewareRefusalIsTLSRequired(t *testing.T) {
+	m := memstore.New()
+	seed(t, m, nil)
+	h := bearer.SecureMiddleware(func(*http.Request) bool { return false }, bearer.Local{Tokens: m})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://rs.example/resource", nil)
+	r.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Header().Get("WWW-Authenticate"), `error_description="TLS required"`) {
+		t.Fatalf("got status %d and WWW-Authenticate %q, want 400 with TLS required", w.Code, w.Header().Get("WWW-Authenticate"))
+	}
+}
+
+func TestRemoteRefusesEndpointWithoutTLS(t *testing.T) {
+	for _, endpoint := range []string{"http://as.example/introspect", "as.example/introspect", "://"} {
+		if _, err := (bearer.Remote{Endpoint: endpoint, Client: &http.Client{Transport: blockingTransport{}}}).Validate(t.Context(), "token"); err == nil || errors.Is(err, bearer.ErrInvalidToken) {
+			t.Errorf("%q: got error %v, want a failure for an endpoint that is not an https URL", endpoint, err)
+		}
 	}
 }
 

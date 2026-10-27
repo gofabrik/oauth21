@@ -43,7 +43,12 @@ func forEachValidator(t *testing.T, test func(a *authorizationServer, v bearer.V
 // resource serves the validated token of a request guarded by the bearer middleware with v that requires scopes.
 func (a *authorizationServer) resource(v bearer.Validator, scopes ...string) {
 	a.t.Helper()
-	a.mux.Handle("/resource", bearer.Middleware(v, scopes...)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.protect(bearer.Middleware(v, scopes...))
+}
+
+// protect serves the validated token of a request guarded by middleware.
+func (a *authorizationServer) protect(middleware func(http.Handler) http.Handler) {
+	a.mux.Handle("/resource", middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, _ := bearer.FromContext(r.Context())
 		_ = json.NewEncoder(w).Encode(token)
 	})))
@@ -194,7 +199,7 @@ func TestBearerRemoteValidationFailureIsServerError(t *testing.T) {
 			return r
 		},
 		"unreachable endpoint": func(a *authorizationServer) bearer.Remote {
-			closed := httptest.NewServer(http.NotFoundHandler())
+			closed := httptest.NewTLSServer(http.NotFoundHandler())
 			closed.Close()
 			r := a.remote(resourceServerID, secret)
 			r.Endpoint = closed.URL + a.srv.Paths().Introspection

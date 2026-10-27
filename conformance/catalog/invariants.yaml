@@ -61,3 +61,7 @@ requirements:
     keyword: MUST
     text: The token endpoint refuses the resource owner password credentials grant with unsupported_grant_type.
     status: applicable
+  - id: INV-0016
+    keyword: MUST
+    text: The endpoints of the Authorization Server and the bearer middleware never take the transport of a request from its forwarded headers.
+    status: applicable

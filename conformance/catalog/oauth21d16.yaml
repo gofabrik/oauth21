@@ -2036,7 +2036,8 @@ requirements:
     section: "7.14"
     keyword: MUST
     text: In such deployments, sufficient measures MUST be employed to ensure confidentiality of the access token between the front-end and back-end servers; encryption of the token is one such possible measure.
-    status: applicable
+    status: host-duty
+    note: The Host Application protects access tokens between its front-end and back-end servers and declares the link with bearer.SecureMiddleware.
   - id: OAUTH21D16-7.15-01
     section: "7.15"
     keyword: MUST
