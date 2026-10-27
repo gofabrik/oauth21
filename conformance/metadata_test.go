@@ -187,7 +187,7 @@ func TestMetadataIssuerIsIss(t *testing.T) {
 			unsupported := authorizeParams()
 			unsupported.Set("response_type", "token")
 			success := a.login(a.authorizationRedirect(authorizeParams()), "alice")
-			for _, u := range []*url.URL{success, a.authorizationRedirect(unsupported)} {
+			for _, u := range []*url.URL{success, a.denyAt(a.authorizationRedirect(unsupported))} {
 				if got := u.Query().Get("iss"); got != issuer {
 					t.Fatalf("got iss %q, want the metadata issuer %v", got, issuer)
 				}

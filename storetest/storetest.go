@@ -37,6 +37,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Run("Expiry", func(t *testing.T) { testExpiry(t, newStore(t)) })
 	t.Run("UsedCodeIsRetained", func(t *testing.T) { testUsedCodeIsRetained(t, newStore(t)) })
 	t.Run("EntitiesAreCopied", func(t *testing.T) { testEntitiesAreCopied(t, newStore(t)) })
+	t.Run("FailedAuthorizationRequest", func(t *testing.T) { testFailedAuthorizationRequest(t, newStore(t)) })
 }
 
 func newCode(hash string, expiresAt time.Time) store.Code {
@@ -492,6 +493,18 @@ func testEntitiesAreCopied(t *testing.T, s Store) {
 	for _, hash := range []string{"refresh", "next"} {
 		if got, err := s.RefreshToken(ctx, []byte(hash)); err != nil || got.Grant.Scopes[0] != "read" {
 			t.Fatalf("RefreshToken returned %+v and error %v after tokens changed, want the stored one", got, err)
+		}
+	}
+}
+
+func testFailedAuthorizationRequest(t *testing.T, s Store) {
+	r := store.AuthorizationRequest{ID: "request", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Error: "invalid_scope", ErrorDescription: "scope required"}
+	if err := s.CreateAuthorizationRequest(t.Context(), r); err != nil {
+		t.Fatal(err)
+	}
+	for i, op := range []func(context.Context, string) (store.AuthorizationRequest, error){s.AuthorizationRequest, s.ConsumeAuthorizationRequest} {
+		if got, err := op(t.Context(), r.ID); err != nil || got.Error != r.Error || got.ErrorDescription != r.ErrorDescription {
+			t.Fatalf("operation %d returned %+v and error %v, want the error of the created request", i, got, err)
 		}
 	}
 }

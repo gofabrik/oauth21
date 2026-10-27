@@ -170,7 +170,7 @@ func TestAuthorizationResponseOnlyOverTLS(t *testing.T) {
 	unknown := authorizeParams()
 	unknown.Set("scope", "unknown")
 	a.pending(a.authorize(authorizeParams()))
-	a.wantAuthorizationError(a.authorize(unknown), "invalid_scope", "")
+	a.wantAuthorizationError(a.errorRedirect(unknown), "invalid_scope", "")
 	a.overPlainHTTP(func() {
 		for _, params := range []url.Values{authorizeParams(), unknown} {
 			status, header, _ := a.send(http.MethodGet, "/authorize?"+params.Encode(), "", nil)

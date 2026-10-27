@@ -90,7 +90,7 @@ func TestConcurrentCompletionAndDenialSucceedOnce(t *testing.T) {
 	}
 }
 
-// TestErrorsAfterRedirectURIAreRedirected checks that errors found once the Client and redirect URI are trusted are redirected with error, state and iss.
+// TestErrorsAfterRedirectURIAreRedirected checks that errors found once the Client and redirect URI are trusted are redirected with error, state and iss once the Host Application denies the request.
 //
 //conformance:covers OAUTH21D16-4.1.1-03
 func TestErrorsAfterRedirectURIAreRedirected(t *testing.T) {
@@ -99,7 +99,7 @@ func TestErrorsAfterRedirectURIAreRedirected(t *testing.T) {
 			a := newAuthorizationServer(t)
 			params := authorizeParams()
 			params.Set("response_type", responseType)
-			a.wantAuthorizationError(a.authorize(params), code, "response_type")
+			a.wantAuthorizationError(a.errorRedirect(params), code, "response_type")
 		})
 	}
 }

@@ -18,7 +18,7 @@ func errorChars(s string) bool {
 // unsupportedResponseType returns the authorization error response for a request with response_type token.
 func (a *authorizationServer) unsupportedResponseType() url.Values {
 	a.t.Helper()
-	return a.authorize(unsupportedParams()).Query()
+	return a.errorRedirect(unsupportedParams()).Query()
 }
 
 // unsupportedParams returns an authorization request of the public Client with the unsupported response type token.
@@ -71,7 +71,7 @@ func TestAuthorizationRequiresResponseType(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("response_type")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "response_type")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "response_type")
 }
 
 // TestAuthorizationResponseCarriesCode checks that a completed request is answered with a code.
@@ -154,7 +154,7 @@ func (a *authorizationServer) authorizationErrors() []url.Values {
 	scope := authorizeParams()
 	scope.Set("scope", "read \u00fcnknown")
 	denied := a.deny(a.pending(a.authorize(authorizeParams())).ID)
-	return []url.Values{a.unsupportedResponseType(), a.authorize(challenge).Query(), a.authorize(method).Query(), a.authorize(scope).Query(), denied.Query()}
+	return []url.Values{a.unsupportedResponseType(), a.errorRedirect(challenge).Query(), a.errorRedirect(method).Query(), a.errorRedirect(scope).Query(), denied.Query()}
 }
 
 // TestAuthorizationErrorCodeCharacters checks that redirected error codes use only the allowed characters.
@@ -187,8 +187,8 @@ func TestAuthorizationErrorCarriesState(t *testing.T) {
 func TestAuthorizationErrorCarriesIssuer(t *testing.T) {
 	params := authorizeParams()
 	params.Set("response_type", "token")
-	_, issuer, loc := tenantAuthorization(t, params)
-	if q := loc.Query(); q.Get("error") == "" || q.Get("iss") != issuer {
+	a, issuer, loc := tenantAuthorization(t, params)
+	if q := a.denyAt(loc).Query(); q.Get("error") == "" || q.Get("iss") != issuer {
 		t.Fatalf("got %v, want an error with iss %q", q, issuer)
 	}
 }
@@ -291,7 +291,7 @@ func TestHostileParametersAreContained(t *testing.T) {
 	params.Set("state", hostile)
 	failing := unsupportedParams()
 	failing.Set("state", hostile)
-	for _, u := range []*url.URL{a.login(a.authorize(params), "alice"), a.authorize(failing)} {
+	for _, u := range []*url.URL{a.login(a.authorize(params), "alice"), a.errorRedirect(failing)} {
 		if q := u.Query(); q.Get("state") != hostile || q.Get("code") == "evil" || q.Get("iss") != a.url || u.Fragment != "" {
 			t.Fatalf("got redirect %s, want state %q returned unchanged", u, hostile)
 		}
@@ -351,25 +351,25 @@ func (a *authorizationServer) postedAuthorization(params url.Values) (int, strin
 	return status, header.Get("Location")
 }
 
-// wantCredentialsNotForwarded checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, is a 302 or 303 that leaves the password out of the redirect.
+// wantCredentialsNotForwarded checks that redirecting a POST authorization request that carries a password, valid or failing, to the login URL is a 302 or 303 that leaves the password out of the redirect.
 func (a *authorizationServer) wantCredentialsNotForwarded() {
 	a.t.Helper()
-	for target, params := range map[string]url.Values{a.url + "/login?": authorizeParams(), redirectURI + "?": unsupportedParams()} {
+	for _, params := range []url.Values{authorizeParams(), unsupportedParams()} {
 		status, loc := a.postedAuthorization(params)
-		if status != http.StatusFound && status != http.StatusSeeOther || !strings.HasPrefix(loc, target) || strings.Contains(loc, "hunter2") {
-			a.t.Fatalf("got status %d and Location %q, want a 302 or 303 to %s without the password", status, loc, target)
+		if status != http.StatusFound && status != http.StatusSeeOther || !strings.HasPrefix(loc, a.url+"/login?") || strings.Contains(loc, "hunter2") {
+			a.t.Fatalf("got status %d and Location %q, want a 302 or 303 to the login URL without the password", status, loc)
 		}
 	}
 }
 
-// TestPostedCredentialsAreNotForwarded checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, neither repeats the request body nor puts the password in the redirect.
+// TestPostedCredentialsAreNotForwarded checks that redirecting a POST authorization request that carries a password, valid or failing, to the login URL neither repeats the request body nor puts the password in the redirect.
 //
 //conformance:covers OAUTH21D16-3.1-10
 func TestPostedCredentialsAreNotForwarded(t *testing.T) {
 	newAuthorizationServer(t).wantCredentialsNotForwarded()
 }
 
-// TestAuthorizationRedirectsAreNot307 checks that the authorization endpoint never redirects with 307, for GET and POST requests, to the login URL and to the Client.
+// TestAuthorizationRedirectsAreNot307 checks that the authorization endpoint never redirects with 307, for valid and failing GET and POST requests.
 //
 //conformance:covers OAUTH21D16-7.5.4-01
 func TestAuthorizationRedirectsAreNot307(t *testing.T) {
@@ -414,7 +414,7 @@ func TestAuthorizationResponsesCarryIss(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Set("scope", "unknown")
-	for _, u := range []*url.URL{a.login(a.authorize(authorizeParams()), "alice"), a.authorize(params)} {
+	for _, u := range []*url.URL{a.login(a.authorize(authorizeParams()), "alice"), a.errorRedirect(params)} {
 		if u.Query().Get("iss") != a.url {
 			t.Fatalf("got redirect %s, want iss %q", u, a.url)
 		}
@@ -428,8 +428,8 @@ func TestIssIsHTTPSURLWithoutQueryOrFragment(t *testing.T) {
 	params := authorizeParams()
 	params.Set("response_type", "token")
 	a, _, loc := tenantAuthorization(t, authorizeParams())
-	_, _, errLoc := tenantAuthorization(t, params)
-	for _, u := range []*url.URL{a.login(loc, "alice"), errLoc} {
+	b, _, errLoc := tenantAuthorization(t, params)
+	for _, u := range []*url.URL{a.login(loc, "alice"), b.denyAt(errLoc)} {
 		iss := u.Query().Get("iss")
 		parsed, err := url.Parse(iss)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.ContainsAny(iss, "?#") {
@@ -438,7 +438,7 @@ func TestIssIsHTTPSURLWithoutQueryOrFragment(t *testing.T) {
 	}
 }
 
-// TestRedirectDoesNotForwardCredentials checks that redirecting a POST authorization request that carries a password, to the login URL or to the Client, is a 302 or 303 that leaves the password out of the redirect.
+// TestRedirectDoesNotForwardCredentials checks that redirecting a POST authorization request that carries a password, valid or failing, to the login URL is a 302 or 303 that leaves the password out of the redirect.
 //
 //conformance:covers RFC9700-2.1-09
 func TestRedirectDoesNotForwardCredentials(t *testing.T) {
@@ -466,7 +466,7 @@ func TestAuthorizationEndpointRefusesCORS(t *testing.T) {
 	}
 }
 
-// TestRedirectOfCredentialsIsNot307 checks that a POST authorization request carrying a password is redirected, to the login URL or to the Client, without 307.
+// TestRedirectOfCredentialsIsNot307 checks that a POST authorization request carrying a password is redirected, valid or failing, to the login URL without 307.
 //
 //conformance:covers RFC9700-4.12-01
 func TestRedirectOfCredentialsIsNot307(t *testing.T) {

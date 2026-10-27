@@ -60,6 +60,9 @@ type AuthorizationRequest struct {
 	CodeChallengeMethod string
 	// ExpiresAt must be stored; a zero value counts as expired.
 	ExpiresAt time.Time
+	// Error is the error code the request failed with, empty for a valid request; it must be stored with ErrorDescription.
+	Error            string
+	ErrorDescription string
 }
 
 // Grant is the authorization a Client holds, given by a Resource Owner or obtained for itself with client credentials.

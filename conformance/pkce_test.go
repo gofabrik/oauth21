@@ -17,7 +17,7 @@ func TestAuthorizationRequiresCodeChallenge(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("code_challenge")
-	if q := a.authorize(params).Query(); q.Has("code") || !q.Has("error") {
+	if q := a.errorRedirect(params).Query(); q.Has("code") || !q.Has("error") {
 		t.Fatalf("got redirect query %v, want an error and no code", q)
 	}
 }
@@ -29,7 +29,7 @@ func TestMissingCodeChallengeGetsInvalidRequest(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("code_challenge")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "")
 }
 
 // TestMissingCodeChallengeIsExplained checks that the error_description says a code challenge is required.
@@ -39,7 +39,7 @@ func TestMissingCodeChallengeIsExplained(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("code_challenge")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "code challenge required")
 }
 
 // TestServerEnforcesPKCE checks that neither the code challenge nor the code verifier can be left out.
@@ -49,7 +49,7 @@ func TestServerEnforcesPKCE(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("code_challenge")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "")
 	a.wantVerifierRequired(tokenParams(a.code(authorizeParams())), nil)
 }
 
@@ -79,7 +79,7 @@ func wantUnsupportedMethodRejected(t *testing.T, description string) {
 			if method == "" {
 				params.Del("code_challenge_method")
 			}
-			a.wantAuthorizationError(a.authorize(params), "invalid_request", description)
+			a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", description)
 		})
 	}
 }
@@ -91,7 +91,7 @@ func TestAuthorizationRequiresCodeChallengeMethod(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("code_challenge_method")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "")
 }
 
 // TestCodeChallengeNotExposed checks that no redirect carries the code challenge: with the same randomness source, requests with different code challenges get the same login and callback redirects.
@@ -215,7 +215,7 @@ func TestEmptyCodeChallengeIsMissing(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Set("code_challenge", "")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "code challenge required")
 }
 
 // TestPublicClientRequiresCodeChallenge checks that a public Client's request without a code challenge is rejected.
@@ -226,7 +226,7 @@ func TestPublicClientRequiresCodeChallenge(t *testing.T) {
 	params := authorizeParams()
 	params.Del("code_challenge")
 	params.Del("code_challenge_method")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "code challenge required")
 }
 
 // TestConfidentialClientRequiresCodeChallenge checks that a confidential Client's request without a code challenge is rejected.
@@ -237,7 +237,7 @@ func TestConfidentialClientRequiresCodeChallenge(t *testing.T) {
 	params := authorizeParams()
 	params.Set("client_id", confidentialID)
 	params.Del("code_challenge")
-	a.wantAuthorizationError(a.authorize(params), "invalid_request", "code challenge required")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "code challenge required")
 }
 
 // TestConfidentialClientRequiresCodeVerifier checks that an authenticated confidential Client cannot redeem a code without its code verifier.
@@ -311,7 +311,7 @@ func TestUnsupportedMethodIsInvalidRequest(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Set("code_challenge_method", "S512")
-	if q := a.authorize(params).Query(); q.Get("error") != "invalid_request" {
+	if q := a.errorRedirect(params).Query(); q.Get("error") != "invalid_request" {
 		t.Fatalf("got %v, want error invalid_request", q)
 	}
 }
@@ -323,7 +323,7 @@ func TestUnsupportedMethodIsExplained(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Set("code_challenge_method", "S512")
-	if d := a.authorize(params).Query().Get("error_description"); !strings.Contains(d, "transform algorithm not supported") {
+	if d := a.errorRedirect(params).Query().Get("error_description"); !strings.Contains(d, "transform algorithm not supported") {
 		t.Fatalf("got error_description %q, want it to name the unsupported transform algorithm", d)
 	}
 }
@@ -423,7 +423,7 @@ func TestPKCEDowngradeIsMitigated(t *testing.T) {
 	params := authorizeParams()
 	params.Del("code_challenge")
 	params.Del("code_challenge_method")
-	if u := a.authorize(params); endpoint(u) != redirectURI || !u.Query().Has("error") {
+	if u := a.errorRedirect(params); endpoint(u) != redirectURI || !u.Query().Has("error") {
 		t.Fatalf("got redirect %s, want an error at the Client", u)
 	}
 	attacker := strings.Repeat("x", 43)

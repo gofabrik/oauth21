@@ -6,11 +6,19 @@
 </head>
 <body>
 <h1>Consent</h1>
+{{if .Error}}
+<p>The request of {{.ClientID}} failed: {{.Error.Description}}</p>
+<form method="post">
+<input type="hidden" name="request_id" value="{{.RequestID}}">
+<button name="decision" value="deny">Return to {{.ClientID}}</button>
+</form>
+{{else}}
 <p>{{.ClientID}} asks {{.Subject}} for the scopes {{range .Scopes}}<code>{{.}}</code> {{end}}</p>
 <form method="post">
 <input type="hidden" name="request_id" value="{{.RequestID}}">
 <button name="decision" value="allow">Allow</button>
 <button name="decision" value="deny">Deny</button>
 </form>
+{{end}}
 </body>
 </html>

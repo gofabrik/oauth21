@@ -456,7 +456,8 @@ requirements:
     section: "3.1"
     keyword: MUST
     text: The authorization server MUST first authenticate the resource owner.
-    status: applicable
+    status: host-duty
+    note: The Host Application authenticates the Resource Owner on its login page, where the library sends every Authorization Request first, failed ones included (OAUTH21D16-7.13.2-03).
   - id: OAUTH21D16-3.1-02
     section: "3.1"
     keyword: MUST NOT
@@ -2029,7 +2030,16 @@ requirements:
     section: 7.13.2
     keyword: MUST
     text: The authorization server MUST always authenticate the user first and, with the exception of the silent authentication use case, prompt the user for credentials when needed, before redirecting the user.
+    statement: The authorization server MUST authenticate the user first, before redirecting the user.
     status: applicable
+    note: The authorization endpoint redirects only to the login URL; the redirect to the Client comes from Complete or Deny.
+  - id: OAUTH21D16-7.13.2-06
+    section: 7.13.2
+    keyword: MUST
+    text: The authorization server MUST always authenticate the user first and, with the exception of the silent authentication use case, prompt the user for credentials when needed, before redirecting the user.
+    statement: The authorization server MUST always authenticate the user and, with the exception of the silent authentication use case, prompt the user for credentials when needed.
+    status: host-duty
+    note: The Host Application authenticates the Resource Owner on its login page before it denies or completes an Authorization Request.
   - id: OAUTH21D16-7.13.2-04
     section: 7.13.2
     keyword: SHOULD

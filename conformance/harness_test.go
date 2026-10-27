@@ -568,6 +568,18 @@ func (a *authorizationServer) deny(id string) *url.URL {
 	return a.redirect(redirect)
 }
 
+// denyAt denies the Authorization Request at the login URL loc and returns the redirect to the Client.
+func (a *authorizationServer) denyAt(loc *url.URL) *url.URL {
+	a.t.Helper()
+	return a.deny(a.pending(loc).ID)
+}
+
+// errorRedirect sends the failing authorization request params, denies it at the login URL and returns the redirect of its error to the Client.
+func (a *authorizationServer) errorRedirect(params url.Values) *url.URL {
+	a.t.Helper()
+	return a.denyAt(a.authorize(params))
+}
+
 // wantNotPending checks that the Authorization Request id can be neither read, completed nor denied.
 func (a *authorizationServer) wantNotPending(id string) {
 	t := a.t

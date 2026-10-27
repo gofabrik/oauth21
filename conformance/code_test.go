@@ -236,5 +236,5 @@ func TestClientWithoutCodeGrantCannotAuthorize(t *testing.T) {
 	a := newAuthorizationServer(t, client)
 	params := authorizeParams()
 	params.Set("client_id", confidentialID)
-	a.wantAuthorizationError(a.authorize(params), "unauthorized_client", "grant type")
+	a.wantAuthorizationError(a.errorRedirect(params), "unauthorized_client", "grant type")
 }

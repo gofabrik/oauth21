@@ -31,7 +31,7 @@ func TestRequestWithoutScopeOrDefaultsFails(t *testing.T) {
 	a := newAuthorizationServer(t, store.Client{ID: "nodefaults", Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: readScope})
 	params := authorizeParams()
 	params.Set("client_id", "nodefaults")
-	a.wantAuthorizationError(a.authorize(params), "invalid_scope", "scope")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_scope", "scope")
 }
 
 // TestScopeMustBeSupportedAndAllowed checks that requesting a scope that is unsupported though allowed for the Client, or supported but not allowed for it, fails with invalid_scope.
@@ -46,7 +46,7 @@ func TestScopeMustBeSupportedAndAllowed(t *testing.T) {
 			params := authorizeParams()
 			params.Set("client_id", "deleter")
 			params.Set("scope", scope)
-			a.wantAuthorizationError(a.authorize(params), "invalid_scope", "scope")
+			a.wantAuthorizationError(a.errorRedirect(params), "invalid_scope", "scope")
 		})
 	}
 }
@@ -76,7 +76,7 @@ func TestRequestWithoutScopeUsesDefaultOrFails(t *testing.T) {
 	}
 	params := authorizeParams()
 	params.Set("client_id", "nodefaults")
-	if q := a.authorize(params).Query(); q.Get("error") != "invalid_scope" {
+	if q := a.errorRedirect(params).Query(); q.Get("error") != "invalid_scope" {
 		t.Fatalf("got %v, want error invalid_scope", q)
 	}
 }
@@ -112,7 +112,7 @@ func TestAllowedScopesDependOnClient(t *testing.T) {
 		t.Fatalf("got requested scopes %q, want write", req.Scopes)
 	}
 	params.Set("client_id", "reader")
-	if q := a.authorize(params).Query(); q.Get("error") != "invalid_scope" {
+	if q := a.errorRedirect(params).Query(); q.Get("error") != "invalid_scope" {
 		t.Fatalf("got %v, want error invalid_scope", q)
 	}
 }

@@ -94,9 +94,11 @@ type AuthorizationRequest struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time
+	// Error is the error the request failed with, which Denied returns.
+	Error *Error
 }
 
-// Authorize validates r for client (nil when unknown) and the supported scopes; on error, the returned request has a RedirectURI only when the error may be redirected.
+// Authorize validates r for client (nil when unknown) and the supported scopes; it fails only when the Client or its redirect URI cannot be trusted, and keeps the other errors in the request.
 func Authorize(client *Client, r AuthorizationParams, supported []string, expiresAt time.Time) (AuthorizationRequest, *Error) {
 	if client == nil {
 		return AuthorizationRequest{}, &Error{invalidRequest, "unknown client"}
@@ -113,26 +115,27 @@ func Authorize(client *Client, r AuthorizationParams, supported []string, expire
 		CodeChallengeMethod: r.CodeChallengeMethod,
 		ExpiresAt:           expiresAt,
 	}
+	a.Scopes, a.Error = validateAuthorization(client, r, supported)
+	return a, nil
+}
+
+// validateAuthorization returns the scopes of r for client, or the error r fails with.
+func validateAuthorization(client *Client, r AuthorizationParams, supported []string) ([]string, *Error) {
 	switch {
 	case r.ResponseType == "":
-		return a, &Error{invalidRequest, "response_type required"}
+		return nil, &Error{invalidRequest, "response_type required"}
 	case r.ResponseType != "code":
-		return a, &Error{unsupportedResponseType, "response_type must be code"}
+		return nil, &Error{unsupportedResponseType, "response_type must be code"}
 	case !client.Allows(AuthorizationCodeGrant):
-		return a, grantTypeNotAllowed()
+		return nil, grantTypeNotAllowed()
 	case r.CodeChallenge == "":
-		return a, &Error{invalidRequest, "code challenge required"}
+		return nil, &Error{invalidRequest, "code challenge required"}
 	case r.CodeChallengeMethod != methodS256:
-		return a, &Error{invalidRequest, "transform algorithm not supported"}
+		return nil, &Error{invalidRequest, "transform algorithm not supported"}
 	case !s256Challenge(r.CodeChallenge):
-		return a, &Error{invalidRequest, "malformed code challenge"}
+		return nil, &Error{invalidRequest, "malformed code challenge"}
 	}
-	scopes, err := resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes)
-	if err != nil {
-		return a, err
-	}
-	a.Scopes = scopes
-	return a, nil
+	return resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes)
 }
 
 // resolveScopes returns the distinct scopes of the space-separated requested, or the defaults when it is empty, failing unless each is supported and allowed.
@@ -328,8 +331,11 @@ func Pending(a *AuthorizationRequest, now time.Time) *Error {
 	return nil
 }
 
-// Denied returns the error response for a denied Authorization Request.
-func Denied() *Error {
+// Denied returns the error response for the denied Authorization Request a: the error it failed with, or access_denied.
+func Denied(a AuthorizationRequest) *Error {
+	if a.Error != nil {
+		return a.Error
+	}
 	return &Error{accessDenied, "the resource owner denied the request"}
 }
 
@@ -350,6 +356,8 @@ type Code struct {
 // IssueCode binds a code for a to the Resource Owner subject and the granted scopes, a subset of the requested ones, retaining it for tokenLifetime after it expires.
 func IssueCode(a AuthorizationRequest, subject string, granted []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
 	switch {
+	case a.Error != nil:
+		return Code{}, &Error{invalidRequest, "the request failed; deny it instead"}
 	case subject == "":
 		return Code{}, &Error{invalidRequest, "subject required"}
 	case len(granted) == 0:

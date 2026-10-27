@@ -56,7 +56,7 @@ type Config struct {
 	ReuseConfidentialRefreshTokens bool
 	// SecretHasher verifies Client secrets. It defaults to PBKDF2.
 	SecretHasher SecretHasher
-	// RenderError writes an authorization endpoint error that cannot be redirected to the Client, keeping the framing headers the endpoint sets. It defaults to a plain text response.
+	// RenderError writes an authorization endpoint error that is not redirected to the Client, keeping the framing headers the endpoint sets. It defaults to a plain text response.
 	RenderError func(w http.ResponseWriter, r *http.Request, e AuthorizationError)
 	// Secure reports whether r arrived over a secure transport. It is asked only for requests without TLS 1.2 or later with a secure cipher suite.
 	Secure func(r *http.Request) bool
@@ -161,7 +161,7 @@ func validLifetime(d time.Duration) bool {
 	return d == 0 || d >= time.Second
 }
 
-// AuthorizationError is an authorization endpoint error found before the Client and its redirect URI are trusted.
+// AuthorizationError is an authorization endpoint error.
 type AuthorizationError struct {
 	Status      int
 	Code        string
@@ -179,6 +179,8 @@ type AuthorizationRequest struct {
 	Scopes []string
 	// Lifetime is how long the Client can use the Grant once completed.
 	Lifetime time.Duration
+	// Error is the error the request failed with, which Deny sends to the Client; nil for a valid request.
+	Error *AuthorizationError
 }
 
 // Completion is the Host Application's answer to an Authorization Request.
@@ -199,7 +201,12 @@ func (s *Server) AuthorizationRequest(ctx context.Context, id string) (Authoriza
 		return AuthorizationRequest{}, err
 	}
 	lifetime := protocol.GrantLifetime(protocolClient(client), s.config.AccessTokenLifetime, s.config.RefreshTokenLifetime)
-	return AuthorizationRequest{ID: r.ID, Client: client, Scopes: r.Scopes, Lifetime: lifetime}, nil
+	req := AuthorizationRequest{ID: r.ID, Client: client, Scopes: r.Scopes, Lifetime: lifetime}
+	if r.Error != "" {
+		e := authorizationError(&wire.Error{Code: r.Error, Description: r.ErrorDescription})
+		req.Error = &e
+	}
+	return req, nil
 }
 
 // Complete completes the Authorization Request with identifier id and returns the redirect for the Resource Owner.
@@ -229,13 +236,13 @@ func (s *Server) Complete(ctx context.Context, id string, c Completion) (string,
 	return s.authorizationResponse(r.RedirectURI, r.State).Code(value)
 }
 
-// Deny denies the Authorization Request with identifier id and returns the redirect for the Resource Owner.
+// Deny denies the Authorization Request with identifier id and returns the redirect for the Resource Owner, carrying the error it failed with or access_denied.
 func (s *Server) Deny(ctx context.Context, id string) (string, error) {
 	r, err := s.pendingRequest(ctx, id, s.config.AuthorizationRequests.ConsumeAuthorizationRequest)
 	if err != nil {
 		return "", err
 	}
-	return s.authorizationResponse(r.RedirectURI, r.State).Error(oauthError(protocol.Denied()))
+	return s.authorizationResponse(r.RedirectURI, r.State).Error(oauthError(protocol.Denied(protocolRequest(r))))
 }
 
 // RevokeGrant revokes the Grant with identifier grantID, which the Host Application finds in its Stores: every token of it and any new one.
@@ -280,10 +287,10 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		s.renderAuthorizationError(w, r, responseError(err))
 		return
 	}
-	http.Redirect(w, r, loc, http.StatusFound) // #nosec G710 -- loc is the login URL or a registered redirect URI
+	http.Redirect(w, r, loc, http.StatusFound) // #nosec G710 -- loc is the login URL
 }
 
-// authorizationRedirect stores the Authorization Request of r and returns the redirect to the login URL or the Client.
+// authorizationRedirect stores the Authorization Request of r, also one that failed, and returns the redirect to the login URL.
 func (s *Server) authorizationRedirect(r *http.Request) (string, error) {
 	params, werr := wire.ParseAuthorizationParams(r)
 	if werr != nil {
@@ -294,21 +301,10 @@ func (s *Server) authorizationRedirect(r *http.Request) (string, error) {
 		return "", err
 	}
 	a, perr := protocol.Authorize(client, protocol.AuthorizationParams(params), s.config.Scopes, s.config.Clock().Add(s.config.AuthorizationRequestLifetime))
-	switch {
-	case a.RedirectURI == "" && perr != nil:
-		return "", oauthError(perr)
-	case a.RedirectURI == "":
-		return "", errors.New("oauth21: authorization request has no redirect URI")
-	}
-	resp := s.authorizationResponse(a.RedirectURI, a.State)
 	if perr != nil {
-		return resp.Error(oauthError(perr))
+		return "", oauthError(perr)
 	}
-	loc, err := s.handOff(r.Context(), a)
-	if err != nil {
-		return resp.Error(responseError(err))
-	}
-	return loc, nil
+	return s.handOff(r.Context(), a)
 }
 
 // authorizationResponse returns the authorization response to redirectURI carrying state and the issuer.
@@ -732,7 +728,12 @@ func (s *Server) secured(h http.HandlerFunc, fail func(http.ResponseWriter, *htt
 
 // renderAuthorizationError renders the authorization endpoint error e with RenderError.
 func (s *Server) renderAuthorizationError(w http.ResponseWriter, r *http.Request, e *wire.Error) {
-	s.config.RenderError(w, r, AuthorizationError{Status: e.Status(), Code: e.Code, Description: e.Description})
+	s.config.RenderError(w, r, authorizationError(e))
+}
+
+// authorizationError returns the error response e as the Host Application sees it.
+func authorizationError(e *wire.Error) AuthorizationError {
+	return AuthorizationError{Status: e.Status(), Code: e.Code, Description: e.Description}
 }
 
 // writeJSONError writes the endpoint error e as JSON without a challenge.
@@ -768,7 +769,7 @@ func protocolClient(c store.Client) protocol.Client {
 }
 
 func protocolRequest(r store.AuthorizationRequest) protocol.AuthorizationRequest {
-	return protocol.AuthorizationRequest{
+	a := protocol.AuthorizationRequest{
 		ClientID:            r.ClientID,
 		RedirectURI:         r.RedirectURI,
 		State:               r.State,
@@ -777,10 +778,14 @@ func protocolRequest(r store.AuthorizationRequest) protocol.AuthorizationRequest
 		CodeChallengeMethod: r.CodeChallengeMethod,
 		ExpiresAt:           r.ExpiresAt,
 	}
+	if r.Error != "" {
+		a.Error = &protocol.Error{Code: r.Error, Description: r.ErrorDescription}
+	}
+	return a
 }
 
 func storeRequest(id string, a protocol.AuthorizationRequest) store.AuthorizationRequest {
-	return store.AuthorizationRequest{
+	r := store.AuthorizationRequest{
 		ID:                  id,
 		ClientID:            a.ClientID,
 		RedirectURI:         a.RedirectURI,
@@ -790,6 +795,10 @@ func storeRequest(id string, a protocol.AuthorizationRequest) store.Authorizatio
 		CodeChallengeMethod: a.CodeChallengeMethod,
 		ExpiresAt:           a.ExpiresAt,
 	}
+	if a.Error != nil {
+		r.Error, r.ErrorDescription = a.Error.Code, a.Error.Description
+	}
+	return r
 }
 
 func protocolCode(c store.Code) protocol.Code {

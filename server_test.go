@@ -107,10 +107,10 @@ func accessToken(t testing.TB, w *httptest.ResponseRecorder) string {
 	return body.AccessToken
 }
 
-// requestID sends an authorization request and returns the identifier of the pending Authorization Request.
-func requestID(t rapid.TB, srv *oauth21.Server) string {
+// requestID sends the authorization request query and returns the identifier of the pending Authorization Request.
+func requestID(t rapid.TB, srv *oauth21.Server, query string) string {
 	t.Helper()
-	loc, err := url.Parse(do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://as.example/authorize?"+authorizeQuery, nil)).Header().Get("Location"))
+	loc, err := url.Parse(do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://as.example/authorize?"+query, nil)).Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func requestID(t rapid.TB, srv *oauth21.Server) string {
 // issueCode runs an authorization request through Complete and returns the code.
 func issueCode(t rapid.TB, srv *oauth21.Server) string {
 	t.Helper()
-	redirect, err := srv.Complete(context.Background(), requestID(t, srv), oauth21.Completion{Subject: "alice", Scopes: readScope})
+	redirect, err := srv.Complete(context.Background(), requestID(t, srv, authorizeQuery), oauth21.Completion{Subject: "alice", Scopes: readScope})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestNewCopiesScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	scopes[0] = "admin"
-	if requestID(t, srv) == "" {
+	if requestID(t, srv, authorizeQuery) == "" {
 		t.Fatal("got no Authorization Request after the configured scopes changed")
 	}
 }
@@ -645,16 +645,17 @@ func (f *failingStores) CreateAuthorizationRequest(ctx context.Context, r store.
 	return f.Store.CreateAuthorizationRequest(ctx, r)
 }
 
-func TestUntrustedErrorsAreRendered(t *testing.T) {
+func TestErrorsBeforeHandOffAreRendered(t *testing.T) {
 	tests := map[string]struct {
 		query  string
 		stores failingStores
 		status int
 		code   string
 	}{
-		"unknown client":       {strings.Replace(authorizeQuery, "client_id=client", "client_id=other", 1), failingStores{}, http.StatusBadRequest, "invalid_request"},
-		"repeated parameter":   {authorizeQuery + "&client_id=client", failingStores{}, http.StatusBadRequest, "invalid_request"},
-		"client Store failure": {authorizeQuery, failingStores{clients: true}, http.StatusInternalServerError, "server_error"},
+		"unknown client":        {strings.Replace(authorizeQuery, "client_id=client", "client_id=other", 1), failingStores{}, http.StatusBadRequest, "invalid_request"},
+		"repeated parameter":    {authorizeQuery + "&client_id=client", failingStores{}, http.StatusBadRequest, "invalid_request"},
+		"client Store failure":  {authorizeQuery, failingStores{clients: true}, http.StatusInternalServerError, "server_error"},
+		"request Store failure": {authorizeQuery, failingStores{requests: true}, http.StatusInternalServerError, "server_error"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -686,28 +687,10 @@ func TestUntrustedErrorsAreRendered(t *testing.T) {
 	}
 }
 
-func TestStoreFailureAfterTrustIsRedirected(t *testing.T) {
-	f := &failingStores{Store: memstore.New(), requests: true}
-	f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
-	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: f, AuthorizationRequests: f, Codes: f, Tokens: f})
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/authorize?"+authorizeQuery, nil))
-	loc, err := url.Parse(w.Header().Get("Location"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := loc.Query()
-	if w.Code != http.StatusFound || loc.Host != "client.example" || q.Get("error") != "server_error" || q.Get("state") != "xyz" || q.Get("iss") != issuer || q.Has("error_description") {
-		t.Fatalf("got status %d and Location %s, want a server_error redirect to the Client with state and iss only", w.Code, loc)
-	}
-}
-
 func TestConcurrentCompletionAndDenialSucceedOnce(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	id := requestID(t, srv)
+	id := requestID(t, srv, authorizeQuery)
 
 	var wg sync.WaitGroup
 	errs := make([]error, 8)
@@ -739,9 +722,9 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := memstore.New()
 		srv := newServer(t, m, m, m)
-		expired := requestID(t, srv)
+		expired := requestID(t, srv, authorizeQuery)
 		time.Sleep(10*time.Minute - time.Second)
-		live := requestID(t, srv)
+		live := requestID(t, srv, authorizeQuery)
 		time.Sleep(time.Second)
 		if _, err := srv.Complete(t.Context(), expired, oauth21.Completion{Subject: "alice", Scopes: readScope}); !errors.Is(err, oauth21.ErrRequestNotPending) {
 			t.Fatalf("got error %v completing an expired request, want ErrRequestNotPending", err)
@@ -755,7 +738,7 @@ func TestAuthorizationRequestExpires(t *testing.T) {
 	})
 }
 
-// TestAuthorizationRequestLifecycle checks Authorization Requests against a model of pending requests and their expiry.
+// TestAuthorizationRequestLifecycle checks Authorization Requests, valid or failed, against a model of pending requests and their expiry.
 func TestAuthorizationRequestLifecycle(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		now := time.Unix(1_000_000, 0)
@@ -776,6 +759,7 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		pending := map[string]time.Time{}
+		failed := map[string]bool{}
 		ids := []string{"unknown"}
 		draw := func(t *rapid.T) (string, bool) {
 			id := rapid.SampledFrom(ids).Draw(t, "id")
@@ -789,8 +773,14 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 		}
 		t.Repeat(map[string]func(*rapid.T){
 			"authorize": func(t *rapid.T) {
-				id := requestID(t, srv)
+				id := requestID(t, srv, authorizeQuery)
 				pending[id] = now.Add(time.Minute)
+				ids = append(ids, id)
+			},
+			"authorize failing": func(t *rapid.T) {
+				id := requestID(t, srv, authorizeQuery+"&scope=unknown")
+				pending[id] = now.Add(time.Minute)
+				failed[id] = true
 				ids = append(ids, id)
 			},
 			"advance": func(t *rapid.T) {
@@ -798,8 +788,11 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 			},
 			"read": func(t *rapid.T) {
 				id, want := draw(t)
-				_, err := srv.AuthorizationRequest(context.Background(), id)
+				req, err := srv.AuthorizationRequest(context.Background(), id)
 				wantPending(t, err, want)
+				if want && (req.Error != nil && req.Error.Code == "invalid_scope") != failed[id] {
+					t.Fatalf("got error %+v, want failed %v", req.Error, failed[id])
+				}
 			},
 			"complete without subject": func(t *rapid.T) {
 				id, want := draw(t)
@@ -811,6 +804,12 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 			"complete": func(t *rapid.T) {
 				id, want := draw(t)
 				redirect, err := srv.Complete(context.Background(), id, oauth21.Completion{Subject: "alice", Scopes: readScope})
+				if want && failed[id] {
+					if !errors.Is(err, oauth21.ErrInvalidCompletion) {
+						t.Fatalf("got error %v completing a failed request, want ErrInvalidCompletion", err)
+					}
+					return
+				}
 				wantPending(t, err, want)
 				if want && !strings.Contains(redirect, "code=") {
 					t.Fatalf("got redirect %q, want a code", redirect)
@@ -821,8 +820,12 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 				id, want := draw(t)
 				redirect, err := srv.Deny(context.Background(), id)
 				wantPending(t, err, want)
-				if want && !strings.Contains(redirect, "error=access_denied") {
-					t.Fatalf("got redirect %q, want access_denied", redirect)
+				wantError := "error=access_denied"
+				if failed[id] {
+					wantError = "error=invalid_scope"
+				}
+				if want && !strings.Contains(redirect, wantError) {
+					t.Fatalf("got redirect %q, want %s", redirect, wantError)
 				}
 				delete(pending, id)
 			},
@@ -830,10 +833,22 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 	})
 }
 
+func TestFailedAuthorizationRequestDescribesItsError(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	req, err := srv.AuthorizationRequest(t.Context(), requestID(t, srv, authorizeQuery+"&scope=unknown"))
+	if err != nil || req.Error == nil || *req.Error != (oauth21.AuthorizationError{Status: http.StatusBadRequest, Code: "invalid_scope", Description: "scope not available to the client"}) {
+		t.Fatalf("got request %+v and error %v, want invalid_scope with its description", req, err)
+	}
+	if req, err := srv.AuthorizationRequest(t.Context(), requestID(t, srv, authorizeQuery)); err != nil || req.Error != nil {
+		t.Fatalf("got request %+v and error %v, want a valid request", req, err)
+	}
+}
+
 func TestAuthorizationRequestOfUntypedClientFails(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	id := requestID(t, srv)
+	id := requestID(t, srv, authorizeQuery)
 	untyped, err := m.Client(t.Context(), "client")
 	if err != nil {
 		t.Fatal(err)

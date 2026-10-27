@@ -1,13 +1,4 @@
 # Gated Requirements and Security Invariants that no conformance test covers yet.
-# 53: authenticate the Resource Owner before redirecting errors
-OAUTH21D16-3.1-01
-OAUTH21D16-7.13.2-02
-OAUTH21D16-7.13.2-03
-OAUTH21D16-7.13.2-04
-RFC9700-2.1-10
-RFC9700-4.11.2-02
-RFC9700-4.11.2-03
-RFC9700-4.11.2-04
 # 56: enforce redirect_uri at the token endpoint as RFC 6749 does
 OAUTH21D16-10.2-02
 # 57: brute-force protection for Client authentication

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -400,8 +401,8 @@ func TestAuthorize(t *testing.T) {
 			tt.change(&r)
 			expiresAt := time.Unix(1_000_000, 0)
 			a, err := Authorize(tt.client, r, supportedScopes, expiresAt)
-			if code := errorCode(err); code != tt.code || a.RedirectURI != tt.redirectTo {
-				t.Fatalf("got error %q and redirect URI %q, want %q and %q", code, a.RedirectURI, tt.code, tt.redirectTo)
+			if code := errorCode(cmp.Or(err, a.Error)); code != tt.code || a.RedirectURI != tt.redirectTo || (err == nil) != (tt.redirectTo != "") {
+				t.Fatalf("got error %v, kept error %v and redirect URI %q, want %q and %q", err, a.Error, a.RedirectURI, tt.code, tt.redirectTo)
 			}
 			if err == nil && !a.ExpiresAt.Equal(expiresAt) {
 				t.Fatalf("got ExpiresAt %v, want %v", a.ExpiresAt, expiresAt)
@@ -588,6 +589,13 @@ func TestTokenCreated(t *testing.T) {
 	}
 }
 
+func TestIssueCodeRefusesFailedRequest(t *testing.T) {
+	a := AuthorizationRequest{Scopes: []string{"read"}, Error: &Error{invalidRequest, "code challenge required"}}
+	if _, err := IssueCode(a, "alice", a.Scopes, time.Time{}, time.Hour); err == nil {
+		t.Fatal("got a code for a failed request")
+	}
+}
+
 func TestIssueCodeRequiresSubject(t *testing.T) {
 	if _, err := IssueCode(AuthorizationRequest{ClientID: "client"}, "", nil, time.Time{}, time.Hour); err == nil {
 		t.Fatal("got a code without a subject")
@@ -624,8 +632,12 @@ func TestPending(t *testing.T) {
 }
 
 func TestDenied(t *testing.T) {
-	if code := errorCode(Denied()); code != "access_denied" {
+	if code := errorCode(Denied(AuthorizationRequest{})); code != "access_denied" {
 		t.Fatalf("got error %q, want access_denied", code)
+	}
+	failed := AuthorizationRequest{Error: &Error{invalidScope, "scope required"}}
+	if err := Denied(failed); err != failed.Error {
+		t.Fatalf("got error %v for a failed request, want its error %v", err, failed.Error)
 	}
 }
 
@@ -639,7 +651,7 @@ func TestAuthorizeResolvesScopes(t *testing.T) {
 	} {
 		r := AuthorizationParams{ResponseType: "code", Scope: requested, CodeChallenge: s256(verifierGen.Example()), CodeChallengeMethod: "S256"}
 		a, err := Authorize(client, r, supportedScopes, time.Time{})
-		if err != nil || !slices.Equal(a.Scopes, want) {
+		if err := cmp.Or(err, a.Error); err != nil || !slices.Equal(a.Scopes, want) {
 			t.Errorf("got scopes %q and error %v for scope %q, want %q", a.Scopes, err, requested, want)
 		}
 	}
@@ -671,6 +683,7 @@ func TestScopesStayWithinLimits(t *testing.T) {
 			return slices.Contains(malformedScopes, s) || !slices.Contains(supported, s) || !slices.Contains(client.AllowedScopes, s)
 		})
 		a, err := Authorize(client, r, supported, time.Time{})
+		err = cmp.Or(err, a.Error)
 		if (err == nil) != valid || err != nil && err.Code != "invalid_scope" {
 			t.Fatalf("got scopes %q and error %v, want valid %v", a.Scopes, err, valid)
 		}

@@ -31,6 +31,7 @@ type consentPage struct {
 	ClientID  string
 	Scopes    []string
 	Subject   string
+	Error     *oauth21.AuthorizationError
 }
 
 // authorizationServer is the Host Application of the Authorization Server, with login and consent pages for one Resource Owner.
@@ -98,7 +99,7 @@ func (s *authorizationServer) showConsent(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	render(w, http.StatusOK, "consent.html", consentPage{RequestID: req.ID, ClientID: req.Client.ID, Scopes: req.Scopes, Subject: subject})
+	render(w, http.StatusOK, "consent.html", consentPage{RequestID: req.ID, ClientID: req.Client.ID, Scopes: req.Scopes, Subject: subject, Error: req.Error})
 }
 
 func (s *authorizationServer) consent(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +109,7 @@ func (s *authorizationServer) consent(w http.ResponseWriter, r *http.Request) {
 	}
 	var loc string
 	var err error
-	if r.PostFormValue("decision") == "allow" {
+	if req.Error == nil && r.PostFormValue("decision") == "allow" {
 		loc, err = s.oauth.Complete(r.Context(), req.ID, oauth21.Completion{Subject: subject, Scopes: req.Scopes})
 	} else {
 		loc, err = s.oauth.Deny(r.Context(), req.ID)
