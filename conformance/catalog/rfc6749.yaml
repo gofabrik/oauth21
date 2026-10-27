@@ -16,6 +16,8 @@ requirements:
     status: superseded
     superseded_by:
       - OAUTH21D16-2-01
+      - OAUTH21D16-2-02
+      - OAUTH21D16-2-03
   - id: RFC6749-2.1-01
     section: "2.1"
     keyword: SHOULD NOT

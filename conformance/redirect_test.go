@@ -44,25 +44,17 @@ func TestRedirectURIMustMatchExactly(t *testing.T) {
 		"query added":      {clientID, redirectURI + "?x=1"},
 		"port added":       {clientID, "https://client.example:443/cb"},
 		"trailing slash":   {clientID, redirectURI + "/"},
-		"localhost":        {"localhost", "http://localhost:51004/cb"},
 		"loopback scheme":  {nativeID, "https://127.0.0.1:51004/cb"},
 		"loopback path":    {nativeID, "http://127.0.0.1:51004/other"},
-		"non-loopback ip":  {"lan", "http://10.0.0.1:51004/cb"},
 		"loopback as host": {nativeID, "http://127.0.0.1.example:51004/cb"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			a := newAuthorizationServer(t,
-				publicClient(nativeID, nativeRedirectURI),
-				publicClient("localhost", "http://localhost/cb"),
-				publicClient("lan", "http://10.0.0.1/cb"),
-			)
+			a := newAuthorizationServer(t, publicClient(nativeID, nativeRedirectURI))
 			params := authorizeParams()
 			params.Set("client_id", tt.clientID)
 			params.Set("redirect_uri", tt.redirectURI)
-			if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
-				t.Fatalf("got status %d and Location %q, want 400 without redirect", status, loc)
-			}
+			a.wantNoRedirect(params)
 		})
 	}
 }
@@ -83,6 +75,14 @@ func (a *authorizationServer) sendAuthorization(params url.Values) (int, string)
 	a.t.Helper()
 	status, header, _ := a.send(http.MethodGet, "/authorize?"+params.Encode(), "", nil)
 	return status, header.Get("Location")
+}
+
+// wantNoRedirect checks that the server refuses the authorization request params with a 400 and no redirect.
+func (a *authorizationServer) wantNoRedirect(params url.Values) {
+	a.t.Helper()
+	if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
+		a.t.Fatalf("%s: got status %d and Location %q, want 400 without redirect", params.Encode(), status, loc)
+	}
 }
 
 // withRedirectURI returns a valid authorization request of the public Client for uri.
@@ -321,9 +321,7 @@ func TestRedirectURIMatchesRegistrationExactly(t *testing.T) {
 		for _, uri := range uris {
 			params := withRedirectURI(uri)
 			params.Set("client_id", id)
-			if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
-				t.Fatalf("got status %d and Location %q for %s, want 400 without redirect", status, loc, uri)
-			}
+			a.wantNoRedirect(params)
 		}
 	}
 	a.nativeCode(nativeID, "http://127.0.0.1:51004/cb")

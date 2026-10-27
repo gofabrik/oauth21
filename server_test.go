@@ -829,6 +829,21 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 	})
 }
 
+func TestAuthorizationRequestOfUntypedClientFails(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	id := requestID(t, srv)
+	untyped, err := m.Client(t.Context(), "client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	untyped.Type = 0
+	m.AddClient(untyped)
+	if _, err := srv.AuthorizationRequest(t.Context(), id); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("got error %v for an Authorization Request of a Client without a type, want store.ErrNotFound", err)
+	}
+}
+
 func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)

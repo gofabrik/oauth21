@@ -21,6 +21,11 @@ const (
 	Public
 )
 
+// Known reports whether t is Confidential or Public.
+func (t ClientType) Known() bool {
+	return t == Confidential || t == Public
+}
+
 // Client is an application registered with the Authorization Server.
 type Client struct {
 	ID           string

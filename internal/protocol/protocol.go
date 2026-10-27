@@ -99,7 +99,7 @@ func Authorize(client *Client, r AuthorizationParams, supported []string, expire
 	if client == nil {
 		return AuthorizationRequest{}, &Error{invalidRequest, "unknown client"}
 	}
-	redirectURI, ok := resolveRedirectURI(client.RedirectURIs, r.RedirectURI)
+	redirectURI, ok := client.redirectURI(r.RedirectURI)
 	if !ok {
 		return AuthorizationRequest{}, &Error{invalidRequest, "invalid redirect_uri"}
 	}
@@ -170,34 +170,111 @@ func ScopeToken(s string) bool {
 	return true
 }
 
-func resolveRedirectURI(registered []string, requested string) (string, bool) {
+// redirectURI returns requested, or the only registered redirect URI when it is empty, and whether c may be redirected to it.
+func (c *Client) redirectURI(requested string) (string, bool) {
 	if requested == "" {
-		if len(registered) == 1 {
-			return registered[0], registered[0] != ""
+		if len(c.RedirectURIs) != 1 {
+			return "", false
 		}
-		return "", false
+		requested = c.RedirectURIs[0]
 	}
-	return requested, matchRedirectURI(registered, requested)
+	for _, r := range c.RedirectURIs {
+		if validRedirectURI(r) && matchRedirectURI(r, requested) {
+			return requested, true
+		}
+	}
+	return "", false
 }
 
-// matchRedirectURI reports whether requested is a registered redirect URI, ignoring loopback ports.
-func matchRedirectURI(registered []string, requested string) bool {
+// matchRedirectURI reports whether requested matches the registered redirect URI, ignoring loopback ports.
+func matchRedirectURI(registered, requested string) bool {
+	if registered == requested {
+		return true
+	}
 	portless, loopback := withoutPort(requested)
-	for _, r := range registered {
-		if r == requested {
-			return true
-		}
-		if p, ok := withoutPort(r); loopback && ok && p == portless {
-			return true
+	p, ok := withoutPort(registered)
+	return loopback && ok && p == portless
+}
+
+// validRedirectURI reports whether the registered uri may be used as a redirect URI.
+func validRedirectURI(uri string) bool {
+	u, err := url.Parse(uri)
+	if err != nil || !u.IsAbs() || strings.Contains(uri, "#") || strings.ContainsFunc(uri, notURIChar) || !strictURISyntax(uri, u) {
+		return false
+	}
+	switch u.Scheme {
+	case "https":
+		return u.Hostname() != "" && u.User == nil
+	case "http":
+		_, loopback := withoutPort(uri)
+		return loopback
+	}
+	return reverseDomainName(u.Scheme)
+}
+
+// notURIChar reports whether c may not appear in a URI (RFC 3986, Appendix A).
+func notURIChar(c rune) bool {
+	return c <= ' ' || c > '~' || strings.ContainsRune("\"<>\\^`{|}", c)
+}
+
+// strictURISyntax reports whether uri, parsed as u, keeps the parts of the RFC 3986 grammar that url.Parse does not check.
+func strictURISyntax(uri string, u *url.URL) bool {
+	for rest := uri; strings.Contains(rest, "%"); {
+		_, rest, _ = strings.Cut(rest, "%")
+		if len(rest) < 2 || !isHex(rest[0]) || !isHex(rest[1]) {
+			return false
 		}
 	}
-	return false
+	unbracketed := uri
+	if strings.HasPrefix(u.Host, "[") {
+		unbracketed = strings.Replace(uri, u.Host, "", 1)
+	}
+	var authority string
+	if hierPart := uri[len(u.Scheme)+1:]; strings.HasPrefix(hierPart, "//") {
+		authority = hierPart[2:]
+		if i := strings.IndexAny(authority, "/?"); i >= 0 {
+			authority = authority[:i]
+		}
+	}
+	host := authority[strings.LastIndex(authority, "@")+1:]
+	if i := strings.LastIndexByte(host, ':'); i >= 0 && strings.Trim(host[i+1:], "0123456789") == "" {
+		host = host[:i]
+	}
+	return !strings.ContainsAny(unbracketed, "[]") && strings.Count(authority, "@") <= 1 && (strings.HasPrefix(host, "[") || !strings.Contains(host, ":"))
+}
+
+// isHex reports whether c is a hexadecimal digit.
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+// reverseDomainName reports whether scheme is a domain name in reverse order, such as com.example.app.
+func reverseDomainName(scheme string) bool {
+	labels := strings.Split(scheme, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" || l[0] == '-' || l[len(l)-1] == '-' || strings.ContainsFunc(l, notLDH) {
+			return false
+		}
+	}
+	return true
+}
+
+// notLDH reports whether c is not a lower-case letter, a digit or a hyphen.
+func notLDH(c rune) bool {
+	return (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-'
 }
 
 // withoutPort returns a loopback IP redirect URI without its port.
 func withoutPort(uri string) (string, bool) {
 	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "http" || u.User != nil || !strings.HasPrefix(uri, "http://"+u.Host) {
+	if err != nil || u.Scheme != "http" || u.User != nil {
+		return "", false
+	}
+	prefix := "http://" + u.Host
+	if len(uri) < len(prefix) || !strings.EqualFold(uri[:len(prefix)], prefix) {
 		return "", false
 	}
 	addr, err := netip.ParseAddr(u.Hostname())
@@ -208,7 +285,7 @@ func withoutPort(uri string) (string, bool) {
 	if addr.Is6() {
 		host = "[" + host + "]"
 	}
-	return "http://" + host + uri[len("http://"+u.Host):], true
+	return uri[:len("http://")] + host + uri[len(prefix):], true
 }
 
 // Pending decides whether a is still pending at now; a is nil when unknown, completed or denied.

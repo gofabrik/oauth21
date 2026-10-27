@@ -131,7 +131,8 @@ requirements:
     keyword: MUST
     text: All the OAuth protocol URLs (URLs exposed by the AS, RS and Client) MUST use the https scheme except for loopback interface redirect URIs, which MAY use the http scheme.
     statement: The URLs exposed by the client MUST use the https scheme, except for loopback interface redirect URIs.
-    status: applicable
+    status: out-of-scope
+    reason: client-requirement
   - id: OAUTH21D16-1.5-03
     section: "1.5"
     keyword: MAY
@@ -174,7 +175,21 @@ requirements:
     section: "2"
     keyword: MUST
     text: 'Client registration MUST include: the client type as described in Section 2.1, client details needed by the grant type in use, such as redirect URIs as described in Section 2.3, and any other information required by the authorization server (e.g., application name, website, description, logo image, the acceptance of legal terms).'
+    statement: Client registration MUST include the client type as described in Section 2.1.
     status: applicable
+  - id: OAUTH21D16-2-02
+    section: "2"
+    keyword: MUST
+    text: 'Client registration MUST include: the client type as described in Section 2.1, client details needed by the grant type in use, such as redirect URIs as described in Section 2.3, and any other information required by the authorization server (e.g., application name, website, description, logo image, the acceptance of legal terms).'
+    statement: Client registration MUST include client details needed by the grant type in use, such as redirect URIs as described in Section 2.3.
+    status: applicable
+  - id: OAUTH21D16-2-03
+    section: "2"
+    keyword: MUST
+    text: 'Client registration MUST include: the client type as described in Section 2.1, client details needed by the grant type in use, such as redirect URIs as described in Section 2.3, and any other information required by the authorization server (e.g., application name, website, description, logo image, the acceptance of legal terms).'
+    statement: Client registration MUST include any other information required by the authorization server.
+    status: host-duty
+    note: The Host Application registers its Clients and decides what else a registration must include.
   - id: OAUTH21D16-2.1-01
     section: "2.1"
     keyword: MUST

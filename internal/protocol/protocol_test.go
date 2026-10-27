@@ -4,7 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/netip"
+	"net/url"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -64,15 +67,15 @@ func TestMatchRedirectURIExact(t *testing.T) {
 		host := rapid.StringMatching(`[a-z]{1,10}\.example`).Draw(t, "host")
 		path := pathGen.Draw(t, "path")
 		registered := "https://" + host + path
-		if !matchRedirectURI([]string{registered}, registered) {
+		if !matchRedirectURI(registered, registered) {
 			t.Fatal("a registered redirect URI does not match itself")
 		}
 		other := pathGen.Draw(t, "other")
 		port := rapid.IntRange(1, 65535).Draw(t, "port")
-		if other != path && matchRedirectURI([]string{registered}, "https://"+host+other) {
+		if other != path && matchRedirectURI(registered, "https://"+host+other) {
 			t.Fatal("another path matches")
 		}
-		if matchRedirectURI([]string{registered}, fmt.Sprintf("https://%s:%d%s", host, port, path)) {
+		if matchRedirectURI(registered, fmt.Sprintf("https://%s:%d%s", host, port, path)) {
 			t.Fatal("a port matches a non-loopback redirect URI")
 		}
 	})
@@ -85,11 +88,143 @@ func TestMatchRedirectURILoopbackIgnoresPort(t *testing.T) {
 		registeredPort := rapid.SampledFrom([]string{"", ":8080"}).Draw(t, "registered port")
 		port := rapid.IntRange(1, 65535).Draw(t, "port")
 		registered := "http://" + host + registeredPort + path
-		if !matchRedirectURI([]string{registered}, fmt.Sprintf("http://%s:%d%s", host, port, path)) {
+		if !matchRedirectURI(registered, fmt.Sprintf("http://%s:%d%s", host, port, path)) {
 			t.Fatal("a loopback redirect URI with another port does not match")
 		}
-		if other := pathGen.Draw(t, "other"); other != path && matchRedirectURI([]string{registered}, fmt.Sprintf("http://%s:%d%s", host, port, other)) {
+		if other := pathGen.Draw(t, "other"); other != path && matchRedirectURI(registered, fmt.Sprintf("http://%s:%d%s", host, port, other)) {
 			t.Fatal("a loopback redirect URI with another path matches")
+		}
+	})
+}
+
+func TestValidRedirectURI(t *testing.T) {
+	for uri, want := range map[string]bool{
+		"https://c.example/cb":        true,
+		"https://c.example/cb?a=b":    true,
+		"https://c.example":           true,
+		"https://[::1]/cb":            true,
+		"https://c.example/cb?a=%2F":  true,
+		"https://c.example?a=b@c@d":   true,
+		"HTTPS://c.example/cb":        true,
+		"http://127.0.0.1:8080/cb":    true,
+		"http://[::1]/cb":             true,
+		"HTTP://127.0.0.1/cb":         true,
+		"com.example.app:/cb":         true,
+		"com.example.app:cb":          true,
+		"com.example.app:":            true,
+		"com.example.app://h:80/cb":   true,
+		"com.example.app://u@h/cb":    true,
+		"":                            false,
+		"/cb":                         false,
+		"https://c.example/cb#":       false,
+		"https:cb":                    false,
+		"https:/cb":                   false,
+		"https:///cb":                 false,
+		"https://:443/cb":             false,
+		"https://u@c.example/cb":      false,
+		"https://u:p@c.example/cb":    false,
+		"https://c.example/a b":       false,
+		"https://c.example/a|b":       false,
+		"https://c.example/\x7f":      false,
+		"https://c.example/cb?a=%zz":  false,
+		"https://c.example/cb?a=%2":   false,
+		"com.example.app://a:b:80/cb": false,
+		"com.example.app://::1/cb":    false,
+		"com.example.app://h:abc/cb":  false,
+		"https://c.example/[x]":       false,
+		"https://a@b@c.example/cb":    false,
+		"http://c.example/cb":         false,
+		"http://localhost/cb":         false,
+		"http://user@127.0.0.1/cb":    false,
+		"http://[::1%25lo0]/cb":       false,
+		"http:127.0.0.1":              false,
+		"http:x":                      false,
+		"app:/cb":                     false,
+		"com..app:/cb":                false,
+		"com.app-:/cb":                false,
+		"com.ex_ample:/cb":            false,
+		"urn:ietf:wg:oauth:2.0:oob":   false,
+		"javascript:alert(1)":         false,
+	} {
+		if got := validRedirectURI(uri); got != want {
+			t.Errorf("validRedirectURI(%q) = %v, want %v", uri, got, want)
+		}
+	}
+}
+
+func TestMatchRedirectURIKeepsSchemeCase(t *testing.T) {
+	if !matchRedirectURI("HTTP://127.0.0.1/cb", "HTTP://127.0.0.1:51004/cb") {
+		t.Error("an upper-case loopback redirect URI with another port does not match")
+	}
+	if matchRedirectURI("HTTP://127.0.0.1/cb", "http://127.0.0.1:51004/cb") || matchRedirectURI("http://127.0.0.1/cb", "HTTP://127.0.0.1:51004/cb") {
+		t.Error("a loopback redirect URI matches with another scheme case")
+	}
+}
+
+// uriChars matches a string of the characters a URI may contain (RFC 3986, Appendix A).
+var uriChars = regexp.MustCompile(`^[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]*$`)
+
+// escape matches a percent-encoded octet.
+var escape = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)
+
+// ipLiteral matches the start of a URI up to an IP literal host, keeping what precedes the host as $1.
+var ipLiteral = regexp.MustCompile(`^([^:]+://([^/?]*@)?)\[[^\]/?]*\]`)
+
+// authorityPrefix matches the start of a URI up to the end of its authority.
+var authorityPrefix = regexp.MustCompile(`^[^:/?]+://[^/?]*`)
+
+// hostPort matches the start of a URI up to the end of its authority, with the host and port as $1.
+var hostPort = regexp.MustCompile(`^[^:/?]+://(?:[^/?]*@)?([^/?]*)`)
+
+// portSuffix matches the port of an authority.
+var portSuffix = regexp.MustCompile(`:[0-9]*$`)
+
+// reverseDomain matches a domain name in reverse order of lower-case LDH labels.
+var reverseDomain = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+func FuzzValidRedirectURI(f *testing.F) {
+	f.Add("https://c.example/cb")
+	f.Add("https://:443/cb")
+	f.Add("https://[::1]/cb?a=%2F")
+	f.Add("https://a@b@c.example/[x]")
+	f.Add("com.example.app://h:80/cb")
+	f.Add("http://127.0.0.1:8080/cb")
+	f.Add("com.example.app:/cb")
+	f.Add("com..app:/cb#x")
+	f.Fuzz(func(t *testing.T, uri string) {
+		if !validRedirectURI(uri) {
+			return
+		}
+		scheme, rest, ok := strings.Cut(uri, ":")
+		if !ok || strings.Contains(uri, "#") || !uriChars.MatchString(uri) {
+			t.Fatalf("%q is valid but has no scheme, has a fragment or is not a URI", uri)
+		}
+		if strings.Contains(escape.ReplaceAllString(uri, ""), "%") || strings.ContainsAny(ipLiteral.ReplaceAllString(uri, "$1"), "[]") || strings.Count(authorityPrefix.FindString(uri), "@") > 1 {
+			t.Fatalf("%q is valid but breaks the URI syntax", uri)
+		}
+		if m := hostPort.FindStringSubmatch(uri); m != nil {
+			if host := portSuffix.ReplaceAllString(m[1], ""); !strings.HasPrefix(host, "[") && strings.Contains(host, ":") {
+				t.Fatalf("%q is valid but has a colon in its host", uri)
+			}
+		}
+		switch strings.ToLower(scheme) {
+		case "https":
+			authority, _, _ := strings.Cut(strings.TrimPrefix(rest, "//"), "/")
+			authority, _, _ = strings.Cut(authority, "?")
+			host := portSuffix.ReplaceAllString(authority[strings.LastIndex(authority, "@")+1:], "")
+			if !strings.HasPrefix(rest, "//") || host == "" || strings.Contains(authority, "@") {
+				t.Fatalf("%q is valid but has no host or has userinfo", uri)
+			}
+		case "http":
+			u, _ := url.Parse(uri)
+			addr, err := netip.ParseAddr(u.Hostname())
+			if !strings.HasPrefix(rest, "//") || err != nil || !addr.IsLoopback() {
+				t.Fatalf("%q is valid but not a loopback redirect URI", uri)
+			}
+		default:
+			if !reverseDomain.MatchString(strings.ToLower(scheme)) {
+				t.Fatalf("%q is valid but its scheme is not a reverse domain name", uri)
+			}
 		}
 	})
 }
@@ -192,6 +327,7 @@ func TestAuthorize(t *testing.T) {
 	two := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb", "https://c.example/other"}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
 	empty := &Client{ID: "client", Public: true, RedirectURIs: []string{""}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
 	noDefaults := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: scopes}
+	confidentialLoopback := &Client{ID: "client", RedirectURIs: []string{"http://127.0.0.1/cb"}, AllowedScopes: scopes, DefaultScopes: scopes[:1]}
 	noCode := &Client{ID: "client", RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: scopes, DefaultScopes: scopes[:1], GrantTypes: []string{"client_credentials"}}
 	valid := AuthorizationParams{
 		ResponseType:        "code",
@@ -212,6 +348,7 @@ func TestAuthorize(t *testing.T) {
 		"redirect_uri required":          {two, func(*AuthorizationParams) {}, "invalid_request", ""},
 		"empty registered redirect_uri":  {empty, func(*AuthorizationParams) {}, "invalid_request", ""},
 		"chosen redirect_uri":            {two, func(r *AuthorizationParams) { r.RedirectURI = "https://c.example/other" }, "", "https://c.example/other"},
+		"confidential loopback":          {confidentialLoopback, func(r *AuthorizationParams) { r.RedirectURI = "http://127.0.0.1:51004/cb" }, "", "http://127.0.0.1:51004/cb"},
 		"missing response_type":          {client, func(r *AuthorizationParams) { r.ResponseType = "" }, "invalid_request", "https://c.example/cb"},
 		"token response_type":            {client, func(r *AuthorizationParams) { r.ResponseType = "token" }, "unsupported_response_type", "https://c.example/cb"},
 		"missing code_challenge":         {client, func(r *AuthorizationParams) { r.CodeChallenge = "" }, "invalid_request", "https://c.example/cb"},

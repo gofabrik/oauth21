@@ -206,9 +206,7 @@ func TestRepeatedAuthorizationParameterIsRejected(t *testing.T) {
 	for _, values := range [][]string{{"read", "write"}, {"read", "read"}} {
 		params := authorizeParams()
 		params["scope"] = values
-		if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
-			t.Fatalf("scope %q: got status %d and Location %q, want 400 without redirect", values, status, loc)
-		}
+		a.wantNoRedirect(params)
 	}
 }
 
@@ -237,9 +235,7 @@ func TestAuthorizationRequiresClientID(t *testing.T) {
 	a := newAuthorizationServer(t)
 	params := authorizeParams()
 	params.Del("client_id")
-	if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
-		t.Fatalf("got status %d and Location %q, want 400 without redirect", status, loc)
-	}
+	a.wantNoRedirect(params)
 }
 
 // TestRedirectURIRequiredWithSeveralRegistered checks that a request without redirect_uri from a Client with several redirect URIs is not redirected.
@@ -250,9 +246,7 @@ func TestRedirectURIRequiredWithSeveralRegistered(t *testing.T) {
 	params := authorizeParams()
 	params.Set("client_id", "two")
 	params.Del("redirect_uri")
-	if status, loc := a.sendAuthorization(params); status != http.StatusBadRequest || loc != "" {
-		t.Fatalf("got status %d and Location %q, want 400 without redirect", status, loc)
-	}
+	a.wantNoRedirect(params)
 }
 
 // TestAuthorizationErrorDescriptionCharacters checks that redirected error descriptions use only the allowed characters.

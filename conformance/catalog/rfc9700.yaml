@@ -291,6 +291,7 @@ requirements:
     keyword: MUST NOT
     text: To this end, authorization servers MUST NOT allow redirection URIs that use the http scheme except for native clients that use loopback interface redirection as described in Section 7.3 of [RFC8252].
     status: applicable
+    note: A loopback IP redirect URI identifies a native app, which may be public or confidential (OAUTH21D16 Section 8.1.1).
   - id: RFC9700-2.6-06
     section: "2.6"
     keyword: MUST

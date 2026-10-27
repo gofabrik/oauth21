@@ -192,7 +192,7 @@ func (s *Server) AuthorizationRequest(ctx context.Context, id string) (Authoriza
 	if err != nil {
 		return AuthorizationRequest{}, err
 	}
-	client, err := s.config.Clients.Client(ctx, r.ClientID)
+	client, err := s.typedClient(ctx, r.ClientID)
 	if err != nil {
 		return AuthorizationRequest{}, err
 	}
@@ -664,9 +664,18 @@ func (s *Server) identify(ctx context.Context, c protocol.Credentials) (*protoco
 	return s.client(ctx, clientID)
 }
 
+// typedClient loads the Client with identifier id, failing with store.ErrNotFound when it has no known type.
+func (s *Server) typedClient(ctx context.Context, id string) (store.Client, error) {
+	c, err := s.config.Clients.Client(ctx, id)
+	if err == nil && !c.Type.Known() {
+		return store.Client{}, fmt.Errorf("%w: client %q has no known type", store.ErrNotFound, id)
+	}
+	return c, err
+}
+
 // client loads the Client with identifier id, or nil when there is none.
 func (s *Server) client(ctx context.Context, id string) (*protocol.Client, error) {
-	c, err := s.config.Clients.Client(ctx, id)
+	c, err := s.typedClient(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
 	}
