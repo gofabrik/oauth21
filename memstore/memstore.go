@@ -209,6 +209,7 @@ func cloneClient(c store.Client) store.Client {
 	c.AllowedScopes = slices.Clone(c.AllowedScopes)
 	c.DefaultScopes = slices.Clone(c.DefaultScopes)
 	c.GrantTypes = slices.Clone(c.GrantTypes)
+	c.FrameAncestors = slices.Clone(c.FrameAncestors)
 	return c
 }
 

@@ -1959,7 +1959,15 @@ requirements:
     section: "7.11"
     keyword: MUST
     text: Authorization servers MUST prevent clickjacking attacks.
+    statement: Authorization servers MUST prevent clickjacking attacks on the responses of the authorization endpoint.
     status: applicable
+  - id: OAUTH21D16-7.11-07
+    section: "7.11"
+    keyword: MUST
+    text: Authorization servers MUST prevent clickjacking attacks.
+    statement: Authorization servers MUST prevent clickjacking attacks on the login and consent pages.
+    status: host-duty
+    note: The Host Application sets the headers of its login and consent pages with ProtectFraming and the Client's FrameAncestors.
   - id: OAUTH21D16-7.11-02
     section: "7.11"
     keyword: SHOULD
@@ -1976,6 +1984,7 @@ requirements:
     keyword: SHOULD
     text: For this reason, authorization servers SHOULD allow administrators to configure allowed origins for particular clients and/or for clients to register these dynamically.
     status: applicable
+    note: Registered in store.Client.FrameAncestors; ProtectFraming allows only https origins.
   - id: OAUTH21D16-7.11-05
     section: "7.11"
     keyword: SHOULD

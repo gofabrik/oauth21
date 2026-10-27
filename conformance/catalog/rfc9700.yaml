@@ -708,7 +708,15 @@ requirements:
     section: "4.16"
     keyword: MUST
     text: Authorization servers MUST prevent clickjacking attacks.
+    statement: Authorization servers MUST prevent clickjacking attacks on the responses of the authorization endpoint.
     status: applicable
+  - id: RFC9700-4.16-07
+    section: "4.16"
+    keyword: MUST
+    text: Authorization servers MUST prevent clickjacking attacks.
+    statement: Authorization servers MUST prevent clickjacking attacks on the login and consent pages.
+    status: host-duty
+    note: The Host Application sets the headers of its login and consent pages with ProtectFraming and the Client's FrameAncestors.
   - id: RFC9700-4.16-02
     section: "4.16"
     keyword: SHOULD
@@ -725,6 +733,7 @@ requirements:
     keyword: SHOULD
     text: For this reason, authorization servers SHOULD allow administrators to configure allowed origins for particular clients and/or for clients to register these dynamically.
     status: applicable
+    note: Registered in store.Client.FrameAncestors; ProtectFraming allows only https origins.
   - id: RFC9700-4.16-05
     section: "4.16"
     keyword: SHOULD

@@ -45,6 +45,8 @@ type Client struct {
 	GrantTypes []string
 	// Introspect lets a confidential Client call the introspection endpoint.
 	Introspect bool
+	// FrameAncestors are the Client's framing origins, unchecked; the Host Application passes them to ProtectFraming instead of writing them into a header.
+	FrameAncestors []string
 }
 
 // AuthorizationRequest is a validated request waiting for the Host Application.

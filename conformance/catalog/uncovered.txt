@@ -8,17 +8,6 @@ RFC9700-2.1-10
 RFC9700-4.11.2-02
 RFC9700-4.11.2-03
 RFC9700-4.11.2-04
-# 55: clickjacking protection
-OAUTH21D16-7.11-01
-OAUTH21D16-7.11-02
-OAUTH21D16-7.11-04
-OAUTH21D16-7.11-05
-OAUTH21D16-7.11-06
-RFC9700-4.16-01
-RFC9700-4.16-02
-RFC9700-4.16-04
-RFC9700-4.16-05
-RFC9700-4.16-06
 # 56: enforce redirect_uri at the token endpoint as RFC 6749 does
 OAUTH21D16-10.2-02
 # 57: brute-force protection for Client authentication

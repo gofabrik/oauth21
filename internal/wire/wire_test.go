@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -262,6 +263,24 @@ func TestWriteError(t *testing.T) {
 	if w.Code != http.StatusBadRequest || w.Header().Get("Cache-Control") != "no-store" ||
 		w.Body.String() != `{"error":"invalid_grant","error_description":"bad code"}`+"\n" {
 		t.Fatalf("got status %d, headers %v and body %q", w.Code, w.Header(), w.Body.String())
+	}
+}
+
+func TestProtectFraming(t *testing.T) {
+	tests := []struct {
+		origins []string
+		want    string
+	}{
+		{nil, "frame-ancestors 'none'"},
+		{[]string{"https://a.example"}, "frame-ancestors https://a.example"},
+		{[]string{"https://a.example", "https://b.example:8443"}, "frame-ancestors https://a.example https://b.example:8443"},
+	}
+	for _, tt := range tests {
+		h := http.Header{"Content-Security-Policy": {"script-src 'self'"}, "X-Frame-Options": {"SAMEORIGIN"}}
+		ProtectFraming(h, tt.origins)
+		if got := h.Values("Content-Security-Policy"); !slices.Equal(got, []string{"script-src 'self'", tt.want}) || !slices.Equal(h.Values("X-Frame-Options"), []string{"DENY"}) {
+			t.Errorf("ProtectFraming(%q) = %v, want the policy kept, %q added and X-Frame-Options DENY", tt.origins, h, tt.want)
+		}
 	}
 }
 

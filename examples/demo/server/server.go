@@ -163,6 +163,7 @@ func authorizationError(w http.ResponseWriter, err error) {
 
 func render(w http.ResponseWriter, status int, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	oauth21.ProtectFraming(w.Header())
 	w.WriteHeader(status)
 	if err := templates.ExecuteTemplate(w, name, data); err != nil {
 		log.Print(err)

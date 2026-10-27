@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,33 @@ var portSuffix = regexp.MustCompile(`:[0-9]*$`)
 
 // reverseDomain matches a domain name in reverse order of lower-case LDH labels.
 var reverseDomain = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+// hostName matches a host name of lower-case LDH labels without leading or trailing hyphens.
+var hostName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
+
+func FuzzFrameAncestors(f *testing.F) {
+	f.Add("https://portal.example")
+	f.Add("https://portal.example:8443")
+	f.Add("https://portal.example; script-src *")
+	f.Add("https://a.example https://b.example")
+	f.Add("https://*.example")
+	f.Add("https://portal.example:")
+	f.Add("https://portal.example:080")
+	f.Add("https://-portal.example:65536")
+	f.Add("https://portal.example/login")
+	f.Add("HTTPS://Portal.example")
+	f.Fuzz(func(t *testing.T, origin string) {
+		want := false
+		if u, err := url.Parse(origin); err == nil {
+			port, _ := strconv.Atoi(u.Port())
+			want = origin == "https://"+u.Host && !strings.HasSuffix(u.Host, ":") && hostName.MatchString(u.Hostname()) && (u.Port() == "" || strconv.Itoa(port) == u.Port() && port >= 1 && port <= 65535)
+		}
+		got := FrameAncestors([]string{origin})
+		if want != (len(got) == 1) || len(got) > 1 || want && got[0] != origin {
+			t.Fatalf("FrameAncestors(%q) = %q, want it kept %v", origin, got, want)
+		}
+	})
+}
 
 func FuzzValidRedirectURI(f *testing.F) {
 	f.Add("https://c.example/cb")

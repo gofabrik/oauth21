@@ -538,3 +538,13 @@ func (a AuthorizationResponse) redirect(params url.Values) (string, error) {
 	params.Set("iss", a.Issuer)
 	return Redirect(a.RedirectURI, params)
 }
+
+// ProtectFraming adds a frame-ancestors policy of origins, or 'none' when origins is empty, to h and sets X-Frame-Options DENY.
+func ProtectFraming(h http.Header, origins []string) {
+	sources := "'none'"
+	if len(origins) > 0 {
+		sources = strings.Join(origins, " ")
+	}
+	h.Add("Content-Security-Policy", "frame-ancestors "+sources)
+	h.Set("X-Frame-Options", "DENY")
+}

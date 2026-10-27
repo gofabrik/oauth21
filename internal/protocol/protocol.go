@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -255,17 +256,44 @@ func reverseDomainName(scheme string) bool {
 	if len(labels) < 2 {
 		return false
 	}
-	for _, l := range labels {
-		if l == "" || l[0] == '-' || l[len(l)-1] == '-' || strings.ContainsFunc(l, notLDH) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(labels, notLabel)
+}
+
+// notLabel reports whether l is not a label of lower-case letters, digits and inner hyphens.
+func notLabel(l string) bool {
+	return l == "" || l[0] == '-' || l[len(l)-1] == '-' || strings.ContainsFunc(l, notLDH)
 }
 
 // notLDH reports whether c is not a lower-case letter, a digit or a hyphen.
 func notLDH(c rune) bool {
 	return (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-'
+}
+
+// FrameAncestors returns the origins among origins that frameAncestor accepts.
+func FrameAncestors(origins []string) []string {
+	var valid []string
+	for _, o := range origins {
+		if frameAncestor(o) {
+			valid = append(valid, o)
+		}
+	}
+	return valid
+}
+
+// frameAncestor reports whether origin is an https origin with a lower-case host name and an optional port.
+func frameAncestor(origin string) bool {
+	hostport, ok := strings.CutPrefix(origin, "https://")
+	if !ok {
+		return false
+	}
+	host, port, hasPort := strings.Cut(hostport, ":")
+	if hasPort {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+			return false
+		}
+	}
+	return !slices.ContainsFunc(strings.Split(host, "."), notLabel)
 }
 
 // withoutPort returns a loopback IP redirect URI without its port.

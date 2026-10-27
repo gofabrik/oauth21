@@ -28,6 +28,13 @@ func unsupportedParams() url.Values {
 	return params
 }
 
+// unknownClientParams returns an authorization request of an unknown Client, which gets an error page.
+func unknownClientParams() url.Values {
+	params := authorizeParams()
+	params.Set("client_id", "unknown")
+	return params
+}
+
 // TestAuthorizationEndpointSupportsGet checks that an authorization request sent with GET reaches the login URL.
 //
 //conformance:covers OAUTH21D16-3.1-05

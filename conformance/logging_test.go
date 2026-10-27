@@ -50,9 +50,7 @@ func TestLogsCarryNoSecrets(t *testing.T) {
 	const wrongSecret, wrongVerifier = "wr0ng-s3cret", "wr0ng-v3rifier-wr0ng-v3rifier-wr0ng-v3rifier"
 	a := newFlowServer(t)
 	logs := captureLogs(t)
-	unknown := authorizeParams()
-	unknown.Set("client_id", "unknown")
-	a.send(http.MethodGet, "/authorize?"+unknown.Encode(), "", nil)
+	a.send(http.MethodGet, "/authorize?"+unknownClientParams().Encode(), "", nil)
 	a.deny(a.pending(a.authorize(authorizeParams())).ID)
 	params := authorizeParams()
 	params.Set("client_id", confidentialID)

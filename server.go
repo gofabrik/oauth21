@@ -56,7 +56,7 @@ type Config struct {
 	ReuseConfidentialRefreshTokens bool
 	// SecretHasher verifies Client secrets. It defaults to PBKDF2.
 	SecretHasher SecretHasher
-	// RenderError writes an authorization endpoint error that cannot be redirected to the Client. It defaults to a plain text response.
+	// RenderError writes an authorization endpoint error that cannot be redirected to the Client, keeping the framing headers the endpoint sets. It defaults to a plain text response.
 	RenderError func(w http.ResponseWriter, r *http.Request, e AuthorizationError)
 	// Secure reports whether r arrived over a secure transport. It is asked only for requests without TLS 1.2 or later with a secure cipher suite.
 	Secure func(r *http.Request) bool
@@ -260,9 +260,18 @@ func (s *Server) pendingRequest(ctx context.Context, id string, load func(contex
 	return stored, nil
 }
 
-// AuthorizationHandler returns the authorization endpoint.
+// AuthorizationHandler returns the authorization endpoint, whose responses no origin may frame.
 func (s *Server) AuthorizationHandler() http.Handler {
-	return s.secured(s.authorize, s.renderAuthorizationError)
+	h := s.secured(s.authorize, s.renderAuthorizationError)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ProtectFraming(w.Header())
+		h.ServeHTTP(w, r)
+	})
+}
+
+// ProtectFraming sets the headers of h that let only the valid origins frame the response, such as a Client's FrameAncestors on a login or consent page.
+func ProtectFraming(h http.Header, origins ...string) {
+	wire.ProtectFraming(h, protocol.FrameAncestors(origins))
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {

@@ -158,9 +158,7 @@ func TestInvalidClientIsNotRedirected(t *testing.T) {
 
 // unredirectable returns authorization requests whose errors the server cannot redirect: one with an unregistered redirect URI and one of an unknown Client.
 func unredirectable() map[string]url.Values {
-	unknown := authorizeParams()
-	unknown.Set("client_id", "unknown")
-	return map[string]url.Values{"unregistered redirect URI": withRedirectURI("https://attacker.example/cb"), "unknown client": unknown}
+	return map[string]url.Values{"unregistered redirect URI": withRedirectURI("https://attacker.example/cb"), "unknown client": unknownClientParams()}
 }
 
 // TestDirectErrorIsBadRequest checks that an error shown to the user agent instead of redirected has status 400, for an unregistered redirect URI and an unknown Client.
