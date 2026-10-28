@@ -25,11 +25,6 @@ RFC8252-8.1-01
 OAUTH21D16-3.2.3-04
 OAUTH21D16-4.1.2-03
 OAUTH21D16-7.1.3.5-01
-# 71: cover the recommended metadata
-RFC8414-2-09
-RFC9700-2.1.1-11
-RFC9700-2.6-01
-RFC9700-4.7.1-05
 # 73: inform the Resource Owner of non-redirectable errors
 OAUTH21D16-2.3.5-01
 OAUTH21D16-4.1.2.1-02

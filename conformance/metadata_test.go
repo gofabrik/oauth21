@@ -35,6 +35,24 @@ func (a *authorizationServer) endpointPath(endpoint any) string {
 	return strings.TrimPrefix(s, a.url)
 }
 
+// challengeMethods returns the code challenge methods in the metadata document of the issuer a.url.
+func (a *authorizationServer) challengeMethods() []string {
+	a.t.Helper()
+	listed, ok := a.metadata(a.url)["code_challenge_methods_supported"].([]any)
+	if !ok {
+		a.t.Fatal("got no code_challenge_methods_supported list, want the code challenge methods")
+	}
+	methods := make([]string, 0, len(listed))
+	for _, m := range listed {
+		method, ok := m.(string)
+		if !ok {
+			a.t.Fatalf("got code challenge method %v, want a string", m)
+		}
+		methods = append(methods, method)
+	}
+	return methods
+}
+
 // TestMetadata checks that the metadata document names the issuer, the endpoints and the supported capabilities.
 func TestMetadata(t *testing.T) {
 	a := newAuthorizationServer(t)
@@ -362,8 +380,8 @@ func TestMetadataIssuerMatchesWellKnownURL(t *testing.T) {
 //conformance:covers RFC9700-2.1.1-10
 func TestMetadataListsS256(t *testing.T) {
 	a := newAuthorizationServer(t)
-	methods, _ := a.metadata(a.url)["code_challenge_methods_supported"].([]any)
-	if !slices.Contains(methods, any("S256")) {
+	methods := a.challengeMethods()
+	if !slices.Contains(methods, "S256") {
 		t.Fatalf("got code_challenge_methods_supported %v, want S256 in it", methods)
 	}
 }
@@ -373,16 +391,15 @@ func TestMetadataListsS256(t *testing.T) {
 //conformance:covers RFC9700-4.7.1-04
 func TestListedChallengeMethodsAreAccepted(t *testing.T) {
 	a := newAuthorizationServer(t)
-	methods, _ := a.metadata(a.url)["code_challenge_methods_supported"].([]any)
+	methods := a.challengeMethods()
 	if len(methods) == 0 {
 		t.Fatal("got no code_challenge_methods_supported, want the supported methods")
 	}
-	for _, m := range methods {
+	for _, method := range methods {
 		params := authorizeParams()
-		method, _ := m.(string)
 		params.Set("code_challenge_method", method)
 		if q := a.login(a.authorize(params), "alice").Query(); !q.Has("code") {
-			t.Fatalf("%v: got redirect query %v, want a code", m, q)
+			t.Fatalf("%s: got redirect query %v, want a code", method, q)
 		}
 	}
 }
@@ -394,5 +411,68 @@ func TestMetadataDocumentsScopes(t *testing.T) {
 	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Scopes = []string{"read", "write", "profile", "email"} })
 	if got := a.metadata(a.url)["scopes_supported"]; !reflect.DeepEqual(got, []any{"read", "write", "profile", "email"}) {
 		t.Fatalf("got scopes_supported %v, want read, write, profile and email", got)
+	}
+}
+
+// TestMetadataHasScopes checks that the metadata document has the RECOMMENDED scopes_supported with the configured scopes.
+//
+//conformance:covers RFC8414-2-09
+func TestMetadataHasScopes(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Scopes = []string{"openid", "read"} })
+	if got := a.metadata(a.url)["scopes_supported"]; !reflect.DeepEqual(got, []any{"openid", "read"}) {
+		t.Fatalf("got scopes_supported %v, want openid and read", got)
+	}
+}
+
+// TestMetadataListsSupportedChallengeMethods checks that code_challenge_methods_supported lists each of S256, plain, S512 and the listed methods exactly when the authorization endpoint accepts it.
+//
+//conformance:covers RFC9700-2.1.1-11
+func TestMetadataListsSupportedChallengeMethods(t *testing.T) {
+	a := newAuthorizationServer(t)
+	methods := a.challengeMethods()
+	if len(methods) == 0 {
+		t.Fatal("got no code_challenge_methods_supported, want the supported methods")
+	}
+	for _, method := range append([]string{"S256", "plain", "S512"}, methods...) {
+		params := authorizeParams()
+		params.Set("code_challenge_method", method)
+		accepted := a.pending(a.authorize(params)).Error == nil
+		if listed := slices.Contains(methods, method); accepted != listed {
+			t.Fatalf("%s: got accepted %t, want %t as listed in code_challenge_methods_supported %v", method, accepted, listed, methods)
+		}
+	}
+}
+
+// TestMetadataPublished checks that the well-known URI serves a JSON metadata document naming the issuer, the authorization and token endpoints and the code response type.
+//
+//conformance:covers RFC9700-2.6-01
+func TestMetadataPublished(t *testing.T) {
+	a := newAuthorizationServer(t)
+	m := a.metadata(a.url)
+	if m["issuer"] != a.url {
+		t.Fatalf("got issuer %v, want %s", m["issuer"], a.url)
+	}
+	if m["authorization_endpoint"] != a.url+a.srv.Paths().Authorization || m["token_endpoint"] != a.url+a.srv.Paths().Token {
+		t.Fatalf("got authorization_endpoint %v and token_endpoint %v, want the configured endpoints", m["authorization_endpoint"], m["token_endpoint"])
+	}
+	if types, _ := m["response_types_supported"].([]any); !slices.Contains(types, any("code")) {
+		t.Fatalf("got response_types_supported %v, want code in it", m["response_types_supported"])
+	}
+}
+
+// TestClientDetectsPKCEFromMetadata checks that a Client reading only the metadata detects support for S256 and gets it accepted at the authorization endpoint the metadata names.
+//
+//conformance:covers RFC9700-4.7.1-05
+func TestClientDetectsPKCEFromMetadata(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Paths = oauth21.Paths{Authorization: "/oauth/authorize"} })
+	if methods := a.challengeMethods(); !slices.Contains(methods, "S256") {
+		t.Fatalf("got code_challenge_methods_supported %v, want S256 detected", methods)
+	}
+	status, header, _ := a.send(http.MethodGet, a.endpointPath(a.metadata(a.url)["authorization_endpoint"])+"?"+authorizeParams().Encode(), "", nil)
+	if status != http.StatusFound {
+		t.Fatalf("got status %d from the authorization endpoint, want a redirect", status)
+	}
+	if req := a.pending(a.redirect(header.Get("Location"))); req.Error != nil {
+		t.Fatalf("got error %v for S256, want it accepted", req.Error)
 	}
 }
