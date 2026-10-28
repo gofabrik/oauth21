@@ -188,6 +188,8 @@ type Completion struct {
 	// Subject identifies the Resource Owner.
 	Subject string
 	Scopes  []string
+	// Audience are the Resource Servers the Resource Owner consented to, by Client identifier; none leaves the Grant unrestricted.
+	Audience []string
 }
 
 // AuthorizationRequest returns the pending Authorization Request with identifier id.
@@ -215,7 +217,11 @@ func (s *Server) Complete(ctx context.Context, id string, c Completion) (string,
 	if err != nil {
 		return "", err
 	}
-	code, perr := protocol.IssueCode(protocolRequest(r), c.Subject, c.Scopes, s.config.Clock().Add(s.config.CodeLifetime), max(s.config.AccessTokenLifetime, s.config.RefreshTokenLifetime))
+	registered, err := s.registered(ctx, c.Audience)
+	if err != nil {
+		return "", err
+	}
+	code, perr := protocol.IssueCode(protocolRequest(r), protocol.Completion(c), registered, s.config.Clock().Add(s.config.CodeLifetime), max(s.config.AccessTokenLifetime, s.config.RefreshTokenLifetime))
 	if perr != nil {
 		return "", fmt.Errorf("%w: %s", ErrInvalidCompletion, perr.Description)
 	}
@@ -679,6 +685,21 @@ func (s *Server) typedClient(ctx context.Context, id string) (store.Client, erro
 	return c, err
 }
 
+// registered returns the Client identifiers in ids that name a registered Client.
+func (s *Server) registered(ctx context.Context, ids []string) ([]string, error) {
+	var registered []string
+	for _, id := range ids {
+		c, err := s.client(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if c != nil {
+			registered = append(registered, id)
+		}
+	}
+	return registered, nil
+}
+
 // client loads the Client with identifier id, or nil when there is none.
 func (s *Server) client(ctx context.Context, id string) (*protocol.Client, error) {
 	c, err := s.typedClient(ctx, id)
@@ -841,7 +862,7 @@ func storeRefreshToken(hash []byte, grant store.Grant, t protocol.RefreshToken) 
 func storeCode(hash []byte, grantID string, c protocol.Code) store.Code {
 	return store.Code{
 		Hash:                hash,
-		Grant:               store.Grant{ID: grantID, ClientID: c.ClientID, Subject: c.Subject, Scopes: c.Scopes},
+		Grant:               store.Grant{ID: grantID, ClientID: c.ClientID, Subject: c.Subject, Scopes: c.Scopes, Audience: c.Audience},
 		RedirectURI:         c.RedirectURI,
 		CodeChallenge:       c.CodeChallenge,
 		CodeChallengeMethod: c.CodeChallengeMethod,

@@ -264,7 +264,7 @@ func TestRedeemIssuedCode(t *testing.T) {
 		v := verifierGen.Draw(t, "verifier")
 		a := AuthorizationRequest{ClientID: "client", RedirectURI: "https://c.example/cb", Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}
 		expiresAt := time.Unix(1_000_000, 0)
-		code, err := IssueCode(a, "alice", a.Scopes, expiresAt, time.Hour)
+		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: a.Scopes}, nil, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -296,7 +296,7 @@ func TestRedemption(t *testing.T) {
 		v := verifierGen.Draw(t, "verifier")
 		expiresAt := time.Unix(1_000_000, 0)
 		now := expiresAt.Add(-time.Minute)
-		stored, perr := IssueCode(AuthorizationRequest{ClientID: "client", Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}, "alice", []string{"read"}, expiresAt, time.Hour)
+		stored, perr := IssueCode(AuthorizationRequest{ClientID: "client", Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}, Completion{Subject: "alice", Scopes: []string{"read"}}, nil, expiresAt, time.Hour)
 		if perr != nil {
 			t.Fatal(perr)
 		}
@@ -527,12 +527,13 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 		}
 		a.Scopes = rapid.SliceOfNDistinct(rapid.String(), 1, -1, rapid.ID).Draw(t, "scopes")
 		subject := rapid.StringN(1, -1, -1).Draw(t, "subject")
+		audience := rapid.SliceOfDistinct(rapid.String(), rapid.ID).Draw(t, "audience")
 		expiresAt := time.Unix(rapid.Int64Range(0, 1<<40).Draw(t, "expires_at"), 0)
-		code, err := IssueCode(a, subject, a.Scopes, expiresAt, time.Hour)
+		code, err := IssueCode(a, Completion{subject, a.Scopes, audience}, audience, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := Code{a.ClientID, subject, a.Scopes, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
+		want := Code{a.ClientID, subject, a.Scopes, audience, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
 		if !reflect.DeepEqual(code, want) {
 			t.Fatalf("got %+v, want %+v", code, want)
 		}
@@ -573,9 +574,31 @@ func TestIssueCodeGrantsRequestedScopes(t *testing.T) {
 		"none":          {nil, nil},
 		"not requested": {[]string{"read", "admin"}, nil},
 	} {
-		code, err := IssueCode(a, "alice", tt.granted, time.Time{}, time.Hour)
+		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: tt.granted}, nil, time.Time{}, time.Hour)
 		if (err == nil) != (tt.want != nil) || !slices.Equal(code.Scopes, tt.want) {
 			t.Errorf("%s: got scopes %q and error %v, want %q", name, code.Scopes, err, tt.want)
+		}
+	}
+}
+
+func TestIssueCodeChecksAudience(t *testing.T) {
+	a := AuthorizationRequest{Scopes: []string{"read"}}
+	registered := []string{"rs-a", "rs-b"}
+	for name, tt := range map[string]struct {
+		audience []string
+		want     bool
+	}{
+		"none":       {nil, true},
+		"one":        {[]string{"rs-a"}, true},
+		"two":        {[]string{"rs-b", "rs-a"}, true},
+		"repeated":   {[]string{"rs-a", "rs-b", "rs-a"}, false},
+		"unknown":    {[]string{"rs-a", "rs-c"}, false},
+		"empty":      {[]string{""}, false},
+		"close name": {[]string{"rs-A"}, false},
+	} {
+		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: a.Scopes, Audience: tt.audience}, registered, time.Time{}, time.Hour)
+		if (err == nil) != tt.want || tt.want && !slices.Equal(code.Audience, tt.audience) {
+			t.Errorf("%s: got audience %q and error %v, want a code %v", name, code.Audience, err, tt.want)
 		}
 	}
 }
@@ -591,13 +614,13 @@ func TestTokenCreated(t *testing.T) {
 
 func TestIssueCodeRefusesFailedRequest(t *testing.T) {
 	a := AuthorizationRequest{Scopes: []string{"read"}, Error: &Error{invalidRequest, "code challenge required"}}
-	if _, err := IssueCode(a, "alice", a.Scopes, time.Time{}, time.Hour); err == nil {
+	if _, err := IssueCode(a, Completion{Subject: "alice", Scopes: a.Scopes}, nil, time.Time{}, time.Hour); err == nil {
 		t.Fatal("got a code for a failed request")
 	}
 }
 
 func TestIssueCodeRequiresSubject(t *testing.T) {
-	if _, err := IssueCode(AuthorizationRequest{ClientID: "client"}, "", nil, time.Time{}, time.Hour); err == nil {
+	if _, err := IssueCode(AuthorizationRequest{ClientID: "client"}, Completion{}, nil, time.Time{}, time.Hour); err == nil {
 		t.Fatal("got a code without a subject")
 	}
 }
@@ -699,7 +722,7 @@ func TestScopesStayWithinLimits(t *testing.T) {
 			}
 		}
 		granted := rapid.SliceOf(scopeGen).Draw(t, "granted")
-		code, err := IssueCode(a, "alice", granted, time.Time{}, time.Hour)
+		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: granted}, nil, time.Time{}, time.Hour)
 		want := len(granted) > 0 && !slices.ContainsFunc(granted, func(s string) bool { return !slices.Contains(a.Scopes, s) })
 		if (err == nil) != want {
 			t.Fatalf("got error %v granting %q of %q, want a code %v", err, granted, a.Scopes, want)
@@ -713,10 +736,6 @@ func TestScopesStayWithinLimits(t *testing.T) {
 			}
 		}
 	})
-}
-
-func distinct(s []string) bool {
-	return len(slices.Compact(slices.Sorted(slices.Values(s)))) == len(s)
 }
 
 func TestResolveScopesHidesSupportedScopes(t *testing.T) {

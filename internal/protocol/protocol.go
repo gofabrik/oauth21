@@ -344,6 +344,7 @@ type Code struct {
 	ClientID            string
 	Subject             string
 	Scopes              []string
+	Audience            []string
 	RedirectURI         string
 	CodeChallenge       string
 	CodeChallengeMethod string
@@ -353,28 +354,47 @@ type Code struct {
 	Used        bool
 }
 
-// IssueCode binds a code for a to the Resource Owner subject and the granted scopes, a subset of the requested ones, retaining it for tokenLifetime after it expires.
-func IssueCode(a AuthorizationRequest, subject string, granted []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
+// Completion is the Host Application's answer to an Authorization Request.
+type Completion struct {
+	Subject string
+	// Scopes are the granted scopes, a subset of the requested ones.
+	Scopes []string
+	// Audience are the Resource Servers the Resource Owner consented to, by Client identifier.
+	Audience []string
+}
+
+// IssueCode binds a code for a to c, retaining it for tokenLifetime after it expires; each Resource Server in c.Audience must be in registered.
+func IssueCode(a AuthorizationRequest, c Completion, registered []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
 	switch {
 	case a.Error != nil:
 		return Code{}, &Error{invalidRequest, "the request failed; deny it instead"}
-	case subject == "":
+	case c.Subject == "":
 		return Code{}, &Error{invalidRequest, "subject required"}
-	case len(granted) == 0:
+	case len(c.Scopes) == 0:
 		return Code{}, &Error{invalidRequest, "no scopes granted; deny the request instead"}
-	case slices.ContainsFunc(granted, func(s string) bool { return !slices.Contains(a.Scopes, s) }):
+	case slices.ContainsFunc(c.Scopes, func(s string) bool { return !slices.Contains(a.Scopes, s) }):
 		return Code{}, &Error{invalidRequest, "granted scope was not requested"}
+	case !distinct(c.Audience):
+		return Code{}, &Error{invalidRequest, "repeated Resource Server in audience"}
+	case slices.ContainsFunc(c.Audience, func(id string) bool { return !slices.Contains(registered, id) }):
+		return Code{}, &Error{invalidRequest, "audience names an unknown Resource Server"}
 	}
 	return Code{
 		ClientID:            a.ClientID,
-		Subject:             subject,
-		Scopes:              slices.DeleteFunc(slices.Clone(a.Scopes), func(s string) bool { return !slices.Contains(granted, s) }),
+		Subject:             c.Subject,
+		Scopes:              slices.DeleteFunc(slices.Clone(a.Scopes), func(s string) bool { return !slices.Contains(c.Scopes, s) }),
+		Audience:            slices.Clone(c.Audience),
 		RedirectURI:         a.RedirectURI,
 		CodeChallenge:       a.CodeChallenge,
 		CodeChallengeMethod: a.CodeChallengeMethod,
 		ExpiresAt:           expiresAt,
 		RetainUntil:         expiresAt.Add(tokenLifetime),
 	}, nil
+}
+
+// distinct reports whether no value occurs twice in s.
+func distinct(s []string) bool {
+	return len(slices.Compact(slices.Sorted(slices.Values(s)))) == len(s)
 }
 
 // TokenExpiry is when a token issued at now with lifetime expires, at the latest at limit.

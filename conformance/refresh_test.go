@@ -3,13 +3,11 @@ package conformance
 import (
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/gofabrik/oauth21"
-	"github.com/gofabrik/oauth21/store"
 )
 
 // refreshParams returns a refresh request of the public Client for refreshToken.
@@ -384,19 +382,14 @@ func TestUnknownRefreshTokenIsRejected(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
-// TestRefreshKeepsAudience checks that the access tokens from a refresh and from the refresh of its successor have the audience of the refresh token's Grant.
+// TestRefreshKeepsAudience checks that a refresh token of the confidential Client, refreshed twice, issues access tokens with the consented audience.
 //
 //conformance:covers OAUTH21D16-3.2.3-14
 func TestRefreshKeepsAudience(t *testing.T) {
 	a := newIntrospectionServer(t)
-	refresh, hash := randomWithHash(t)
-	if err := a.recorder.Store.CreateRefreshToken(t.Context(), store.RefreshToken{Hash: hash, Grant: aliceGrant("audience-grant", resourceServerID), ExpiresAt: a.now().Add(time.Hour)}); err != nil {
-		t.Fatal(err)
-	}
-	for _, access := range a.successiveAccessTokens(refresh, refreshParams, nil) {
-		if body := a.introspect(access); body["active"] != true || !reflect.DeepEqual(body["aud"], resourceServerID) && !reflect.DeepEqual(body["aud"], []any{resourceServerID}) {
-			t.Fatalf("got %v, want an active token with audience %s", body, resourceServerID)
-		}
+	_, refresh := a.consentedTokens(confidentialID, resourceServerID)
+	for _, access := range a.successiveAccessTokens(refresh, confidentialRefreshParams, basic(confidentialID, secret)) {
+		a.wantAudience(access, resourceServerID)
 	}
 }
 

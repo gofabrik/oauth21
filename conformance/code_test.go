@@ -89,6 +89,9 @@ func TestRejectedCompletionKeepsRequest(t *testing.T) {
 		"no subject":        {Scopes: []string{"read"}},
 		"no scopes":         {Subject: "alice"},
 		"unrequested scope": {Subject: "alice", Scopes: []string{"read", "write"}},
+		"repeated audience": {Subject: "alice", Scopes: []string{"read"}, Audience: []string{clientID, clientID}},
+		"unknown audience":  {Subject: "alice", Scopes: []string{"read"}, Audience: []string{"unknown"}},
+		"empty audience":    {Subject: "alice", Scopes: []string{"read"}, Audience: []string{""}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := newAuthorizationServer(t)

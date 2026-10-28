@@ -29,11 +29,11 @@ func (a *authorizationServer) actions(v bearer.Validator) {
 	}
 }
 
-// wantAction checks that a request with the access token to action gets wantStatus.
-func (a *authorizationServer) wantAction(token, action string, wantStatus int) {
+// wantRoute checks that a request with the access token to path gets wantStatus.
+func (a *authorizationServer) wantRoute(token, path string, wantStatus int) {
 	a.t.Helper()
-	if status, header, _ := a.send(http.MethodGet, "/"+action, "", bearerHeader(token)); status != wantStatus {
-		a.t.Fatalf("got status %d and WWW-Authenticate %q at %s, want %d", status, header.Get("WWW-Authenticate"), action, wantStatus)
+	if status, header, _ := a.send(http.MethodGet, path, "", bearerHeader(token)); status != wantStatus {
+		a.t.Fatalf("got status %d and WWW-Authenticate %q at %s, want %d", status, header.Get("WWW-Authenticate"), path, wantStatus)
 	}
 }
 
@@ -66,8 +66,8 @@ func TestTokenIsRestrictedToGrantedScope(t *testing.T) {
 		req := a.pending(a.authorize(params))
 		u := a.complete(req.ID, oauth21.Completion{Subject: "alice", Scopes: []string{"write"}})
 		access, _ := a.tokens(tokenParams(u.Query().Get("code")), nil)
-		a.wantAction(access, "write", http.StatusOK)
-		a.wantAction(access, "read", http.StatusForbidden)
+		a.wantRoute(access, "/write", http.StatusOK)
+		a.wantRoute(access, "/read", http.StatusForbidden)
 	})
 }
 
@@ -114,8 +114,8 @@ func TestTokenIsRestrictedToActions(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.actions(v)
 		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
-		a.wantAction(access, "read", http.StatusOK)
-		a.wantAction(access, "write", http.StatusForbidden)
+		a.wantRoute(access, "/read", http.StatusOK)
+		a.wantRoute(access, "/write", http.StatusForbidden)
 	})
 }
 
@@ -127,7 +127,7 @@ func TestClientCredentialsTokenIsRestrictedToActions(t *testing.T) {
 		a.recorder.AddClient(serviceClient(t))
 		a.actions(v)
 		access, _ := a.tokens(clientCredentialsParams("write"), basic(serviceID, secret))
-		a.wantAction(access, "write", http.StatusOK)
-		a.wantAction(access, "read", http.StatusForbidden)
+		a.wantRoute(access, "/write", http.StatusOK)
+		a.wantRoute(access, "/read", http.StatusForbidden)
 	})
 }

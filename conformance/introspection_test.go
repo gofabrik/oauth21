@@ -14,20 +14,27 @@ import (
 
 const resourceServerID = "Resource Server"
 
-// newIntrospectionServer starts an Authorization Server with the confidential Client and the Resource Server Client, which may introspect.
+// otherResourceServerID identifies a Resource Server other than the Resource Server Client.
+const otherResourceServerID = "Other Resource Server"
+
+// newIntrospectionServer starts an Authorization Server with the confidential Client, the Resource Server Client and the other Resource Server, which may introspect.
 func newIntrospectionServer(t *testing.T) *authorizationServer {
 	t.Helper()
 	return newAuthorizationServer(t, newIntrospectionClients(t)...)
 }
 
-// newIntrospectionClients returns the confidential Client and the Resource Server Client, which may introspect.
+// newIntrospectionClients returns the confidential Client, the Resource Server Client and the other Resource Server, which may introspect.
 func newIntrospectionClients(t *testing.T) []store.Client {
 	t.Helper()
-	resourceServer := confidentialClient(t)
-	resourceServer.ID = resourceServerID
-	resourceServer.RedirectURIs = nil
-	resourceServer.Introspect = true
-	return []store.Client{confidentialClient(t), resourceServer}
+	clients := []store.Client{confidentialClient(t)}
+	for _, id := range []string{resourceServerID, otherResourceServerID} {
+		resourceServer := confidentialClient(t)
+		resourceServer.ID = id
+		resourceServer.RedirectURIs = nil
+		resourceServer.Introspect = true
+		clients = append(clients, resourceServer)
+	}
+	return clients
 }
 
 // introspect sends an introspection request of the Resource Server Client for token that must succeed, and returns its decoded JSON body.
