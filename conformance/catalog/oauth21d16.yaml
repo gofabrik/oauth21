@@ -1681,6 +1681,13 @@ requirements:
     section: 7.1.4
     keyword: SHOULD
     text: Additionally, access tokens SHOULD be restricted to certain resources and actions on resource servers or resources.
+    statement: Additionally, access tokens SHOULD be restricted to certain actions on resource servers or resources.
+    status: applicable
+  - id: OAUTH21D16-7.1.4-08
+    section: 7.1.4
+    keyword: SHOULD
+    text: Additionally, access tokens SHOULD be restricted to certain resources and actions on resource servers or resources.
+    statement: Additionally, access tokens SHOULD be restricted to certain resources on resource servers or resources.
     status: applicable
   - id: OAUTH21D16-7.1.4-06
     section: 7.1.4

@@ -210,6 +210,13 @@ requirements:
     section: "2.3"
     keyword: SHOULD
     text: Additionally, access tokens SHOULD be restricted to certain resources and actions on resource servers or resources.
+    statement: Additionally, access tokens SHOULD be restricted to certain actions on resource servers or resources.
+    status: applicable
+  - id: RFC9700-2.3-12
+    section: "2.3"
+    keyword: SHOULD
+    text: Additionally, access tokens SHOULD be restricted to certain resources and actions on resource servers or resources.
+    statement: Additionally, access tokens SHOULD be restricted to certain resources on resource servers or resources.
     status: applicable
   - id: RFC9700-2.3-07
     section: "2.3"
