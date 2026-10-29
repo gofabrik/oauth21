@@ -22,6 +22,9 @@ import (
 	"github.com/gofabrik/oauth21/store"
 )
 
+// ValueLength is the length in unreserved characters (RFC 3986 2.3) of every code, access token, refresh token and Authorization Request ID the server issues.
+const ValueLength = 43
+
 // ErrInvalidCompletion is returned by Complete for a Completion the server rejects.
 var ErrInvalidCompletion = errors.New("oauth21: invalid completion")
 
@@ -713,7 +716,7 @@ func (s *Server) client(ctx context.Context, id string) (*protocol.Client, error
 	return &client, nil
 }
 
-// random returns a fresh opaque value with 256 bits of entropy.
+// random returns a fresh opaque value of ValueLength characters with 256 bits of entropy.
 func (s *Server) random() (string, error) {
 	b := make([]byte, 32)
 	if _, err := io.ReadFull(s.config.Random, b); err != nil {

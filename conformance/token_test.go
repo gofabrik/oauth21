@@ -558,30 +558,35 @@ func TestAccessTokenRevealsNothing(t *testing.T) {
 	}
 }
 
-// minUnguessableLength is the fewest URL-safe characters that hold 128 bits.
-const minUnguessableLength = 22
-
 // issuing runs requests on a with randomness source s and returns the value one of them issues, and the range of bytes read from s while that request ran.
 type issuing func(a *authorizationServer, s *seededRandom) (value string, from, to int)
 
-// wantUnguessable checks that a value issue issues carries at least 128 bits of randomness: it is long enough to hold them, the same randomness reproduces it, and at least 128 of the bits the server reads while issuing it change it when inverted, no two to the same value.
+// issueSeeded runs issue on a server whose randomness comes from seed 1 with bit flip inverted.
+func issueSeeded(t *testing.T, issue issuing, flip int) (value string, from, to int) {
+	s := &seededRandom{seed: 1, flip: flip}
+	return issue(newSeededServer(t, s, serviceClients(t)...), s)
+}
+
+// wantUnguessable checks that a value issue issues carries at least 128 bits of randomness.
 func wantUnguessable(t *testing.T, issue issuing) {
 	t.Helper()
-	run := func(t *testing.T, flip int) (string, int, int) {
-		s := &seededRandom{seed: 1, flip: flip}
-		return issue(newSeededServer(t, s, serviceClients(t)...), s)
+	wantRandomBits(t, issue, 128)
+}
+
+// wantRandomBits checks that a value issue issues carries at least bits bits of randomness: it is long enough to hold them in URL-safe characters, the same randomness reproduces it, and at least bits of the bits the server reads while issuing it change it when inverted, no two to the same value.
+func wantRandomBits(t *testing.T, issue issuing, bits int) {
+	t.Helper()
+	value, from, to := issueSeeded(t, issue, 0)
+	if minLength := (bits + 5) / 6; len(value) < minLength {
+		t.Fatalf("got %q of %d characters, want at least %d to hold %d bits", value, len(value), minLength, bits)
 	}
-	value, from, to := run(t, 0)
-	if len(value) < minUnguessableLength {
-		t.Fatalf("got %q of %d characters, want at least %d to hold 128 bits", value, len(value), minUnguessableLength)
-	}
-	if again, _, _ := run(t, 0); again != value {
+	if again, _, _ := issueSeeded(t, issue, 0); again != value {
 		t.Fatalf("got %q and %q from the same randomness, want the same value", value, again)
 	}
 	changedBy := map[string]int{}
-	for bit := from*8 + 1; bit <= to*8 && len(changedBy) < 128; bit++ {
+	for bit := from*8 + 1; bit <= to*8 && len(changedBy) < bits; bit++ {
 		t.Run(fmt.Sprintf("bit %d", bit), func(t *testing.T) {
-			v, _, _ := run(t, bit)
+			v, _, _ := issueSeeded(t, issue, bit)
 			if v == value {
 				return
 			}
@@ -591,8 +596,8 @@ func wantUnguessable(t *testing.T, issue issuing) {
 			changedBy[v] = bit
 		})
 	}
-	if n := len(changedBy); n < 128 {
-		t.Fatalf("got %d bits of randomness changing %q, want at least 128", n, value)
+	if n := len(changedBy); n < bits {
+		t.Fatalf("got %d bits of randomness changing %q, want at least %d", n, value, bits)
 	}
 }
 
@@ -706,10 +711,8 @@ func TestIssuedValuesCarry128Bits(t *testing.T) {
 	}
 }
 
-// TestEveryIssuedValueCarries128Bits checks that Authorization Request IDs, codes, access tokens and refresh tokens, issued in every way the server issues them, each carry at least 128 bits of randomness.
-//
-//conformance:covers INV-0014
-func TestEveryIssuedValueCarries128Bits(t *testing.T) {
+// everyIssuer returns the issuers of Authorization Request IDs, codes, access tokens and refresh tokens, in every way the server issues them.
+func everyIssuer() map[string]issuing {
 	issuers := codeAndTokenIssuers()
 	maps.Copy(issuers, map[string]issuing{
 		"request ID":               requestID,
@@ -717,7 +720,76 @@ func TestEveryIssuedValueCarries128Bits(t *testing.T) {
 		"refreshed refresh token":  refreshed(true),
 		"client credentials token": clientCredentialsAccess,
 	})
-	for name, issue := range issuers {
+	return issuers
+}
+
+// TestEveryIssuedValueCarries160Bits checks that Authorization Request IDs, codes, access tokens and refresh tokens, issued in every way the server issues them, each carry at least 160 bits of randomness, so guessing one succeeds with a probability of at most 2^-160.
+//
+//conformance:covers OAUTH21D16-7.7-03
+func TestEveryIssuedValueCarries160Bits(t *testing.T) {
+	for name, issue := range everyIssuer() {
+		t.Run(name, func(t *testing.T) { wantRandomBits(t, issue, 160) })
+	}
+}
+
+// issuedValues returns the values of everyIssuer, each issued with the same randomness.
+func issuedValues(t *testing.T) map[string]string {
+	t.Helper()
+	values := map[string]string{}
+	for name, issue := range everyIssuer() {
+		values[name], _, _ = issueSeeded(t, issue, 0)
+	}
+	return values
+}
+
+// TestIssuedValueLengthIsDocumented checks that codes, access tokens, refresh tokens and Authorization Request IDs, issued in every way the server issues them, are as long as oauth21.ValueLength documents.
+//
+//conformance:covers OAUTH21D16-1.7.1-02
+func TestIssuedValueLengthIsDocumented(t *testing.T) {
+	for name, v := range issuedValues(t) {
+		t.Run(name, func(t *testing.T) {
+			if len(v) != oauth21.ValueLength {
+				t.Fatalf("got %q of %d characters, want the documented %d", v, len(v), oauth21.ValueLength)
+			}
+		})
+	}
+}
+
+// unreserved reports whether r is an unreserved character (RFC 3986 2.3).
+func unreserved(r rune) bool {
+	return 'A' <= r && r <= 'Z' || 'a' <= r && r <= 'z' || '0' <= r && r <= '9' || strings.ContainsRune("-._~", r)
+}
+
+// maxRequestLine is the request-line length in octets that Section 3 of RFC 9112 recommends every HTTP party supports.
+const maxRequestLine = 8000
+
+// TestIssuedValuesFitTheirCarriers checks that codes, access tokens, refresh tokens and Authorization Request IDs have only unreserved characters (RFC 3986 2.3), and that the redirects carrying Authorization Request IDs and codes have request lines within maxRequestLine.
+//
+//conformance:covers OAUTH21D16-1.7.1-03
+func TestIssuedValuesFitTheirCarriers(t *testing.T) {
+	for name, v := range issuedValues(t) {
+		t.Run(name, func(t *testing.T) {
+			if strings.ContainsFunc(v, func(r rune) bool { return !unreserved(r) }) {
+				t.Fatalf("got %q, want only unreserved characters", v)
+			}
+		})
+	}
+	a := newAuthorizationServer(t)
+	login := a.authorize(authorizeParams())
+	for name, u := range map[string]*url.URL{"login redirect": login, "authorization response": a.login(login, "alice")} {
+		t.Run(name, func(t *testing.T) {
+			if line := "GET " + u.RequestURI() + " HTTP/1.1"; len(line) > maxRequestLine {
+				t.Fatalf("got a request line of %d octets, want at most %d", len(line), maxRequestLine)
+			}
+		})
+	}
+}
+
+// TestEveryIssuedValueCarries128Bits checks that Authorization Request IDs, codes, access tokens and refresh tokens, issued in every way the server issues them, each carry at least 128 bits of randomness.
+//
+//conformance:covers INV-0014
+func TestEveryIssuedValueCarries128Bits(t *testing.T) {
+	for name, issue := range everyIssuer() {
 		t.Run(name, func(t *testing.T) { wantUnguessable(t, issue) })
 	}
 }

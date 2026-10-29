@@ -37,10 +37,6 @@ OAUTH21D16-5.3-01
 OAUTH21D16-5.3.1-10
 # 77: introspect as inactive when the state cannot be determined
 RFC7662-2.1-08
-# 78: size of issued values
-OAUTH21D16-1.7.1-02
-OAUTH21D16-1.7.1-03
-OAUTH21D16-7.7-03
 # 79: accept long parameter values
 OAUTH21D16-1.7.1-04
 # 80: decide the status of RFC 9700's upgrade recommendation
