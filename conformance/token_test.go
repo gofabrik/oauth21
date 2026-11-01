@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofabrik/oauth21"
 	"github.com/gofabrik/oauth21/store"
@@ -53,6 +54,57 @@ func TestTokenResponseCarriesExpiresIn(t *testing.T) {
 	a := newAuthorizationServer(t)
 	if body := a.redeem(); body["expires_in"] != float64(3600) {
 		t.Fatalf("got expires_in %v, want 3600", body["expires_in"])
+	}
+}
+
+// tokenRequest sends a successful token request to a and returns its response.
+type tokenRequest func(a *authorizationServer) (int, http.Header, map[string]any)
+
+// tokenRequests returns a token request of each grant type.
+func tokenRequests() map[string]tokenRequest {
+	return map[string]tokenRequest{
+		"authorization code": func(a *authorizationServer) (int, http.Header, map[string]any) {
+			return a.token(tokenParams(a.code(authorizeParams())), nil)
+		},
+		"refresh token": func(a *authorizationServer) (int, http.Header, map[string]any) {
+			return a.token(refreshParams(a.publicRefreshToken()), nil)
+		},
+		"client credentials": func(a *authorizationServer) (int, http.Header, map[string]any) {
+			return a.token(clientCredentialsParams(""), basic(serviceID, secret))
+		},
+	}
+}
+
+// TestEveryTokenResponseCarriesExpiresIn checks that the token response of every grant type carries a positive expires_in.
+//
+//conformance:covers OAUTH21D16-3.2.3-04
+func TestEveryTokenResponseCarriesExpiresIn(t *testing.T) {
+	for name, request := range tokenRequests() {
+		t.Run(name, func(t *testing.T) {
+			status, _, body := request(newServiceServer(t))
+			if expires, ok := body["expires_in"].(float64); status != http.StatusOK || !ok || expires <= 0 {
+				t.Fatalf("got status %d and body %v, want a positive expires_in", status, body)
+			}
+		})
+	}
+}
+
+// TestAccessTokensAreShortLivedByDefault checks that an access token of every grant type, issued with the default Config, introspects as inactive once an hour has passed.
+//
+//conformance:covers OAUTH21D16-7.1.3.5-01
+func TestAccessTokensAreShortLivedByDefault(t *testing.T) {
+	for name, request := range tokenRequests() {
+		t.Run(name, func(t *testing.T) {
+			a := newAuthorizationServer(t, append(newIntrospectionClients(t), serviceClient(t))...)
+			status, _, body := request(a)
+			access, _ := body["access_token"].(string)
+			if status != http.StatusOK || access == "" {
+				t.Fatalf("got status %d and body %v, want an access token", status, body)
+			}
+			a.wantActive(access)
+			a.advance(time.Hour)
+			a.wantInactive(access)
+		})
 	}
 }
 

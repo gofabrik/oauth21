@@ -228,6 +228,16 @@ func newAuthorizationServer(t *testing.T, clients ...store.Client) *authorizatio
 // newConfiguredServer starts an Authorization Server with the Config that configure changes, the public Client and any extra Clients.
 func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients ...store.Client) *authorizationServer {
 	t.Helper()
+	a, err := tryConfiguredServer(t, configure, clients...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+// tryConfiguredServer is newConfiguredServer returning the error of oauth21.New.
+func tryConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients ...store.Client) (*authorizationServer, error) {
+	t.Helper()
 	a := &authorizationServer{t: t}
 	m := memstore.NewWithClock(a.now)
 	m.AddClient(store.Client{ID: clientID, Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: []string{"read", "write"}, DefaultScopes: readScope})
@@ -253,7 +263,7 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	configure(&c)
 	srv, err := oauth21.New(c)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	a.srv = srv
 	paths := srv.Paths()
@@ -262,7 +272,7 @@ func newConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	mux.Handle(paths.Revocation, srv.RevocationHandler())
 	mux.Handle(paths.Introspection, srv.IntrospectionHandler())
 	mux.Handle(srv.MetadataPath(), srv.MetadataHandler())
-	return a
+	return a, nil
 }
 
 // via starts a server of h with start, and runs do while a sends its requests to that server.

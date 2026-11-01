@@ -51,6 +51,27 @@ func TestCodeExpires(t *testing.T) {
 	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
 }
 
+// TestCodeLivesAtMostTenMinutes checks that a code is refused once ten minutes have passed, whatever CodeLifetime the server accepts.
+//
+//conformance:covers OAUTH21D16-4.1.2-03
+func TestCodeLivesAtMostTenMinutes(t *testing.T) {
+	for _, lifetime := range []time.Duration{0, 10 * time.Minute, 10*time.Minute + time.Second, time.Hour} {
+		t.Run(lifetime.String(), func(t *testing.T) {
+			a, err := tryConfiguredServer(t, func(c *oauth21.Config) { c.CodeLifetime = lifetime })
+			if err != nil {
+				if lifetime <= 10*time.Minute {
+					t.Fatal(err)
+				}
+				return
+			}
+			params := tokenParams(a.code(authorizeParams()))
+			a.advance(10 * time.Minute)
+			status, _, body := a.token(params, nil)
+			a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+		})
+	}
+}
+
 // TestTokenResponseCarriesGrantedScope checks that the token response names the granted scopes and that the access token carries only them.
 //
 //conformance:covers INV-0003
