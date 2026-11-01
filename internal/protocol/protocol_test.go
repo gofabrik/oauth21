@@ -517,6 +517,48 @@ func TestAuthenticate(t *testing.T) {
 	}
 }
 
+func TestLockout(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	var f Failures
+	for range 3 {
+		if v := Attempt(f, 0, 3, now); v != Verify {
+			t.Fatalf("got verdict %d after %d failures, want Verify", v, f.Count)
+		}
+		f = Failed(f, time.Minute, now)
+		now = now.Add(10 * time.Second)
+	}
+	if Attempt(f, 0, 3, now) != Refuse || Attempt(f, 0, 3, f.Until.Add(-time.Nanosecond)) != Refuse {
+		t.Fatalf("got %+v not locked out before %v, want Refuse", f, f.Until)
+	}
+	if v := Attempt(f, 0, 3, f.Until); v != Verify {
+		t.Fatalf("got verdict %d for %+v at %v, want them forgotten", v, f, f.Until)
+	}
+	if f = Failed(f, time.Minute, f.Until); f.Count != 1 {
+		t.Fatalf("got %d failures after the earlier ones were forgotten, want 1", f.Count)
+	}
+}
+
+func TestAttemptWaitsForPending(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	tests := []struct {
+		f       Failures
+		pending int
+		want    Verdict
+	}{
+		{Failures{}, 2, Verify},
+		{Failures{}, 3, Wait},
+		{Failures{Count: 1, Until: now.Add(time.Second)}, 2, Wait},
+		{Failures{Count: 1, Until: now}, 2, Verify},
+		{Failures{Count: 3, Until: now.Add(time.Second)}, 0, Refuse},
+		{Failures{Count: 3, Until: now.Add(time.Second)}, 1, Refuse},
+	}
+	for _, tt := range tests {
+		if got := Attempt(tt.f, tt.pending, 3, now); got != tt.want {
+			t.Errorf("Attempt(%+v, %d) = %d, want %d", tt.f, tt.pending, got, tt.want)
+		}
+	}
+}
+
 func TestIssueCodeBindsRequest(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		a := AuthorizationRequest{

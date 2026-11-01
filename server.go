@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -59,14 +61,26 @@ type Config struct {
 	ReuseConfidentialRefreshTokens bool
 	// SecretHasher verifies Client secrets. It defaults to PBKDF2.
 	SecretHasher SecretHasher
+	// Lockout limits failed authentication of Clients with their secret.
+	Lockout Lockout
 	// RenderError writes an authorization endpoint error that is not redirected to the Client, keeping the framing headers the endpoint sets. It defaults to a plain text response.
 	RenderError func(w http.ResponseWriter, r *http.Request, e AuthorizationError)
 	// Secure reports whether r arrived over a secure transport. It is asked only for requests without TLS 1.2 or later with a secure cipher suite.
 	Secure func(r *http.Request) bool
-	// Clock defaults to time.Now. Stores that remove expired entities must use the same clock, such as memstore.NewWithClock(Clock).
+	// Clock defaults to time.Now and must advance at the rate of real time. Stores that remove expired entities must use the same clock, such as memstore.NewWithClock(Clock).
 	Clock func() time.Time
 	// Random defaults to crypto/rand.Reader.
 	Random io.Reader
+}
+
+// Lockout refuses a source the authentication of a Client after repeated failures from it, as if the secret were wrong.
+type Lockout struct {
+	// Failures is how many failed authentications lock a source out. It defaults to 5.
+	Failures int
+	// Duration is how long failures are remembered after the last one, and so how long a source stays locked out. It defaults to 15 minutes.
+	Duration time.Duration
+	// Source identifies where r comes from. It defaults to the IP address of r.RemoteAddr, or its /64 prefix for IPv6; behind a proxy it must read the address the proxy forwards.
+	Source func(r *http.Request) string
 }
 
 // Paths are endpoint paths relative to the Issuer, each starting with a slash.
@@ -83,7 +97,8 @@ type Paths struct {
 
 // Server is an Authorization Server.
 type Server struct {
-	config Config
+	config   Config
+	lockouts *lockouts
 	// origin is the scheme and host of the Issuer.
 	origin string
 	// issuerPath is the path of the Issuer without its trailing slash.
@@ -119,6 +134,14 @@ func New(c Config) (*Server, error) {
 	if !validLifetime(c.AuthorizationRequestLifetime) || !validLifetime(c.CodeLifetime) || c.CodeLifetime > 10*time.Minute || !validLifetime(c.AccessTokenLifetime) || !validLifetime(c.RefreshTokenLifetime) {
 		return nil, errors.New("oauth21: lifetimes must be at least one second, and CodeLifetime at most ten minutes")
 	}
+	if c.Lockout.Failures < 0 || !validLifetime(c.Lockout.Duration) {
+		return nil, errors.New("oauth21: Lockout.Failures must not be negative and Lockout.Duration must be at least one second")
+	}
+	c.Lockout.Failures = cmp.Or(c.Lockout.Failures, 5)
+	c.Lockout.Duration = cmp.Or(c.Lockout.Duration, 15*time.Minute)
+	if c.Lockout.Source == nil {
+		c.Lockout.Source = wire.Source
+	}
 	if c.AuthorizationRequestLifetime == 0 {
 		c.AuthorizationRequestLifetime = 10 * time.Minute
 	}
@@ -144,7 +167,7 @@ func New(c Config) (*Server, error) {
 	if c.Random == nil {
 		c.Random = rand.Reader
 	}
-	s := &Server{config: c, origin: u.Scheme + "://" + u.Host, issuerPath: issuerPath}
+	s := &Server{config: c, lockouts: newLockouts(c.Lockout, c.Clock), origin: u.Scheme + "://" + u.Host, issuerPath: issuerPath}
 	p := s.Paths()
 	mounts := []string{p.Authorization, p.Token, p.Revocation, p.Introspection, s.MetadataPath()}
 	if len(slices.Compact(slices.Sorted(slices.Values(mounts)))) != len(mounts) {
@@ -358,7 +381,7 @@ func (s *Server) tokenResponse(r *http.Request) (wire.TokenResponse, error) {
 	if err != nil {
 		return wire.TokenResponse{}, err
 	}
-	if perr := protocol.ValidateTokenRequest(client, req, c, s.config.SecretHasher.Verify); perr != nil {
+	if perr := protocol.ValidateTokenRequest(client, req, c, s.verify(r, client)); perr != nil {
 		return wire.TokenResponse{}, oauthError(perr)
 	}
 	switch req.GrantType {
@@ -491,7 +514,7 @@ func (s *Server) revocation(r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if perr := protocol.ValidateRevocationRequest(client, token, c, s.config.SecretHasher.Verify); perr != nil {
+	if perr := protocol.ValidateRevocationRequest(client, token, c, s.verify(r, client)); perr != nil {
 		return oauthError(perr)
 	}
 	storedRefresh, refresh, err := load(ctx, token, s.config.Tokens.RefreshToken, protocolRefreshToken)
@@ -535,7 +558,7 @@ func (s *Server) introspection(r *http.Request) (wire.IntrospectionResponse, err
 	if err != nil {
 		return wire.IntrospectionResponse{}, err
 	}
-	if perr := protocol.ValidateIntrospectionRequest(client, token, c, s.config.SecretHasher.Verify); perr != nil {
+	if perr := protocol.ValidateIntrospectionRequest(client, token, c, s.verify(r, client)); perr != nil {
 		return wire.IntrospectionResponse{}, oauthError(perr)
 	}
 	_, access, err := load(ctx, token, s.config.Tokens.Token, protocolToken)
@@ -677,6 +700,134 @@ func (s *Server) identify(ctx context.Context, c protocol.Credentials) (*protoco
 		return nil, oauthError(perr)
 	}
 	return s.client(ctx, clientID)
+}
+
+// verify returns the secret verification of client for r, which fails without verifying for a source locked out for client.
+func (s *Server) verify(r *http.Request, client *protocol.Client) func(hash, secret string) bool {
+	return func(hash, secret string) (ok bool) {
+		key := lockoutKey{client: client.ID, source: s.config.Lockout.Source(r)}
+		if !s.lockouts.begin(r.Context(), key) {
+			return false
+		}
+		defer func() { s.lockouts.end(key, ok) }()
+		return s.config.SecretHasher.Verify(hash, secret)
+	}
+}
+
+// lockoutKey is a Client and a source of requests.
+type lockoutKey struct {
+	client string
+	source string
+}
+
+// attempts are the failed authentications of a Client from a source and those being verified.
+type attempts struct {
+	failed  protocol.Failures
+	pending int
+	// ended is closed when an attempt ends; nil until an attempt waits.
+	ended chan struct{}
+}
+
+// idle reports whether a has no attempt being verified and no failure remembered at now.
+func (a attempts) idle(now time.Time) bool {
+	return a.pending == 0 && a.failed.Forgotten(now)
+}
+
+// lockouts holds the attempts of each Client from each source.
+type lockouts struct {
+	limit    int
+	duration time.Duration
+	clock    func() time.Time
+	mu       sync.Mutex
+	byKey    map[lockoutKey]attempts
+	// sweepAt is when forgotten failures are next removed.
+	sweepAt time.Time
+}
+
+func newLockouts(l Lockout, clock func() time.Time) *lockouts {
+	return &lockouts{limit: l.Failures, duration: l.Duration, clock: clock, byKey: map[lockoutKey]attempts{}}
+}
+
+// begin waits until an attempt of key may be verified and starts it, and reports false when key is locked out or ctx ends first.
+func (l *lockouts) begin(ctx context.Context, key lockoutKey) bool {
+	for {
+		verdict, ended, wait := l.start(key)
+		if verdict != protocol.Wait {
+			return verdict == protocol.Verify
+		}
+		if !await(ctx, ended, wait) {
+			return false
+		}
+	}
+}
+
+// await waits until ended is closed or, when wait is positive, wait has passed, and reports false when ctx ends first.
+func await(ctx context.Context, ended chan struct{}, wait time.Duration) bool {
+	var expired <-chan time.Time
+	if wait > 0 {
+		t := time.NewTimer(wait)
+		defer t.Stop()
+		expired = t.C
+	}
+	select {
+	case <-ended:
+	case <-expired:
+	case <-ctx.Done():
+		return false
+	}
+	return true
+}
+
+// start decides on an attempt of key and starts it when it may be verified; for an attempt that must wait, it also returns the channel closed when an attempt of key ends and how long until the failures of key are forgotten.
+func (l *lockouts) start(key lockoutKey) (protocol.Verdict, chan struct{}, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.clock()
+	l.sweep(now)
+	a := l.byKey[key]
+	verdict := protocol.Attempt(a.failed, a.pending, l.limit, now)
+	switch verdict {
+	case protocol.Verify:
+		a.pending++
+	case protocol.Wait:
+		if a.ended == nil {
+			a.ended = make(chan struct{})
+		}
+	default:
+		return verdict, nil, 0
+	}
+	l.byKey[key] = a
+	return verdict, a.ended, a.failed.Until.Sub(now)
+}
+
+// end ends an attempt of key, counting it when it failed.
+func (l *lockouts) end(key lockoutKey, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.clock()
+	a := l.byKey[key]
+	a.pending--
+	if !ok {
+		a.failed = protocol.Failed(a.failed, l.duration, now)
+	}
+	if a.ended != nil {
+		close(a.ended)
+		a.ended = nil
+	}
+	if a.idle(now) {
+		delete(l.byKey, key)
+		return
+	}
+	l.byKey[key] = a
+}
+
+// sweep removes the forgotten failures once a Duration has passed since the last sweep.
+func (l *lockouts) sweep(now time.Time) {
+	if now.Before(l.sweepAt) {
+		return
+	}
+	maps.DeleteFunc(l.byKey, func(_ lockoutKey, a attempts) bool { return a.idle(now) })
+	l.sweepAt = now.Add(l.duration)
 }
 
 // typedClient loads the Client with identifier id, failing with store.ErrNotFound when it has no known type.

@@ -65,3 +65,7 @@ requirements:
     keyword: MUST
     text: The endpoints of the Authorization Server and the bearer middleware never take the transport of a request from its forwarded headers.
     status: applicable
+  - id: INV-0017
+    keyword: MUST
+    text: A Client keeps authenticating from a source while other sources are locked out after failing to authenticate it.
+    status: applicable

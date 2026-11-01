@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -547,4 +548,17 @@ func ProtectFraming(h http.Header, origins []string) {
 	}
 	h.Add("Content-Security-Policy", "frame-ancestors "+sources)
 	h.Set("X-Frame-Options", "DENY")
+}
+
+// Source returns the source of r: the IP address of its RemoteAddr, or its /64 prefix for IPv6.
+func Source(r *http.Request) string {
+	ap, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	ip := ap.Addr().Unmap()
+	if ip.Is4() {
+		return ip.String()
+	}
+	return netip.PrefixFrom(ip.WithZone(""), 64).Masked().String()
 }

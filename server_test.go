@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -438,6 +439,8 @@ func TestNewRequiresConfig(t *testing.T) {
 		"issuer path with dot segment":   func(c *oauth21.Config) { c.Issuer = "https://as.example/a/../b" },
 		"escaped issuer path":            func(c *oauth21.Config) { c.Issuer = "https://as.example/a%2Fb" },
 		"issuer with empty path":         func(c *oauth21.Config) { c.Issuer = "https://as.example//" },
+		"negative lockout failures":      func(c *oauth21.Config) { c.Lockout.Failures = -1 },
+		"short lockout duration":         func(c *oauth21.Config) { c.Lockout.Duration = time.Millisecond },
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := valid
@@ -1215,4 +1218,254 @@ func TestSecureRefusalIsTLSRequired(t *testing.T) {
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "TLS required") {
 		t.Fatalf("got status %d and body %q, want 400 with TLS required", w.Code, w.Body.String())
 	}
+}
+
+// countingSecret is acceptSecret counting its verifications.
+type countingSecret struct {
+	acceptSecret
+	verified atomic.Int64
+}
+
+func (c *countingSecret) Verify(hash, secret string) bool {
+	c.verified.Add(1)
+	return c.acceptSecret.Verify(hash, secret)
+}
+
+// newLockoutServer returns a Server with the confidential Client "client" and its secret "secret", using hasher, lockout and clock, which may be nil.
+func newLockoutServer(t rapid.TB, hasher oauth21.SecretHasher, lockout oauth21.Lockout, clock func() time.Time) *oauth21.Server {
+	t.Helper()
+	m := memstore.New()
+	m.AddClient(store.Client{ID: "client", Type: store.Confidential, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: "hash", GrantTypes: []string{"client_credentials"}})
+	srv, err := oauth21.New(oauth21.Config{
+		Issuer:                issuer,
+		LoginURL:              "/login",
+		Clients:               m,
+		AuthorizationRequests: m,
+		Codes:                 m,
+		Tokens:                m,
+		Scopes:                readScope,
+		SecretHasher:          hasher,
+		Lockout:               lockout,
+		Clock:                 clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+// authenticates reports whether a token request of the Client with secret from the address addr authenticates.
+func authenticates(srv *oauth21.Server, secret, addr string) bool {
+	r := tokenRequest("grant_type=client_credentials&client_id=client&client_secret=" + secret)
+	r.RemoteAddr = addr
+	return do(srv.TokenHandler(), r).Code == http.StatusOK
+}
+
+// guess sends n token requests of the Client with a wrong secret from addr, each of which must fail.
+func guess(t rapid.TB, srv *oauth21.Server, addr string, n int) {
+	t.Helper()
+	for range n {
+		if authenticates(srv, "wrong", addr) {
+			t.Fatal("got a wrong secret authenticated")
+		}
+	}
+}
+
+func TestLockoutDefaults(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		srv := newLockoutServer(t, acceptSecret{}, oauth21.Lockout{}, nil)
+		guess(t, srv, "[2001:db8::1]:443", 4)
+		time.Sleep(15*time.Minute - time.Second)
+		guess(t, srv, "[2001:db8::2]:443", 1)
+		if authenticates(srv, "secret", "[2001:db8::3]:443") {
+			t.Fatal("got the right secret authenticated from a /64 prefix after five failures, want it locked out")
+		}
+		if !authenticates(srv, "secret", "192.0.2.1:443") {
+			t.Fatal("got the right secret refused from another source")
+		}
+		time.Sleep(15*time.Minute - time.Second)
+		if authenticates(srv, "secret", "[2001:db8::1]:443") {
+			t.Fatal("got the right secret authenticated before 15 minutes passed, want it locked out")
+		}
+		time.Sleep(time.Second)
+		if !authenticates(srv, "secret", "[2001:db8::1]:443") {
+			t.Fatal("got the right secret refused 15 minutes after the last failure")
+		}
+	})
+}
+
+func TestLockoutIsConfigurable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		srv := newLockoutServer(t, acceptSecret{}, oauth21.Lockout{
+			Failures: 2,
+			Duration: time.Minute,
+			Source:   func(*http.Request) string { return "everyone" },
+		}, nil)
+		guess(t, srv, "192.0.2.1:443", 2)
+		if authenticates(srv, "secret", "198.51.100.1:443") {
+			t.Fatal("got the right secret authenticated after two failures from the configured source, want it locked out")
+		}
+		time.Sleep(time.Minute)
+		if !authenticates(srv, "secret", "198.51.100.1:443") {
+			t.Fatal("got the right secret refused a minute after the last failure")
+		}
+	})
+}
+
+func TestLockoutKeepsFailuresAfterSuccess(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		srv := newLockoutServer(t, acceptSecret{}, oauth21.Lockout{}, nil)
+		guess(t, srv, "192.0.2.1:443", 4)
+		if !authenticates(srv, "secret", "192.0.2.1:443") {
+			t.Fatal("got the right secret refused after four failures, want it authenticated")
+		}
+		guess(t, srv, "192.0.2.1:443", 1)
+		if authenticates(srv, "secret", "192.0.2.1:443") {
+			t.Fatal("got the right secret authenticated after five failures around a success, want it locked out")
+		}
+	})
+}
+
+// stallSecret is acceptSecret taking ten minutes to verify the secret "stall".
+type stallSecret struct {
+	acceptSecret
+}
+
+func (s stallSecret) Verify(hash, secret string) bool {
+	if secret == "stall" {
+		time.Sleep(10 * time.Minute)
+	}
+	return s.acceptSecret.Verify(hash, secret)
+}
+
+// stalled returns a Server that locks a source out after two failures, whose Client has from 192.0.2.1 one failure, forgotten in a minute, and one attempt stalled for ten minutes in wg.
+func stalled(t *testing.T, wg *sync.WaitGroup) *oauth21.Server {
+	t.Helper()
+	srv := newLockoutServer(t, stallSecret{}, oauth21.Lockout{Failures: 2, Duration: time.Minute}, nil)
+	guess(t, srv, "192.0.2.1:443", 1)
+	wg.Go(func() { authenticates(srv, "stall", "192.0.2.1:443") })
+	synctest.Wait()
+	return srv
+}
+
+func TestLockoutWaitEndsWhenFailuresAreForgotten(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		srv := stalled(t, &wg)
+		start := time.Now()
+		if ok := authenticates(srv, "secret", "192.0.2.1:443"); !ok || time.Since(start) != time.Minute {
+			t.Fatalf("got the right secret authenticated %v after %v, want it authenticated after a minute", ok, time.Since(start))
+		}
+	})
+}
+
+func TestLockoutWaitEndsWithRequest(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		srv := stalled(t, &wg)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		r := tokenRequest("grant_type=client_credentials&client_id=client&client_secret=secret").WithContext(ctx)
+		r.RemoteAddr = "192.0.2.1:443"
+		start := time.Now()
+		if w := do(srv.TokenHandler(), r); w.Code == http.StatusOK || time.Since(start) != time.Second {
+			t.Fatalf("got status %d after %v for a request canceled after a second, want it refused then", w.Code, time.Since(start))
+		}
+	})
+}
+
+// slowSecret is acceptSecret taking a second to verify, recording how many verifications overlap.
+type slowSecret struct {
+	acceptSecret
+	mu                 sync.Mutex
+	verifying, overlap int
+}
+
+func (s *slowSecret) Verify(hash, secret string) bool {
+	s.mu.Lock()
+	s.verifying++
+	s.overlap = max(s.overlap, s.verifying)
+	s.mu.Unlock()
+	time.Sleep(time.Second)
+	s.mu.Lock()
+	s.verifying--
+	s.mu.Unlock()
+	return s.acceptSecret.Verify(hash, secret)
+}
+
+func TestLockoutSparesConcurrentSuccesses(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hasher := &slowSecret{}
+		srv := newLockoutServer(t, hasher, oauth21.Lockout{}, nil)
+		var refused atomic.Int64
+		var wg sync.WaitGroup
+		for range 20 {
+			wg.Go(func() {
+				if !authenticates(srv, "secret", "192.0.2.1:443") {
+					refused.Add(1)
+				}
+			})
+		}
+		wg.Wait()
+		if n := refused.Load(); n != 0 || hasher.overlap > 5 {
+			t.Fatalf("got %d of 20 concurrent right secrets refused and %d verifications overlapping, want none refused and at most 5", n, hasher.overlap)
+		}
+	})
+}
+
+func TestLockoutLimitsConcurrentGuesses(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hasher := &countingSecret{}
+		srv := newLockoutServer(t, hasher, oauth21.Lockout{}, nil)
+		var wg sync.WaitGroup
+		for range 50 {
+			wg.Go(func() { authenticates(srv, "wrong", "192.0.2.1:443") })
+		}
+		wg.Wait()
+		if n := hasher.verified.Load(); n != 5 {
+			t.Fatalf("got %d secrets verified for 50 concurrent guesses, want 5", n)
+		}
+	})
+}
+
+// TestLockoutModel checks the authentication of a Client from two sources against a model of their failures.
+func TestLockoutModel(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		now := time.Unix(1_000_000, 0)
+		srv := newLockoutServer(t, acceptSecret{}, oauth21.Lockout{Failures: 3, Duration: time.Minute}, func() time.Time { return now })
+		sources := []string{"192.0.2.1:443", "192.0.2.2:443"}
+		// failures are the times of the failures of each source since they were last forgotten.
+		failures := map[string][]time.Time{}
+		lockedOut := func(source string) bool {
+			f := failures[source]
+			return len(f) >= 3 && now.Sub(f[len(f)-1]) < time.Minute
+		}
+		t.Repeat(map[string]func(*rapid.T){
+			"advance": func(t *rapid.T) {
+				now = now.Add(time.Duration(rapid.Int64Range(0, int64(2*time.Minute)).Draw(t, "advance")))
+			},
+			"wrong": func(t *rapid.T) {
+				source := rapid.SampledFrom(sources).Draw(t, "source")
+				if authenticates(srv, "wrong", source) {
+					t.Fatal("got a wrong secret authenticated")
+				}
+				if lockedOut(source) {
+					return
+				}
+				if f := failures[source]; len(f) > 0 && now.Sub(f[len(f)-1]) >= time.Minute {
+					failures[source] = nil
+				}
+				failures[source] = append(failures[source], now)
+			},
+			"right": func(t *rapid.T) {
+				source := rapid.SampledFrom(sources).Draw(t, "source")
+				want := !lockedOut(source)
+				if got := authenticates(srv, "secret", source); got != want {
+					t.Fatalf("got the right secret authenticated %v, want %v", got, want)
+				}
+			},
+		})
+	})
 }

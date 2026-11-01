@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"slices"
@@ -655,6 +656,57 @@ func FuzzParseBearer(f *testing.F) {
 		r.Header["Authorization"] = []string{"Bearer " + token}
 		if again, err := ParseBearer(r); err != nil || again != token {
 			t.Fatalf("got token %q and error %v after a round trip, want %q", again, err, token)
+		}
+	})
+}
+
+// remote returns a request from the address addr.
+func remote(addr string) *http.Request {
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "https://as.example/token", nil)
+	r.RemoteAddr = addr
+	return r
+}
+
+func TestSource(t *testing.T) {
+	tests := map[string]string{
+		"192.0.2.1:443":                      "192.0.2.1",
+		"[::ffff:192.0.2.1]:443":             "192.0.2.1",
+		"[2001:db8:1:2:3:4:5:6]:443":         "2001:db8:1:2::/64",
+		"[2001:db8:1:2:ffff::1]:80":          "2001:db8:1:2::/64",
+		"[fe80::1%eth0]:443":                 "fe80::/64",
+		"pipe":                               "pipe",
+		"[2001:db8:1:2:3:4:5:6%25zone]:8443": "2001:db8:1:2::/64",
+	}
+	for addr, want := range tests {
+		if got := Source(remote(addr)); got != want {
+			t.Errorf("Source of %q = %q, want %q", addr, got, want)
+		}
+	}
+}
+
+func FuzzSource(f *testing.F) {
+	f.Add("192.0.2.1:443")
+	f.Add("[2001:db8::1]:443")
+	f.Add("[fe80::1%eth0]:443")
+	f.Add("[::ffff:192.0.2.1]:443")
+	f.Add("@")
+	f.Fuzz(func(t *testing.T, addr string) {
+		got := Source(remote(addr))
+		ap, err := netip.ParseAddrPort(addr)
+		switch {
+		case err != nil:
+			if got != addr {
+				t.Fatalf("Source of %q = %q, want the address unchanged", addr, got)
+			}
+		case ap.Addr().Unmap().Is4():
+			if got != ap.Addr().Unmap().String() {
+				t.Fatalf("Source of %q = %q, want the IPv4 address", addr, got)
+			}
+		default:
+			p, err := netip.ParsePrefix(got)
+			if err != nil || p.Bits() != 64 || p.Masked() != p || !p.Contains(ap.Addr().WithZone("")) {
+				t.Fatalf("Source of %q = %q, want the /64 prefix of the address", addr, got)
+			}
 		}
 	})
 }

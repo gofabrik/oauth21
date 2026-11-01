@@ -468,6 +468,55 @@ func Authenticate(client *Client, r Credentials, verify func(hash, secret string
 	return nil
 }
 
+// Failures counts the failed authentications of a Client from a source.
+type Failures struct {
+	Count int
+	// Until is when they are forgotten.
+	Until time.Time
+}
+
+// Forgotten reports whether f are forgotten at now.
+func (f Failures) Forgotten(now time.Time) bool {
+	return !now.Before(f.Until)
+}
+
+// count returns how many of f are remembered at now.
+func (f Failures) count(now time.Time) int {
+	if f.Forgotten(now) {
+		return 0
+	}
+	return f.Count
+}
+
+// Verdict is the decision on an authentication attempt of a Client from a source.
+type Verdict int
+
+const (
+	// Verify verifies the secret of the attempt.
+	Verify Verdict = iota
+	// Wait waits until an attempt being verified finishes.
+	Wait
+	// Refuse fails the attempt without verifying it.
+	Refuse
+)
+
+// Attempt decides on an authentication attempt at now, given the failures f and the pending attempts of its source, which limit failures lock out.
+func Attempt(f Failures, pending, limit int, now time.Time) Verdict {
+	count := f.count(now)
+	switch {
+	case count >= limit:
+		return Refuse
+	case count+pending >= limit:
+		return Wait
+	}
+	return Verify
+}
+
+// Failed returns f with one more failure at now; they are forgotten d after the last one.
+func Failed(f Failures, d time.Duration, now time.Time) Failures {
+	return Failures{Count: f.count(now) + 1, Until: now.Add(d)}
+}
+
 // ValidateTokenRequest checks r with credentials c for client, which is nil when unknown, before its code or refresh token is loaded.
 func ValidateTokenRequest(client *Client, r TokenRequest, c Credentials, verify func(hash, secret string) bool) *Error {
 	switch r.GrantType {
