@@ -547,13 +547,19 @@ func (a *authorizationServer) wantOAuthError(status int, body map[string]any, wa
 	}
 }
 
-// wantAuthorizationError checks that loc is an authorization error response with code and description.
+// wantAuthorizationError checks that loc is an authorization error response at redirectURI with code and description.
 func (a *authorizationServer) wantAuthorizationError(loc *url.URL, code, description string) {
+	a.t.Helper()
+	a.wantAuthorizationErrorAt(loc, redirectURI, code, description)
+}
+
+// wantAuthorizationErrorAt checks that loc is an authorization error response at redirect with code and description.
+func (a *authorizationServer) wantAuthorizationErrorAt(loc *url.URL, redirect, code, description string) {
 	t := a.t
 	t.Helper()
 	q := loc.Query()
-	if got := endpoint(loc); got != redirectURI {
-		t.Fatalf("got redirect to %s, want %s", got, redirectURI)
+	if got := endpoint(loc); got != redirect {
+		t.Fatalf("got redirect to %s, want %s", got, redirect)
 	}
 	if q.Get("error") != code || q.Get("state") != state || q.Get("iss") != a.url || q.Has("code") {
 		t.Fatalf("got redirect %s, want error %q with state and iss", loc, code)

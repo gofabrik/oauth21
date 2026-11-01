@@ -83,3 +83,14 @@ func TestNativeAppSecretIsNotProofForIntrospection(t *testing.T) {
 	access, _ := a.tokens(a.nativeTokenParams(nativeID, nativeRedirectURI), nil)
 	a.wantIntrospectionError(url.Values{"token": {access}}, basic(nativeID, secret), http.StatusUnauthorized, "invalid_client")
 }
+
+// TestNativeAppWithoutPKCEIsRejected checks that a native app's request without a code challenge gets invalid_request at its redirect URI, as RFC 7636 Section 4.4.1 defines.
+//
+//conformance:covers RFC8252-8.1-01
+func TestNativeAppWithoutPKCEIsRejected(t *testing.T) {
+	a := newAuthorizationServer(t, nativeClient())
+	params := nativeParams()
+	params.Del("code_challenge")
+	params.Del("code_challenge_method")
+	a.wantAuthorizationErrorAt(a.errorRedirect(params), nativeRedirectURI, "invalid_request", "code challenge required")
+}

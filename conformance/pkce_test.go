@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofabrik/oauth21"
 	"github.com/gofabrik/oauth21/store"
 )
 
@@ -445,4 +446,36 @@ func TestCodeVerifierWithoutCodeChallengeIsRejected(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPKCEEnforcedDespiteNonce checks that a confidential Client using the OpenID Connect nonce still gets an error without a code challenge and no tokens without a code verifier.
+//
+//conformance:covers OAUTH21D16-4.1.1-17
+func TestPKCEEnforcedDespiteNonce(t *testing.T) {
+	wantPKCEFromNonceClient(t)
+}
+
+// TestPKCEEnforcedAgainstCodeInjectionDespiteNonce checks that a confidential Client whose nonce would guard against code injection still gets an error without a code challenge and no tokens without a code verifier.
+//
+//conformance:covers OAUTH21D16-7.5.1.1-03
+func TestPKCEEnforcedAgainstCodeInjectionDespiteNonce(t *testing.T) {
+	wantPKCEFromNonceClient(t)
+}
+
+// wantPKCEFromNonceClient checks that the authenticated confidential Client sending an OpenID Connect request with a nonce must use a code challenge and its code verifier.
+func wantPKCEFromNonceClient(t *testing.T) {
+	t.Helper()
+	client := confidentialClient(t)
+	client.AllowedScopes = []string{"openid", "read"}
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Scopes = client.AllowedScopes }, client)
+	params := authorizeParams()
+	params.Set("client_id", confidentialID)
+	params.Set("scope", "openid read")
+	params.Set("nonce", "n-0S6_WzA2Mj")
+	token := tokenParams(a.code(params))
+	token.Del("client_id")
+	a.wantVerifierRequired(token, basic(confidentialID, secret))
+	params.Del("code_challenge")
+	params.Del("code_challenge_method")
+	a.wantAuthorizationError(a.errorRedirect(params), "invalid_request", "code challenge required")
 }
