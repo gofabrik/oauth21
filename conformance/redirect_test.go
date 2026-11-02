@@ -1,11 +1,13 @@
 package conformance
 
 import (
+	"html"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/gofabrik/oauth21"
 	"github.com/gofabrik/oauth21/store"
 )
 
@@ -372,5 +374,93 @@ func TestPublicClientIsBoundToRegisteredRedirectURIs(t *testing.T) {
 	params.Set("client_id", "unregistered")
 	if _, loc := a.sendAuthorization(params); loc != "" {
 		t.Fatalf("got Location %q for a Client without redirect URIs, want no redirect", loc)
+	}
+}
+
+// TestRedirectURIErrorIsShown checks that the Resource Owner sees the error of a missing, invalid or mismatching redirect URI, with the default renderer and with RenderError.
+//
+//conformance:covers OAUTH21D16-2.3.5-01
+func TestRedirectURIErrorIsShown(t *testing.T) {
+	wantErrorsShown(t, redirectURIErrors())
+}
+
+// TestClientErrorIsShown checks that the Resource Owner sees the error of a missing or invalid Client identifier or a missing, invalid or mismatching redirect URI, with the default renderer and with RenderError.
+//
+//conformance:covers OAUTH21D16-4.1.2.1-02
+func TestClientErrorIsShown(t *testing.T) {
+	missing := authorizeParams()
+	missing.Del("client_id")
+	repeated := authorizeParams()
+	repeated.Add("client_id", clientID)
+	cases := redirectURIErrors()
+	cases["missing client"] = shownError{missing, "unknown client"}
+	cases["repeated client"] = shownError{repeated, "client_id"}
+	cases["unknown client"] = shownError{unknownClientParams(), "unknown client"}
+	wantErrorsShown(t, cases)
+}
+
+// shownError is a request to the authorization endpoint and a part of the error description the Resource Owner must see for it.
+type shownError struct {
+	params        url.Values
+	inDescription string
+}
+
+// twoURIsClientID identifies a Client with two redirect URIs.
+const twoURIsClientID = "two-uris"
+
+// fragmentClientID identifies a Client whose only redirect URI has a fragment.
+const fragmentClientID = "fragment"
+
+// redirectURIErrors returns requests to the authorization endpoint with a missing, an invalid and a mismatching redirect URI.
+func redirectURIErrors() map[string]shownError {
+	missing := authorizeParams()
+	missing.Set("client_id", twoURIsClientID)
+	missing.Del("redirect_uri")
+	invalid := withRedirectURI(redirectURI + "#f")
+	invalid.Set("client_id", fragmentClientID)
+	return map[string]shownError{
+		"missing redirect URI":     {missing, "redirect_uri"},
+		"invalid redirect URI":     {invalid, "redirect_uri"},
+		"mismatching redirect URI": {withRedirectURI("https://attacker.example/cb"), "redirect_uri"},
+	}
+}
+
+// wantErrorsShown runs wantErrorShown for each case.
+func wantErrorsShown(t *testing.T, cases map[string]shownError) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { wantErrorShown(t, c) })
+	}
+}
+
+// wantErrorShown checks that RenderError gets the error of c and its page reaches the user agent, and that the default renderer shows the same error.
+func wantErrorShown(t *testing.T, c shownError) {
+	t.Helper()
+	clients := []store.Client{publicClient(twoURIsClientID, redirectURI, redirectURI+"/other"), publicClient(fragmentClientID, redirectURI+"#f")}
+	var rendered []oauth21.AuthorizationError
+	page := func(e oauth21.AuthorizationError) string {
+		return "<p>" + html.EscapeString(e.Code+": "+e.Description) + "</p>"
+	}
+	a := newConfiguredServer(t, func(cfg *oauth21.Config) {
+		cfg.RenderError = func(w http.ResponseWriter, _ *http.Request, e oauth21.AuthorizationError) {
+			rendered = append(rendered, e)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(e.Status)
+			_, _ = w.Write([]byte(page(e)))
+		}
+	}, clients...)
+	_, h, body := a.send(http.MethodGet, "/authorize?"+c.params.Encode(), "", nil)
+	if len(rendered) != 1 {
+		t.Fatalf("RenderError called %d times, want once", len(rendered))
+	}
+	e := rendered[0]
+	if e.Code == "" || !strings.Contains(e.Description, c.inDescription) {
+		t.Fatalf("RenderError got %+v, want an error about %s", e, c.inDescription)
+	}
+	if h.Get("Location") != "" || string(body) != page(e) {
+		t.Fatalf("got Location %q and %s, want the page of RenderError", h.Get("Location"), body)
+	}
+	_, h, body = newAuthorizationServer(t, clients...).send(http.MethodGet, "/authorize?"+c.params.Encode(), "", nil)
+	if h.Get("Location") != "" || !strings.Contains(string(body), e.Code) || !strings.Contains(string(body), e.Description) {
+		t.Fatalf("got Location %q and %s, want %s: %s from the default renderer", h.Get("Location"), body, e.Code, e.Description)
 	}
 }
