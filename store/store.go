@@ -45,15 +45,19 @@ type Client struct {
 	GrantTypes []string
 	// Introspect lets a confidential Client call the introspection endpoint.
 	Introspect bool
+	// StrictRedirectURI makes the Client repeat in the token request the redirect_uri its authorization request sent.
+	StrictRedirectURI bool
 	// FrameAncestors are the Client's framing origins, unchecked; the Host Application passes them to ProtectFraming instead of writing them into a header.
 	FrameAncestors []string
 }
 
 // AuthorizationRequest is a validated request waiting for the Host Application.
 type AuthorizationRequest struct {
-	ID                  string
-	ClientID            string
-	RedirectURI         string
+	ID          string
+	ClientID    string
+	RedirectURI string
+	// RedirectURISent is whether the request carried redirect_uri.
+	RedirectURISent     bool
 	State               string
 	Scopes              []string
 	CodeChallenge       string
@@ -76,9 +80,11 @@ type Grant struct {
 
 // Code is an authorization code, stored by the SHA-256 hash of its value.
 type Code struct {
-	Hash                []byte
-	Grant               Grant
-	RedirectURI         string
+	Hash        []byte
+	Grant       Grant
+	RedirectURI string
+	// RedirectURISent is whether the authorization request carried redirect_uri.
+	RedirectURISent     bool
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time

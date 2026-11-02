@@ -37,7 +37,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Run("Expiry", func(t *testing.T) { testExpiry(t, newStore(t)) })
 	t.Run("UsedCodeIsRetained", func(t *testing.T) { testUsedCodeIsRetained(t, newStore(t)) })
 	t.Run("EntitiesAreCopied", func(t *testing.T) { testEntitiesAreCopied(t, newStore(t)) })
-	t.Run("FailedAuthorizationRequest", func(t *testing.T) { testFailedAuthorizationRequest(t, newStore(t)) })
+	t.Run("AuthorizationRequestIsStored", func(t *testing.T) { testAuthorizationRequestIsStored(t, newStore(t)) })
 	t.Run("TokenNotBefore", func(t *testing.T) { testTokenNotBefore(t, newStore(t)) })
 }
 
@@ -46,6 +46,7 @@ func newCode(hash string, expiresAt time.Time) store.Code {
 		Hash:                []byte(hash),
 		Grant:               store.Grant{ID: "grant-" + hash, ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: []string{"api"}},
 		RedirectURI:         "https://client.example/cb",
+		RedirectURISent:     true,
 		CodeChallenge:       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
 		CodeChallengeMethod: "S256",
 		ExpiresAt:           expiresAt,
@@ -498,14 +499,31 @@ func testEntitiesAreCopied(t *testing.T, s Store) {
 	}
 }
 
-func testFailedAuthorizationRequest(t *testing.T, s Store) {
-	r := store.AuthorizationRequest{ID: "request", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Error: "invalid_scope", ErrorDescription: "scope required"}
-	if err := s.CreateAuthorizationRequest(t.Context(), r); err != nil {
+func testAuthorizationRequestIsStored(t *testing.T, s Store) {
+	want := store.AuthorizationRequest{
+		ID:                  "request",
+		ClientID:            "client",
+		RedirectURI:         "https://client.example/cb",
+		RedirectURISent:     true,
+		State:               "state",
+		Scopes:              []string{"read"},
+		CodeChallenge:       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+		CodeChallengeMethod: "S256",
+		ExpiresAt:           time.Now().Add(time.Minute),
+		Error:               "invalid_scope",
+		ErrorDescription:    "scope required",
+	}
+	if err := s.CreateAuthorizationRequest(t.Context(), want); err != nil {
 		t.Fatal(err)
 	}
 	for i, op := range []func(context.Context, string) (store.AuthorizationRequest, error){s.AuthorizationRequest, s.ConsumeAuthorizationRequest} {
-		if got, err := op(t.Context(), r.ID); err != nil || got.Error != r.Error || got.ErrorDescription != r.ErrorDescription {
-			t.Fatalf("operation %d returned %+v and error %v, want the error of the created request", i, got, err)
+		got, err := op(t.Context(), want.ID)
+		if err != nil || !sameTime(got.ExpiresAt, want.ExpiresAt) {
+			t.Fatalf("operation %d returned %+v and error %v, want %+v", i, got, err, want)
+		}
+		got.ExpiresAt = want.ExpiresAt
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("operation %d returned %+v, want %+v", i, got, want)
 		}
 	}
 }

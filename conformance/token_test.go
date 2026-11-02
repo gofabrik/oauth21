@@ -290,6 +290,30 @@ func TestTokenRequestMayCarryRedirectURI(t *testing.T) {
 	}
 }
 
+// TestStrictClientRepeatsRedirectURI checks that a Client with StrictRedirectURI must repeat the redirect_uri of its authorization request in the token request, with the same value, and may omit it when the authorization request did.
+//
+//conformance:covers OAUTH21D16-10.2-02
+func TestStrictClientRepeatsRedirectURI(t *testing.T) {
+	strict := publicClient("strict-client", redirectURI)
+	strict.StrictRedirectURI = true
+	a := newAuthorizationServer(t, strict)
+	authorize := authorizeParams()
+	authorize.Set("client_id", strict.ID)
+	params := tokenParams(a.code(authorize))
+	params.Set("client_id", strict.ID)
+	status, _, body := a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_request")
+	params.Set("redirect_uri", redirectURI+"/other")
+	status, _, body = a.token(params, nil)
+	a.wantOAuthError(status, body, http.StatusBadRequest, "invalid_grant")
+	params.Set("redirect_uri", redirectURI)
+	a.tokens(params, nil)
+	authorize.Del("redirect_uri")
+	params = tokenParams(a.code(authorize))
+	params.Set("client_id", strict.ID)
+	a.tokens(params, nil)
+}
+
 // TestUnknownTokenParameterIsIgnored checks that a token request with an unrecognized parameter succeeds.
 //
 //conformance:covers OAUTH21D16-3.2-04

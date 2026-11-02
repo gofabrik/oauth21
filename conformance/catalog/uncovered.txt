@@ -1,6 +1,4 @@
 # Gated Requirements and Security Invariants that no conformance test covers yet.
-# 56: enforce redirect_uri at the token endpoint as RFC 6749 does
-OAUTH21D16-10.2-02
 # 58: endpoint URLs with a query component
 OAUTH21D16-3.1-04
 # 62: test constant-time secret comparison

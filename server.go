@@ -403,7 +403,7 @@ func (s *Server) tokenResponse(r *http.Request) (wire.TokenResponse, error) {
 
 // redeem redeems the code of req from client for an access token, and a refresh token when protocol issues one.
 func (s *Server) redeem(ctx context.Context, client protocol.Client, req protocol.TokenRequest) (wire.TokenResponse, error) {
-	stored, now, err := s.redeemCode(ctx, client.ID, req)
+	stored, now, err := s.redeemCode(ctx, client, req)
 	if err != nil {
 		return wire.TokenResponse{}, err
 	}
@@ -427,14 +427,14 @@ func (s *Server) redeem(ctx context.Context, client protocol.Client, req protoco
 	return resp, nil
 }
 
-// redeemCode applies protocol's two-step redemption decision to the code of req from the Client clientID, and returns the time it was redeemed at.
-func (s *Server) redeemCode(ctx context.Context, clientID string, req protocol.TokenRequest) (store.Code, time.Time, error) {
+// redeemCode applies protocol's two-step redemption decision to the code of req from client, and returns the time it was redeemed at.
+func (s *Server) redeemCode(ctx context.Context, client protocol.Client, req protocol.TokenRequest) (store.Code, time.Time, error) {
 	stored, code, err := load(ctx, req.Code, s.config.Codes.Code, protocolCode)
 	if err != nil {
 		return store.Code{}, time.Time{}, err
 	}
 	now := s.config.Clock()
-	effect, perr := protocol.Redeem(code, clientID, req, now)
+	effect, perr := protocol.Redeem(code, client, req, now)
 	if effect == protocol.ConsumeCode {
 		if stored, code, err = load(ctx, req.Code, s.config.Codes.ConsumeCode, protocolCode); err != nil {
 			return store.Code{}, time.Time{}, err
@@ -940,14 +940,15 @@ func oauthError(e *protocol.Error) *wire.Error {
 
 func protocolClient(c store.Client) protocol.Client {
 	return protocol.Client{
-		ID:            c.ID,
-		Public:        c.Type == store.Public,
-		RedirectURIs:  c.RedirectURIs,
-		SecretHash:    c.SecretHash,
-		AllowedScopes: c.AllowedScopes,
-		DefaultScopes: c.DefaultScopes,
-		GrantTypes:    c.GrantTypes,
-		Introspect:    c.Introspect,
+		ID:                c.ID,
+		Public:            c.Type == store.Public,
+		RedirectURIs:      c.RedirectURIs,
+		SecretHash:        c.SecretHash,
+		AllowedScopes:     c.AllowedScopes,
+		DefaultScopes:     c.DefaultScopes,
+		GrantTypes:        c.GrantTypes,
+		Introspect:        c.Introspect,
+		StrictRedirectURI: c.StrictRedirectURI,
 	}
 }
 
@@ -955,6 +956,7 @@ func protocolRequest(r store.AuthorizationRequest) protocol.AuthorizationRequest
 	a := protocol.AuthorizationRequest{
 		ClientID:            r.ClientID,
 		RedirectURI:         r.RedirectURI,
+		RedirectURISent:     r.RedirectURISent,
 		State:               r.State,
 		Scopes:              r.Scopes,
 		CodeChallenge:       r.CodeChallenge,
@@ -972,6 +974,7 @@ func storeRequest(id string, a protocol.AuthorizationRequest) store.Authorizatio
 		ID:                  id,
 		ClientID:            a.ClientID,
 		RedirectURI:         a.RedirectURI,
+		RedirectURISent:     a.RedirectURISent,
 		State:               a.State,
 		Scopes:              a.Scopes,
 		CodeChallenge:       a.CodeChallenge,
@@ -990,6 +993,7 @@ func protocolCode(c store.Code) protocol.Code {
 		Subject:             c.Grant.Subject,
 		Scopes:              c.Grant.Scopes,
 		RedirectURI:         c.RedirectURI,
+		RedirectURISent:     c.RedirectURISent,
 		CodeChallenge:       c.CodeChallenge,
 		CodeChallengeMethod: c.CodeChallengeMethod,
 		ExpiresAt:           c.ExpiresAt,
@@ -1027,6 +1031,7 @@ func storeCode(hash []byte, grantID string, c protocol.Code) store.Code {
 		Hash:                hash,
 		Grant:               store.Grant{ID: grantID, ClientID: c.ClientID, Subject: c.Subject, Scopes: c.Scopes, Audience: c.Audience},
 		RedirectURI:         c.RedirectURI,
+		RedirectURISent:     c.RedirectURISent,
 		CodeChallenge:       c.CodeChallenge,
 		CodeChallengeMethod: c.CodeChallengeMethod,
 		ExpiresAt:           c.ExpiresAt,

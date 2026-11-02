@@ -64,6 +64,8 @@ type Client struct {
 	GrantTypes []string
 	// Introspect lets a confidential Client call the introspection endpoint.
 	Introspect bool
+	// StrictRedirectURI makes the Client repeat in the token request the redirect_uri its authorization request sent.
+	StrictRedirectURI bool
 }
 
 // Allows reports whether c may use grantType.
@@ -87,8 +89,10 @@ type AuthorizationParams struct {
 
 // AuthorizationRequest is a validated Authorization Request.
 type AuthorizationRequest struct {
-	ClientID            string
-	RedirectURI         string
+	ClientID    string
+	RedirectURI string
+	// RedirectURISent is whether the request carried redirect_uri.
+	RedirectURISent     bool
 	State               string
 	Scopes              []string
 	CodeChallenge       string
@@ -110,6 +114,7 @@ func Authorize(client *Client, r AuthorizationParams, supported []string, expire
 	a := AuthorizationRequest{
 		ClientID:            client.ID,
 		RedirectURI:         redirectURI,
+		RedirectURISent:     r.RedirectURI != "",
 		State:               r.State,
 		CodeChallenge:       r.CodeChallenge,
 		CodeChallengeMethod: r.CodeChallengeMethod,
@@ -341,11 +346,13 @@ func Denied(a AuthorizationRequest) *Error {
 
 // Code is what an authorization code is bound to.
 type Code struct {
-	ClientID            string
-	Subject             string
-	Scopes              []string
-	Audience            []string
-	RedirectURI         string
+	ClientID    string
+	Subject     string
+	Scopes      []string
+	Audience    []string
+	RedirectURI string
+	// RedirectURISent is whether the authorization request carried redirect_uri.
+	RedirectURISent     bool
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time
@@ -385,6 +392,7 @@ func IssueCode(a AuthorizationRequest, c Completion, registered []string, expire
 		Scopes:              slices.DeleteFunc(slices.Clone(a.Scopes), func(s string) bool { return !slices.Contains(c.Scopes, s) }),
 		Audience:            slices.Clone(c.Audience),
 		RedirectURI:         a.RedirectURI,
+		RedirectURISent:     a.RedirectURISent,
 		CodeChallenge:       a.CodeChallenge,
 		CodeChallengeMethod: a.CodeChallengeMethod,
 		ExpiresAt:           expiresAt,
@@ -562,10 +570,10 @@ const (
 	RevokeToken
 )
 
-// Redeem decides whether r from the Client clientID may redeem code (nil when unknown) at now.
-func Redeem(code *Code, clientID string, r TokenRequest, now time.Time) (Effect, *Error) {
+// Redeem decides whether r from client may redeem code (nil when unknown) at now.
+func Redeem(code *Code, client Client, r TokenRequest, now time.Time) (Effect, *Error) {
 	if code != nil {
-		if err := bound(code, clientID, r); err != nil {
+		if err := bound(code, client, r); err != nil {
 			return NoEffect, err
 		}
 	}
@@ -772,11 +780,13 @@ func TokenCreated(grantRevoked bool) *Error {
 	return nil
 }
 
-// bound checks that r from the Client clientID matches what the code is bound to.
-func bound(code *Code, clientID string, r TokenRequest) *Error {
+// bound checks that r from client matches what the code is bound to.
+func bound(code *Code, client Client, r TokenRequest) *Error {
 	switch {
-	case code.ClientID != clientID:
+	case code.ClientID != client.ID:
 		return &Error{invalidGrant, "code was issued to another client"}
+	case client.StrictRedirectURI && code.RedirectURISent && r.RedirectURI == "":
+		return &Error{invalidRequest, "redirect_uri required"}
 	case r.RedirectURI != "" && r.RedirectURI != code.RedirectURI:
 		return &Error{invalidGrant, "redirect_uri does not match"}
 	case !verifyPKCE(code.CodeChallengeMethod, code.CodeChallenge, r.CodeVerifier):

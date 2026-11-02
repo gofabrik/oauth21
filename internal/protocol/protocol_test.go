@@ -262,29 +262,30 @@ func FuzzValidRedirectURI(f *testing.F) {
 func TestRedeemIssuedCode(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		v := verifierGen.Draw(t, "verifier")
-		a := AuthorizationRequest{ClientID: "client", RedirectURI: "https://c.example/cb", Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}
+		a := AuthorizationRequest{ClientID: "client", RedirectURI: "https://c.example/cb", RedirectURISent: rapid.Bool().Draw(t, "redirect_uri sent"), Scopes: []string{"read"}, CodeChallenge: s256(v), CodeChallengeMethod: "S256"}
 		expiresAt := time.Unix(1_000_000, 0)
 		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: a.Scopes}, nil, expiresAt, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
 		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
-		clientID := rapid.SampledFrom([]string{"client", "other"}).Draw(t, "client")
+		client := Client{ID: rapid.SampledFrom([]string{"client", "other"}).Draw(t, "client"), StrictRedirectURI: rapid.Bool().Draw(t, "strict")}
 		r := TokenRequest{
 			GrantType:    "authorization_code",
 			RedirectURI:  rapid.SampledFrom([]string{"", "https://c.example/cb", "https://c.example/other"}).Draw(t, "redirect_uri"),
 			CodeVerifier: rapid.SampledFrom([]string{v, verifierGen.Draw(t, "other verifier")}).Draw(t, "code_verifier"),
 		}
 		code.Used = rapid.Bool().Draw(t, "used")
-		bound := clientID == "client" && r.RedirectURI != "https://c.example/other" && r.CodeVerifier == v
-		effect, err := Redeem(&code, clientID, r, now)
+		repeatedWhenRequired := r.RedirectURI != "" || !client.StrictRedirectURI || !a.RedirectURISent
+		bound := client.ID == "client" && r.RedirectURI != "https://c.example/other" && repeatedWhenRequired && r.CodeVerifier == v
+		effect, err := Redeem(&code, client, r, now)
 		if want := bound && !code.Used && now.Before(expiresAt); (effect == ConsumeCode) != want || (err == nil) != want {
 			t.Fatalf("got effect %v and error %v, want consume %v", effect, err, want)
 		}
 		if (effect == RevokeGrant) != (bound && code.Used) {
 			t.Fatalf("got effect %v, want Grant revocation for every replay with the right client and verifier", effect)
 		}
-		if effect, err := Redeem(nil, clientID, r, now); err == nil || effect != NoEffect {
+		if effect, err := Redeem(nil, client, r, now); err == nil || effect != NoEffect {
 			t.Fatal("an unknown code redeems or revokes")
 		}
 	})
@@ -311,7 +312,7 @@ func TestRedemption(t *testing.T) {
 			wantConsume := verifier == v && !consumed && now.Before(expiresAt)
 			wantIssue := wantConsume && consumedAt.Before(expiresAt)
 			wantRevoke := verifier == v && consumed
-			effect, err := Redeem(&snapshot, "client", TokenRequest{CodeVerifier: verifier}, now)
+			effect, err := Redeem(&snapshot, Client{ID: "client"}, TokenRequest{CodeVerifier: verifier}, now)
 			if effect == ConsumeCode {
 				before := stored
 				stored.Used = true
@@ -406,6 +407,9 @@ func TestAuthorize(t *testing.T) {
 			}
 			if err == nil && !a.ExpiresAt.Equal(expiresAt) {
 				t.Fatalf("got ExpiresAt %v, want %v", a.ExpiresAt, expiresAt)
+			}
+			if err == nil && a.RedirectURISent != (r.RedirectURI != "") {
+				t.Fatalf("got RedirectURISent %v for redirect_uri %q", a.RedirectURISent, r.RedirectURI)
 			}
 		})
 	}
@@ -564,6 +568,7 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 		a := AuthorizationRequest{
 			ClientID:            rapid.String().Draw(t, "client"),
 			RedirectURI:         rapid.String().Draw(t, "redirect_uri"),
+			RedirectURISent:     rapid.Bool().Draw(t, "redirect_uri sent"),
 			CodeChallenge:       rapid.String().Draw(t, "code_challenge"),
 			CodeChallengeMethod: rapid.String().Draw(t, "method"),
 		}
@@ -575,7 +580,7 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := Code{a.ClientID, subject, a.Scopes, audience, a.RedirectURI, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
+		want := Code{a.ClientID, subject, a.Scopes, audience, a.RedirectURI, a.RedirectURISent, a.CodeChallenge, a.CodeChallengeMethod, expiresAt, expiresAt.Add(time.Hour), false}
 		if !reflect.DeepEqual(code, want) {
 			t.Fatalf("got %+v, want %+v", code, want)
 		}
