@@ -37,7 +37,7 @@ var ErrRequestNotPending = errors.New("oauth21: authorization request not pendin
 type Config struct {
 	// Issuer is the issuer identifier: an https URL without query or fragment.
 	Issuer string
-	// LoginURL is the Host Application's login page, which receives a request_id parameter.
+	// LoginURL is the Host Application's login page, which receives a request_id parameter. The login and consent pages must load no third-party resources and link to no external sites.
 	LoginURL string
 	// Paths are where the Host Application mounts the endpoints under the Issuer.
 	Paths Paths
@@ -63,7 +63,7 @@ type Config struct {
 	SecretHasher SecretHasher
 	// Lockout limits failed authentication of Clients with their secret.
 	Lockout Lockout
-	// RenderError writes an authorization endpoint error that is not redirected to the Client, keeping the framing headers the endpoint sets. It defaults to a plain text response.
+	// RenderError writes an authorization endpoint error that is not redirected to the Client, keeping the framing headers the endpoint sets. It defaults to a plain text response. Its page must load no third-party resources and link to no external sites.
 	RenderError func(w http.ResponseWriter, r *http.Request, e AuthorizationError)
 	// Secure reports whether r arrived over a secure transport. It is asked only for requests without TLS 1.2 or later with a secure cipher suite.
 	Secure func(r *http.Request) bool

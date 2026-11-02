@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"html"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -388,6 +389,32 @@ func TestRedirectURIErrorIsShown(t *testing.T) {
 //
 //conformance:covers OAUTH21D16-4.1.2.1-02
 func TestClientErrorIsShown(t *testing.T) {
+	wantErrorsShown(t, clientErrors())
+}
+
+// TestErrorPageReferencesNoOtherOrigin checks that the default error page of the authorization endpoint is plain text the user agent does not sniff, so it loads no resource and links to no site.
+//
+//conformance:covers RFC9700-4.2.4-05
+func TestErrorPageReferencesNoOtherOrigin(t *testing.T) {
+	a := newAuthorizationServer(t, shownErrorClients()...)
+	var headers []http.Header
+	for _, c := range clientErrors() {
+		_, h, _ := a.send(http.MethodGet, "/authorize?"+c.params.Encode(), "", nil)
+		headers = append(headers, h)
+	}
+	a.overPlainHTTP(func() {
+		_, h, _ := a.send(http.MethodGet, "/authorize?"+authorizeParams().Encode(), "", nil)
+		headers = append(headers, h)
+	})
+	for _, h := range headers {
+		if mt, _, err := mime.ParseMediaType(h.Get("Content-Type")); err != nil || mt != "text/plain" || h.Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("got Content-Type %q and X-Content-Type-Options %q, want text/plain and nosniff", h.Get("Content-Type"), h.Get("X-Content-Type-Options"))
+		}
+	}
+}
+
+// clientErrors returns requests to the authorization endpoint with a missing or invalid Client identifier or a missing, invalid or mismatching redirect URI.
+func clientErrors() map[string]shownError {
 	missing := authorizeParams()
 	missing.Del("client_id")
 	repeated := authorizeParams()
@@ -396,7 +423,7 @@ func TestClientErrorIsShown(t *testing.T) {
 	cases["missing client"] = shownError{missing, "unknown client"}
 	cases["repeated client"] = shownError{repeated, "client_id"}
 	cases["unknown client"] = shownError{unknownClientParams(), "unknown client"}
-	wantErrorsShown(t, cases)
+	return cases
 }
 
 // shownError is a request to the authorization endpoint and a part of the error description the Resource Owner must see for it.
@@ -410,6 +437,11 @@ const twoURIsClientID = "two-uris"
 
 // fragmentClientID identifies a Client whose only redirect URI has a fragment.
 const fragmentClientID = "fragment"
+
+// shownErrorClients returns the Clients the requests of redirectURIErrors name.
+func shownErrorClients() []store.Client {
+	return []store.Client{publicClient(twoURIsClientID, redirectURI, redirectURI+"/other"), publicClient(fragmentClientID, redirectURI+"#f")}
+}
 
 // redirectURIErrors returns requests to the authorization endpoint with a missing, an invalid and a mismatching redirect URI.
 func redirectURIErrors() map[string]shownError {
@@ -435,7 +467,7 @@ func wantErrorsShown(t *testing.T, cases map[string]shownError) {
 // wantErrorShown checks that RenderError gets the error of c and its page reaches the user agent, and that the default renderer shows the same error.
 func wantErrorShown(t *testing.T, c shownError) {
 	t.Helper()
-	clients := []store.Client{publicClient(twoURIsClientID, redirectURI, redirectURI+"/other"), publicClient(fragmentClientID, redirectURI+"#f")}
+	clients := shownErrorClients()
 	var rendered []oauth21.AuthorizationError
 	page := func(e oauth21.AuthorizationError) string {
 		return "<p>" + html.EscapeString(e.Code+": "+e.Description) + "</p>"
