@@ -533,7 +533,11 @@ func FuzzAuthorizationHandler(f *testing.F) {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 		w := do(h, r)
-		if w.Code >= 500 || w.Code != http.StatusFound && w.Header().Get("Location") != "" {
+		redirect := http.StatusFound
+		if post {
+			redirect = http.StatusSeeOther
+		}
+		if w.Code >= 500 || w.Code != redirect && w.Header().Get("Location") != "" {
 			t.Fatalf("got status %d and Location %q", w.Code, w.Header().Get("Location"))
 		}
 		loc, err := url.Parse(w.Header().Get("Location"))

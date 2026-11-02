@@ -383,6 +383,23 @@ func TestAuthorizationRedirectsAreNot307(t *testing.T) {
 	}
 }
 
+// wantPostRedirectedWith303 checks that a POST authorization request carrying a password, valid or failing, is redirected to the login URL with 303.
+func (a *authorizationServer) wantPostRedirectedWith303() {
+	a.t.Helper()
+	for _, params := range []url.Values{authorizeParams(), unsupportedParams()} {
+		if status, loc := a.postedAuthorization(params); status != http.StatusSeeOther || !strings.HasPrefix(loc, a.url+"/login?") {
+			a.t.Fatalf("got status %d and Location %q, want a 303 to the login URL", status, loc)
+		}
+	}
+}
+
+// TestPostAuthorizationRedirectsWith303 checks that a POST authorization request carrying a password, valid or failing, is redirected to the login URL with 303.
+//
+//conformance:covers OAUTH21D16-7.5.4-02
+func TestPostAuthorizationRedirectsWith303(t *testing.T) {
+	newAuthorizationServer(t).wantPostRedirectedWith303()
+}
+
 // TestAuthorizationErrorURIIsURIReference checks that a redirected error response carries error_uri only as a URI-reference.
 //
 //conformance:covers OAUTH21D16-4.1.2.1-14
@@ -476,4 +493,11 @@ func TestRedirectOfCredentialsIsNot307(t *testing.T) {
 			t.Fatalf("got status %d and Location %q, want a redirect other than 307", status, loc)
 		}
 	}
+}
+
+// TestRedirectOfCredentialsUses303 checks that a POST authorization request carrying a password, valid or failing, is redirected to the login URL with 303.
+//
+//conformance:covers RFC9700-4.12-02
+func TestRedirectOfCredentialsUses303(t *testing.T) {
+	newAuthorizationServer(t).wantPostRedirectedWith303()
 }

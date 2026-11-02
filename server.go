@@ -237,7 +237,7 @@ func (s *Server) AuthorizationRequest(ctx context.Context, id string) (Authoriza
 	return req, nil
 }
 
-// Complete completes the Authorization Request with identifier id and returns the redirect for the Resource Owner.
+// Complete completes the Authorization Request with identifier id and returns the redirect for the Resource Owner, which the Host Application sends with 303 after a POST.
 func (s *Server) Complete(ctx context.Context, id string, c Completion) (string, error) {
 	r, err := s.pendingRequest(ctx, id, s.config.AuthorizationRequests.AuthorizationRequest)
 	if err != nil {
@@ -268,7 +268,7 @@ func (s *Server) Complete(ctx context.Context, id string, c Completion) (string,
 	return s.authorizationResponse(r.RedirectURI, r.State).Code(value)
 }
 
-// Deny denies the Authorization Request with identifier id and returns the redirect for the Resource Owner, carrying the error it failed with or access_denied.
+// Deny denies the Authorization Request with identifier id and returns the redirect for the Resource Owner, carrying the error it failed with or access_denied, which the Host Application sends with 303 after a POST.
 func (s *Server) Deny(ctx context.Context, id string) (string, error) {
 	r, err := s.pendingRequest(ctx, id, s.config.AuthorizationRequests.ConsumeAuthorizationRequest)
 	if err != nil {
@@ -319,7 +319,15 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		s.renderAuthorizationError(w, r, responseError(err))
 		return
 	}
-	http.Redirect(w, r, loc, http.StatusFound) // #nosec G710 -- loc is the login URL
+	http.Redirect(w, r, loc, redirectStatus(r)) // #nosec G710 -- loc is the login URL
+}
+
+// redirectStatus is 303 for a POST request and 302 otherwise.
+func redirectStatus(r *http.Request) int {
+	if r.Method == http.MethodPost {
+		return http.StatusSeeOther
+	}
+	return http.StatusFound
 }
 
 // authorizationRedirect stores the Authorization Request of r, also one that failed, and returns the redirect to the login URL.
