@@ -5,9 +5,6 @@ OAUTH21D16-10.2-02
 OAUTH21D16-3.1-04
 # 62: test constant-time secret comparison
 INV-0008
-# 63: denial-of-service countermeasures at the revocation endpoint
-RFC7009-5-01
-RFC7009-5-02
 # 74: no third-party resources at the authorization endpoint
 RFC9700-4.2.4-05
 # 75: keep the Grant on a replayed code with invalid parameters

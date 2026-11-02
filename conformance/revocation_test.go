@@ -274,6 +274,8 @@ func TestRevokedRefreshTokenInvalidatesAccessTokens(t *testing.T) {
 }
 
 // TestHintCausesNoExtraLookups checks that a revocation request with a token_type_hint that does not match its token makes no more Store lookups than one without a hint.
+//
+//conformance:covers RFC7009-5-02
 func TestHintCausesNoExtraLookups(t *testing.T) {
 	lookups := func(kind, hint string) int {
 		a := newAuthorizationServer(t)

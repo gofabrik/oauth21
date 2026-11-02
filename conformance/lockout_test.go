@@ -113,3 +113,14 @@ func TestLockoutSparesOtherSources(t *testing.T) {
 		})
 	}
 }
+
+// TestRevocationSharesTokenLockout checks that a source locked out at the token endpoint is refused the right secret at the revocation endpoint.
+//
+//conformance:covers RFC7009-5-01
+func TestRevocationSharesTokenLockout(t *testing.T) {
+	a := newLockoutServer(t)
+	a.guess(secretEndpoints["token"], "attacker", 3)
+	if status, body := a.authenticate(secretEndpoints["revocation"], secret, "attacker"); status != http.StatusUnauthorized {
+		t.Fatalf("got status %d and body %s at the revocation endpoint after three failures at the token endpoint, want 401", status, body)
+	}
+}
