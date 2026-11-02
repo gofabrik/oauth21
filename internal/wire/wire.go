@@ -99,6 +99,12 @@ func ParseAuthorizationParams(r *http.Request) (AuthorizationParams, *Error) {
 	return req, err
 }
 
+// IsAuthorizationParam reports whether name is a parameter of an authorization request.
+func IsAuthorizationParam(name string) bool {
+	_, ok := new(AuthorizationParams).fields()[name]
+	return ok
+}
+
 func (p *AuthorizationParams) fields() map[string]*string {
 	return map[string]*string{
 		"response_type":         &p.ResponseType,

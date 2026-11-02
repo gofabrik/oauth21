@@ -184,6 +184,31 @@ func TestTokenEndpointHasNoFragment(t *testing.T) {
 	}
 }
 
+// TestAuthorizationEndpointMayHaveQuery checks that the authorization endpoint URL in the metadata keeps the query of its configured path.
+//
+//conformance:covers OAUTH21D16-3.1-03
+func TestAuthorizationEndpointMayHaveQuery(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Paths.Authorization = "/oauth/authorize?realm=a" })
+	if got := a.metadata(a.url)["authorization_endpoint"]; got != a.url+"/oauth/authorize?realm=a" {
+		t.Fatalf("got authorization_endpoint %v, want %s", got, a.url+"/oauth/authorize?realm=a")
+	}
+}
+
+// TestTokenEndpointMayHaveQuery checks that the token endpoint URL in the metadata keeps the query of its configured path, and that the endpoint answers requests sent to it.
+//
+//conformance:covers OAUTH21D16-3.2-02
+func TestTokenEndpointMayHaveQuery(t *testing.T) {
+	a := newConfiguredServer(t, func(c *oauth21.Config) { c.Paths.Token = "/oauth/token?realm=a" }) // #nosec G101 -- endpoint path, not a credential
+	endpoint := a.metadata(a.url)["token_endpoint"]
+	if endpoint != a.url+"/oauth/token?realm=a" {
+		t.Fatalf("got token_endpoint %v, want %s", endpoint, a.url+"/oauth/token?realm=a")
+	}
+	code := a.code(authorizeParams())
+	if status, _, body := a.sendJSON(http.MethodPost, a.endpointPath(endpoint), tokenParams(code).Encode(), nil); status != http.StatusOK || body["access_token"] == nil {
+		t.Fatalf("got status %d and body %v, want an access token", status, body)
+	}
+}
+
 // TestMetadataProvidesIssuer checks that the metadata document provides the issuer identifier, also one with a path.
 //
 //conformance:covers RFC9207-2.3-01

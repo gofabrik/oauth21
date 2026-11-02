@@ -61,6 +61,19 @@ func TestParseAuthorizationParams(t *testing.T) {
 	}
 }
 
+func TestIsAuthorizationParam(t *testing.T) {
+	for _, name := range []string{"response_type", "client_id", "redirect_uri", "state", "scope", "code_challenge", "code_challenge_method"} {
+		if !IsAuthorizationParam(name) {
+			t.Errorf("got %s not a parameter, want a parameter", name)
+		}
+	}
+	for _, name := range []string{"realm", "code", "Scope", ""} {
+		if IsAuthorizationParam(name) {
+			t.Errorf("got %q a parameter, want not a parameter", name)
+		}
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	put := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/", nil)
 	tests := map[string]func() *Error{

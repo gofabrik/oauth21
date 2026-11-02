@@ -475,7 +475,9 @@ requirements:
     keyword: MUST
     text: The authorization endpoint URL MUST NOT include a fragment component, and MAY include a query string component (Appendix C.1), which MUST be retained when adding additional query parameters.
     statement: A query string component of the authorization endpoint URL MUST be retained when adding additional query parameters.
-    status: applicable
+    status: out-of-scope
+    reason: client-requirement
+    note: The Client adds the parameters; the library adds none. The server publishes the query (OAUTH21D16-3.1-03) and ignores it in requests (OAUTH21D16-3.1-07).
   - id: OAUTH21D16-3.1-05
     section: "3.1"
     keyword: MUST

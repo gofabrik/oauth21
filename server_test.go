@@ -420,7 +420,18 @@ func TestNewRequiresConfig(t *testing.T) {
 		"scopes":                         func(c *oauth21.Config) { c.Scopes = nil },
 		"malformed scope":                func(c *oauth21.Config) { c.Scopes = []string{"read", "read write"} },
 		"relative path":                  func(c *oauth21.Config) { c.Paths.Token = "token" },
-		"path with query":                func(c *oauth21.Config) { c.Paths.Authorization = "/authorize?a=b" },
+		"revocation path with query":     func(c *oauth21.Config) { c.Paths.Revocation = "/revoke?a=b" },
+		"introspection path with query":  func(c *oauth21.Config) { c.Paths.Introspection = "/introspect?a=b" },
+		"empty query":                    func(c *oauth21.Config) { c.Paths.Authorization = "/authorize?" },
+		"query with fragment":            func(c *oauth21.Config) { c.Paths.Authorization = "/authorize?a=b#c" },
+		"query with space":               func(c *oauth21.Config) { c.Paths.Token = "/token?a=b c" },
+		"malformed query":                func(c *oauth21.Config) { c.Paths.Token = "/token?a=%zz" },
+		"query with non-ASCII":           func(c *oauth21.Config) { c.Paths.Token = "/token?a=é" },
+		"query naming a request param":   func(c *oauth21.Config) { c.Paths.Authorization = "/authorize?scope=admin" },
+		"query with angle brackets":      func(c *oauth21.Config) { c.Paths.Authorization = "/authorize?a=<b>" },
+		"query with backslash":           func(c *oauth21.Config) { c.Paths.Token = `/token?a=b\c` },
+		"unclean path with query":        func(c *oauth21.Config) { c.Paths.Token = "/oauth/../token?a=b" },
+		"duplicate path with query":      func(c *oauth21.Config) { c.Paths.Token = "/authorize?a=b" },
 		"path with fragment":             func(c *oauth21.Config) { c.Paths.Revocation = "/revoke#a" },
 		"malformed path":                 func(c *oauth21.Config) { c.Paths.Introspection = "/%zz" },
 		"path with space":                func(c *oauth21.Config) { c.Paths.Token = "/oauth token" },
@@ -455,6 +466,36 @@ func TestNewRequiresConfig(t *testing.T) {
 	}
 }
 
+func TestNewAcceptsTokenQueryNamingAuthorizationParam(t *testing.T) {
+	m := memstore.New()
+	if _, err := oauth21.New(oauth21.Config{Issuer: issuer, Paths: oauth21.Paths{Token: "/token?client_id=c"}, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetadataNamesEndpointQueries(t *testing.T) {
+	m := memstore.New()
+	srv, err := oauth21.New(oauth21.Config{Issuer: issuer + "/tenant/", Paths: oauth21.Paths{Authorization: "/authorize?realm=a", Token: "/oauth/token?realm=a&v=1"}, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope}) // #nosec G101 -- endpoint paths, not credentials
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := do(srv.MetadataHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, issuer+srv.MetadataPath(), nil))
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"authorization_endpoint": issuer + "/tenant/authorize?realm=a",
+		"token_endpoint":         issuer + "/tenant/oauth/token?realm=a&v=1",
+		"revocation_endpoint":    issuer + "/tenant/revoke",
+		"introspection_endpoint": issuer + "/tenant/introspect",
+	} {
+		if got[name] != want {
+			t.Errorf("got %s %v, want %s", name, got[name], want)
+		}
+	}
+}
+
 func TestPaths(t *testing.T) {
 	m := memstore.New()
 	for _, tt := range []struct {
@@ -464,8 +505,9 @@ func TestPaths(t *testing.T) {
 		wantMetadata string
 	}{
 		{issuer, oauth21.Paths{}, oauth21.Paths{Authorization: "/authorize", Token: "/token", Revocation: "/revoke", Introspection: "/introspect"}, "/.well-known/oauth-authorization-server"},
-		{issuer + "/", oauth21.Paths{Token: "/oauth/token"}, oauth21.Paths{Authorization: "/authorize", Token: "/oauth/token", Revocation: "/revoke", Introspection: "/introspect"}, "/.well-known/oauth-authorization-server"},                                           // #nosec G101 -- endpoint paths, not credentials
-		{issuer + "/tenant/", oauth21.Paths{Token: "/oauth/token"}, oauth21.Paths{Authorization: "/tenant/authorize", Token: "/tenant/oauth/token", Revocation: "/tenant/revoke", Introspection: "/tenant/introspect"}, "/.well-known/oauth-authorization-server/tenant"}, // #nosec G101 -- endpoint paths, not credentials
+		{issuer + "/", oauth21.Paths{Token: "/oauth/token"}, oauth21.Paths{Authorization: "/authorize", Token: "/oauth/token", Revocation: "/revoke", Introspection: "/introspect"}, "/.well-known/oauth-authorization-server"},                                                                               // #nosec G101 -- endpoint paths, not credentials
+		{issuer + "/tenant/", oauth21.Paths{Token: "/oauth/token"}, oauth21.Paths{Authorization: "/tenant/authorize", Token: "/tenant/oauth/token", Revocation: "/tenant/revoke", Introspection: "/tenant/introspect"}, "/.well-known/oauth-authorization-server/tenant"},                                     // #nosec G101 -- endpoint paths, not credentials
+		{issuer + "/tenant", oauth21.Paths{Authorization: "/authorize?realm=a", Token: "/token?realm=a&v=1"}, oauth21.Paths{Authorization: "/tenant/authorize", Token: "/tenant/token", Revocation: "/tenant/revoke", Introspection: "/tenant/introspect"}, "/.well-known/oauth-authorization-server/tenant"}, // #nosec G101 -- endpoint paths, not credentials
 	} {
 		srv, err := oauth21.New(oauth21.Config{Issuer: tt.issuer, Paths: tt.paths, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope})
 		if err != nil {
@@ -1141,13 +1183,14 @@ func FuzzMetadataHandler(f *testing.F) {
 }
 
 func FuzzNewAcceptsOnlyMountablePaths(f *testing.F) {
-	for _, p := range []string{"/token", "/", "/oauth token", "//oauth/token", "/a/../b", "/a/", "/a%20b", "/{a}", "/a?b", "/a#b", "/.well-known/oauth-authorization-server"} {
-		f.Add("", p)
-		f.Add(p, "/token")
+	for _, p := range []string{"/token", "/", "/oauth token", "//oauth/token", "/a/../b", "/a/", "/a%20b", "/{a}", "/a?b", "/a#b", "/a?", "/a?b#c", "/a?scope=b", "/a?b=<c>", "/authorize?b", "/.well-known/oauth-authorization-server"} {
+		f.Add("", p, "/authorize")
+		f.Add(p, "/token", "/authorize")
+		f.Add("", "/token", p)
 	}
-	f.Fuzz(func(t *testing.T, issuerPath, token string) {
+	f.Fuzz(func(t *testing.T, issuerPath, token, authorization string) {
 		m := memstore.New()
-		srv, err := oauth21.New(oauth21.Config{Issuer: issuer + issuerPath, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope, Paths: oauth21.Paths{Token: token}})
+		srv, err := oauth21.New(oauth21.Config{Issuer: issuer + issuerPath, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, Scopes: readScope, Paths: oauth21.Paths{Authorization: authorization, Token: token}})
 		if err != nil {
 			return
 		}

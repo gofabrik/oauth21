@@ -85,9 +85,9 @@ type Lockout struct {
 
 // Paths are endpoint paths relative to the Issuer, each starting with a slash.
 type Paths struct {
-	// Authorization defaults to /authorize.
+	// Authorization defaults to /authorize. It may end in a query that names no authorization request parameter, such as /authorize?realm=a.
 	Authorization string
-	// Token defaults to /token.
+	// Token defaults to /token. It may end in a query, such as /token?realm=a.
 	Token string
 	// Revocation defaults to /revoke.
 	Revocation string
@@ -103,6 +103,8 @@ type Server struct {
 	origin string
 	// issuerPath is the path of the Issuer without its trailing slash.
 	issuerPath string
+	// mountPaths are the configured Paths without their query.
+	mountPaths Paths
 }
 
 // New returns an Authorization Server built from c.
@@ -122,8 +124,19 @@ func New(c Config) (*Server, error) {
 	c.Paths.Token = cmp.Or(c.Paths.Token, "/token")
 	c.Paths.Revocation = cmp.Or(c.Paths.Revocation, "/revoke")
 	c.Paths.Introspection = cmp.Or(c.Paths.Introspection, "/introspect")
-	if slices.ContainsFunc([]string{c.Paths.Authorization, c.Paths.Token, c.Paths.Revocation, c.Paths.Introspection}, func(p string) bool { return !canonicalPath(p) }) {
-		return nil, errors.New("oauth21: Paths must be clean paths below the root that need no escaping")
+	authorizationPath, authorizationQuery, validAuthorizationQuery := splitQuery(c.Paths.Authorization)
+	tokenPath, _, validTokenQuery := splitQuery(c.Paths.Token)
+	mountPaths := Paths{Authorization: authorizationPath, Token: tokenPath, Revocation: c.Paths.Revocation, Introspection: c.Paths.Introspection}
+	if slices.ContainsFunc([]string{mountPaths.Authorization, mountPaths.Token, mountPaths.Revocation, mountPaths.Introspection}, func(p string) bool { return !canonicalPath(p) }) {
+		return nil, errors.New("oauth21: Paths must be clean paths below the root that need no escaping, and only Authorization and Token may have a query")
+	}
+	if !validAuthorizationQuery || !validTokenQuery {
+		return nil, errors.New("oauth21: the query of Paths.Authorization and Paths.Token must be a non-empty form-encoded URI query")
+	}
+	for name := range authorizationQuery {
+		if wire.IsAuthorizationParam(name) {
+			return nil, errors.New("oauth21: the query of Paths.Authorization must name no authorization request parameter")
+		}
 	}
 	if c.Clients == nil || c.AuthorizationRequests == nil || c.Codes == nil || c.Tokens == nil {
 		return nil, errors.New("oauth21: every Store is required")
@@ -167,7 +180,7 @@ func New(c Config) (*Server, error) {
 	if c.Random == nil {
 		c.Random = rand.Reader
 	}
-	s := &Server{config: c, lockouts: newLockouts(c.Lockout, c.Clock), origin: u.Scheme + "://" + u.Host, issuerPath: issuerPath}
+	s := &Server{config: c, lockouts: newLockouts(c.Lockout, c.Clock), origin: u.Scheme + "://" + u.Host, issuerPath: issuerPath, mountPaths: mountPaths}
 	p := s.Paths()
 	mounts := []string{p.Authorization, p.Token, p.Revocation, p.Introspection, s.MetadataPath()}
 	if len(slices.Compact(slices.Sorted(slices.Values(mounts)))) != len(mounts) {
@@ -180,6 +193,21 @@ func New(c Config) (*Server, error) {
 func canonicalPath(p string) bool {
 	u, err := url.Parse(p)
 	return err == nil && strings.HasPrefix(p, "/") && p != "/" && u.Path == p && u.EscapedPath() == p && path.Clean(p) == p
+}
+
+// splitQuery splits the endpoint path p into its path and query, and reports whether the query is absent or a non-empty form-encoded URI query.
+func splitQuery(p string) (string, url.Values, bool) {
+	p, raw, found := strings.Cut(p, "?")
+	if !found {
+		return p, nil, true
+	}
+	query, err := url.ParseQuery(raw)
+	return p, query, err == nil && raw != "" && !strings.ContainsFunc(raw, func(r rune) bool { return !queryChar(r) })
+}
+
+// queryChar reports whether r may appear in a URI query (RFC 3986 3.4), percent-encoded or not.
+func queryChar(r rune) bool {
+	return 'A' <= r && r <= 'Z' || 'a' <= r && r <= 'z' || '0' <= r && r <= '9' || strings.ContainsRune("-._~!$&'()*+,;=:@/?%", r)
 }
 
 // validLifetime reports whether d is unset or at least one second.
@@ -587,9 +615,9 @@ func (s *Server) introspection(r *http.Request) (wire.IntrospectionResponse, err
 	}, nil
 }
 
-// Paths returns the paths to mount the endpoints at: the path of the Issuer followed by each configured path.
+// Paths returns the paths to mount the endpoints at: the path of the Issuer followed by each configured path without its query.
 func (s *Server) Paths() Paths {
-	p := s.config.Paths
+	p := s.mountPaths
 	return Paths{
 		Authorization: s.issuerPath + p.Authorization,
 		Token:         s.issuerPath + p.Token,
@@ -610,15 +638,20 @@ func (s *Server) MetadataHandler() http.Handler {
 	}, writeJSONError)
 }
 
+// endpointURL returns the URL of the endpoint at the configured path p, query included.
+func (s *Server) endpointURL(p string) string {
+	return s.origin + s.issuerPath + p
+}
+
 // metadata returns the metadata document derived from the Config.
 func (s *Server) metadata() wire.Metadata {
-	p := s.Paths()
+	p := s.config.Paths
 	return wire.Metadata{
 		Issuer:                                     s.config.Issuer,
-		AuthorizationEndpoint:                      s.origin + p.Authorization,
-		TokenEndpoint:                              s.origin + p.Token,
-		RevocationEndpoint:                         s.origin + p.Revocation,
-		IntrospectionEndpoint:                      s.origin + p.Introspection,
+		AuthorizationEndpoint:                      s.endpointURL(p.Authorization),
+		TokenEndpoint:                              s.endpointURL(p.Token),
+		RevocationEndpoint:                         s.endpointURL(p.Revocation),
+		IntrospectionEndpoint:                      s.endpointURL(p.Introspection),
 		ScopesSupported:                            s.config.Scopes,
 		ResponseTypesSupported:                     []string{"code"},
 		ResponseModesSupported:                     []string{"query"},
