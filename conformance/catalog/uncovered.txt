@@ -1,7 +1,5 @@
 # Gated Requirements and Security Invariants that no conformance test covers yet.
 # 77: introspect as inactive when the state cannot be determined
 RFC7662-2.1-08
-# 79: accept long parameter values
-OAUTH21D16-1.7.1-04
 # 80: decide the status of RFC 9700's upgrade recommendation
 RFC9700-1-01

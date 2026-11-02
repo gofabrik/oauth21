@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gofabrik/oauth21"
+	"github.com/gofabrik/oauth21/store"
 )
 
 // errorChars reports whether s has only the characters %x20-21 / %x23-5B / %x5D-7E that error, error_description and scope values may have.
@@ -278,6 +280,35 @@ func TestLongStateIsKept(t *testing.T) {
 	params.Set("state", long)
 	if u := a.login(a.authorize(params), "alice"); u.Query().Get("state") != long {
 		t.Fatalf("got state of %d characters, want %d", len(u.Query().Get("state")), len(long))
+	}
+}
+
+// TestLongValuesAreAccepted checks that an authorization request whose redirect_uri, scope of many scopes, or state alone fills a request line of maxRequestLine octets keeps every requested scope and is issued a code.
+//
+//conformance:covers OAUTH21D16-1.7.1-04
+func TestLongValuesAreAccepted(t *testing.T) {
+	scopes := make([]string, 300)
+	for i := range scopes {
+		scopes[i] = fmt.Sprintf("scope%03d", i)
+	}
+	for name, prefix := range map[string]string{"redirect_uri": redirectURI + "/", "scope": strings.Join(scopes, " ") + " ", "state": ""} {
+		t.Run(name, func(t *testing.T) {
+			params := authorizeParams()
+			params.Set("client_id", "long")
+			params.Set("scope", "read")
+			params.Set(name, prefix)
+			params.Set(name, prefix+strings.Repeat("x", maxRequestLine-len(requestLine("/authorize?"+params.Encode()))))
+			uri, allowed := params.Get("redirect_uri"), strings.Split(params.Get("scope"), " ")
+			a := newConfiguredServer(t, func(c *oauth21.Config) { c.Scopes = append(c.Scopes, allowed...) },
+				store.Client{ID: "long", Type: store.Public, RedirectURIs: []string{uri}, AllowedScopes: allowed})
+			req := a.pending(a.authorize(params))
+			if !slices.Equal(req.Scopes, allowed) {
+				t.Fatalf("got %d scopes, want the %d requested", len(req.Scopes), len(allowed))
+			}
+			if u := a.complete(req.ID, oauth21.Completion{Subject: "alice", Scopes: req.Scopes}); endpoint(u) != uri || u.Query().Get("code") == "" {
+				t.Fatalf("got code %q at a redirect URI of %d characters, want a code at the registered one of %d", u.Query().Get("code"), len(endpoint(u)), len(uri))
+			}
+		})
 	}
 }
 

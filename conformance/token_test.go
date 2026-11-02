@@ -886,9 +886,6 @@ func unreserved(r rune) bool {
 	return 'A' <= r && r <= 'Z' || 'a' <= r && r <= 'z' || '0' <= r && r <= '9' || strings.ContainsRune("-._~", r)
 }
 
-// maxRequestLine is the request-line length in octets that Section 3 of RFC 9112 recommends every HTTP party supports.
-const maxRequestLine = 8000
-
 // TestIssuedValuesFitTheirCarriers checks that codes, access tokens, refresh tokens and Authorization Request IDs have only unreserved characters (RFC 3986 2.3), and that the redirects carrying Authorization Request IDs and codes have request lines within maxRequestLine.
 //
 //conformance:covers OAUTH21D16-1.7.1-03
@@ -904,7 +901,7 @@ func TestIssuedValuesFitTheirCarriers(t *testing.T) {
 	login := a.authorize(authorizeParams())
 	for name, u := range map[string]*url.URL{"login redirect": login, "authorization response": a.login(login, "alice")} {
 		t.Run(name, func(t *testing.T) {
-			if line := "GET " + u.RequestURI() + " HTTP/1.1"; len(line) > maxRequestLine {
+			if line := requestLine(u.RequestURI()); len(line) > maxRequestLine {
 				t.Fatalf("got a request line of %d octets, want at most %d", len(line), maxRequestLine)
 			}
 		})

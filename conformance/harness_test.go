@@ -47,6 +47,14 @@ var readScope = []string{"read"}
 // challenge is the S256 code challenge of verifier.
 var challenge = s256(verifier)
 
+// maxRequestLine is the request-line length in octets that Section 3 of RFC 9112 recommends every HTTP party supports.
+const maxRequestLine = 8000
+
+// requestLine returns the HTTP/1.1 GET request line for target.
+func requestLine(target string) string {
+	return "GET " + target + " HTTP/1.1"
+}
+
 func s256(v string) string {
 	sum := sha256.Sum256([]byte(v))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
