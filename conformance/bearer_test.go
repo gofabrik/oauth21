@@ -466,6 +466,66 @@ func TestBearerChallengeErrorCharacters(t *testing.T) {
 	})
 }
 
+// TestBearerInformsClientOfFailure checks that each failed request gets the status of its failure and, when it carries credentials, the challenge error of its failure.
+//
+//conformance:covers OAUTH21D16-5.3-01
+func TestBearerInformsClientOfFailure(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v, "write")
+		access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		for _, r := range []struct {
+			header     http.Header
+			wantStatus int
+			wantError  string
+		}{
+			{nil, http.StatusUnauthorized, ""},
+			{http.Header{"Authorization": {"Bearer a b"}}, http.StatusBadRequest, "invalid_request"},
+			{bearerHeader("unknown"), http.StatusUnauthorized, "invalid_token"},
+			{bearerHeader(access), http.StatusForbidden, "insufficient_scope"},
+		} {
+			status, header, _ := a.access(r.header)
+			c := header.Get("WWW-Authenticate")
+			_, params := a.wantParsed(c)
+			if status != r.wantStatus {
+				a.t.Fatalf("with %v: got status %d and challenge %q, want %d", r.header, status, c, r.wantStatus)
+			}
+			if got, _ := quoted(params, "error"); r.wantError != "" && got != r.wantError {
+				a.t.Fatalf("with %v: got challenge %q, want the error %s", r.header, c, r.wantError)
+			}
+		}
+	})
+}
+
+// wantInvalidTokenError checks that a request with token to the protected resource gets a challenge with the error invalid_token.
+func (a *authorizationServer) wantInvalidTokenError(token string) {
+	a.t.Helper()
+	_, header, _ := a.access(bearerHeader(token))
+	c := header.Get("WWW-Authenticate")
+	_, params := a.wantParsed(c)
+	if got, _ := quoted(params, "error"); got != "invalid_token" {
+		a.t.Fatalf("got challenge %q, want the error invalid_token", c)
+	}
+}
+
+// TestBearerChallengeErrorForFailedToken checks that unknown, expired and revoked access tokens, access tokens of a revoked Grant and refresh tokens get a challenge with the error invalid_token.
+//
+//conformance:covers OAUTH21D16-5.3.1-10
+func TestBearerChallengeErrorForFailedToken(t *testing.T) {
+	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+		a.resource(v)
+		revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		ofRevokedGrant, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		expired, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
+		a.revoke(revocationParams(revoked), nil)
+		a.revoke(revocationParams(refresh), nil)
+		for _, token := range []string{"unknown", revoked, ofRevokedGrant, a.publicRefreshToken()} {
+			a.wantInvalidTokenError(token)
+		}
+		a.advance(time.Hour)
+		a.wantInvalidTokenError(expired)
+	})
+}
+
 // wantAccess checks that a request with the access token to the protected resource gets wantStatus.
 func (a *authorizationServer) wantAccess(token string, wantStatus int) {
 	a.t.Helper()

@@ -21,9 +21,6 @@ OAUTH21D16-4.1.2.1-02
 RFC9700-4.2.4-05
 # 75: keep the Grant on a replayed code with invalid parameters
 OAUTH21D16-7.5.3-01
-# 76: cover the bearer error responses
-OAUTH21D16-5.3-01
-OAUTH21D16-5.3.1-10
 # 77: introspect as inactive when the state cannot be determined
 RFC7662-2.1-08
 # 79: accept long parameter values
