@@ -329,7 +329,9 @@ func TestInactiveTokenIsNoError(t *testing.T) {
 	wantNoError(expired)
 }
 
-// TestIntrospectionChecksTokenState checks that an access token introspects as active only while it is unexpired, unrevoked, of a live Grant and meant for the Resource Server.
+// TestIntrospectionChecksTokenState checks that an access token introspects as active only while it is valid, unrevoked, of a live Grant and meant for the Resource Server.
+//
+//conformance:covers RFC7662-4-01
 func TestIntrospectionChecksTokenState(t *testing.T) {
 	a := newIntrospectionServer(t)
 	live, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
@@ -339,7 +341,7 @@ func TestIntrospectionChecksTokenState(t *testing.T) {
 	a.revoke(revocationParams(refresh), nil)
 	a.wantActive(live)
 	a.wantActive(a.audienceToken(resourceServerID))
-	for _, token := range []string{revoked, ofRevokedGrant, a.audienceToken("other")} {
+	for _, token := range []string{revoked, ofRevokedGrant, a.audienceToken("other"), a.notYetValidToken(time.Minute)} {
 		a.wantInactive(token)
 	}
 	a.advance(time.Hour)
@@ -356,6 +358,19 @@ func TestIntrospectionChecksExpiry(t *testing.T) {
 	a.wantActive(access)
 	a.advance(time.Second)
 	a.wantInactive(access)
+}
+
+// TestIntrospectionChecksNotBefore checks that an access token introspects as inactive before its valid period starts and as active from then on.
+//
+//conformance:covers RFC7662-4-03
+func TestIntrospectionChecksNotBefore(t *testing.T) {
+	a := newIntrospectionServer(t)
+	access := a.notYetValidToken(time.Minute)
+	a.wantInactive(access)
+	a.advance(time.Minute - time.Second)
+	a.wantInactive(access)
+	a.advance(time.Second)
+	a.wantActive(access)
 }
 
 // TestIntrospectionChecksRevocation checks that a revoked access token and the access tokens of a revoked Grant introspect as inactive.

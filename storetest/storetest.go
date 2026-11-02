@@ -38,6 +38,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Run("UsedCodeIsRetained", func(t *testing.T) { testUsedCodeIsRetained(t, newStore(t)) })
 	t.Run("EntitiesAreCopied", func(t *testing.T) { testEntitiesAreCopied(t, newStore(t)) })
 	t.Run("FailedAuthorizationRequest", func(t *testing.T) { testFailedAuthorizationRequest(t, newStore(t)) })
+	t.Run("TokenNotBefore", func(t *testing.T) { testTokenNotBefore(t, newStore(t)) })
 }
 
 func newCode(hash string, expiresAt time.Time) store.Code {
@@ -506,5 +507,16 @@ func testFailedAuthorizationRequest(t *testing.T, s Store) {
 		if got, err := op(t.Context(), r.ID); err != nil || got.Error != r.Error || got.ErrorDescription != r.ErrorDescription {
 			t.Fatalf("operation %d returned %+v and error %v, want the error of the created request", i, got, err)
 		}
+	}
+}
+
+func testTokenNotBefore(t *testing.T, s Store) {
+	tok := newToken("token", "grant")
+	tok.NotBefore = time.Now().Add(time.Minute)
+	if err := s.CreateToken(t.Context(), tok); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Token(t.Context(), tok.Hash); err != nil || !sameTime(got.NotBefore, tok.NotBefore) {
+		t.Fatalf("Token returned %+v and error %v, want NotBefore %v", got, err, tok.NotBefore)
 	}
 }

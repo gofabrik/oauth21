@@ -111,7 +111,7 @@ func TestBearerChallengeWithoutCredentials(t *testing.T) {
 	})
 }
 
-// TestBearerChallengeForInvalidToken checks that unknown, expired and revoked access tokens and refresh tokens get 401 and an invalid_token challenge.
+// TestBearerChallengeForInvalidToken checks that unknown, expired, not yet valid and revoked access tokens and refresh tokens get 401 and an invalid_token challenge.
 //
 //conformance:covers OAUTH21D16-5.3.2-02
 func TestBearerChallengeForInvalidToken(t *testing.T) {
@@ -128,6 +128,12 @@ func TestBearerChallengeForInvalidToken(t *testing.T) {
 			access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 			a.advance(time.Hour)
 			a.wantChallenge(bearerHeader(access), http.StatusUnauthorized, want)
+		})
+	})
+	t.Run("not yet valid", func(t *testing.T) {
+		forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
+			a.resource(v)
+			a.wantChallenge(bearerHeader(a.notYetValidToken(time.Minute)), http.StatusUnauthorized, want)
 		})
 	})
 	t.Run("revoked access token", func(t *testing.T) {
@@ -550,6 +556,16 @@ func TestBearerRefusesExpiredToken(t *testing.T) {
 func (a *authorizationServer) audienceToken(audience ...string) string {
 	a.t.Helper()
 	return a.storedToken(readScope, audience...)
+}
+
+// notYetValidToken stores an access token of alice and the public Client with scope read that becomes usable after d, which only the Store can give it, and returns its value.
+func (a *authorizationServer) notYetValidToken(d time.Duration) string {
+	a.t.Helper()
+	value, hash := randomWithHash(a.t)
+	if err := a.recorder.Store.CreateToken(a.t.Context(), store.Token{Hash: hash, Grant: aliceGrant("grant-" + value), Scopes: readScope, NotBefore: a.now().Add(d), ExpiresAt: a.now().Add(d + time.Hour)}); err != nil {
+		a.t.Fatal(err)
+	}
+	return value
 }
 
 // storedToken stores an access token of alice and the public Client with scopes and audience, which only the Store can give it, and returns its value.

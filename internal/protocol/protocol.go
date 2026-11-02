@@ -674,10 +674,12 @@ func ValidateRevocationRequest(client *Client, token string, c Credentials, veri
 
 // Token is what an access token is bound to.
 type Token struct {
-	ClientID  string
-	Subject   string
-	Scopes    []string
-	Audience  []string
+	ClientID string
+	Subject  string
+	Scopes   []string
+	Audience []string
+	// NotBefore is when the token becomes usable; zero makes it usable from issuance.
+	NotBefore time.Time
 	ExpiresAt time.Time
 }
 
@@ -724,7 +726,7 @@ func ValidateIntrospectionRequest(client *Client, token string, c Credentials, v
 // Introspect returns token (nil when unknown) when it is active at now for the Client clientID, and nil otherwise; a token with an audience is active only for a Client in it.
 func Introspect(token *Token, clientID string, now time.Time) *Token {
 	switch {
-	case token == nil, !now.Before(token.ExpiresAt):
+	case token == nil, now.Before(token.NotBefore), !now.Before(token.ExpiresAt):
 		return nil
 	case len(token.Audience) > 0 && !slices.Contains(token.Audience, clientID):
 		return nil

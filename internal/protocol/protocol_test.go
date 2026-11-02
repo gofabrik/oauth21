@@ -1135,11 +1135,15 @@ func TestIntrospect(t *testing.T) {
 		expiresAt := time.Unix(1_000_000, 0)
 		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
 		audience := rapid.SampledFrom([][]string{nil, {"rs"}, {"other"}, {"other", "rs"}}).Draw(t, "audience")
-		token := Token{ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: audience, ExpiresAt: expiresAt}
+		var notBefore time.Time
+		if rapid.Bool().Draw(t, "delayed") {
+			notBefore = expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), 0).Draw(t, "notBefore")))
+		}
+		token := Token{ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: audience, NotBefore: notBefore, ExpiresAt: expiresAt}
 		got := Introspect(&token, "rs", now)
-		active := now.Before(expiresAt) && (len(audience) == 0 || slices.Contains(audience, "rs"))
+		active := !now.Before(notBefore) && now.Before(expiresAt) && (len(audience) == 0 || slices.Contains(audience, "rs"))
 		if active != (got != nil) || active && !reflect.DeepEqual(*got, token) {
-			t.Fatalf("got %+v at %v for a token expiring at %v with audience %q, want the token only while it is live and the caller is in its audience", got, now, expiresAt, audience)
+			t.Fatalf("got %+v at %v for a token valid from %v until %v with audience %q, want the token only while it is valid and the caller is in its audience", got, now, notBefore, expiresAt, audience)
 		}
 		if got := Introspect(nil, "rs", now); got != nil {
 			t.Fatalf("got %+v for an unknown token, want nil", got)

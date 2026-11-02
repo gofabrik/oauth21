@@ -92,8 +92,10 @@ type Token struct {
 	Hash  []byte
 	Grant Grant
 	// Scopes are the scopes of the token, the Grant's or fewer.
-	Scopes    []string
-	Audience  []string
+	Scopes   []string
+	Audience []string
+	// NotBefore is when the token becomes usable; zero makes it usable from issuance.
+	NotBefore time.Time
 	ExpiresAt time.Time
 }
 

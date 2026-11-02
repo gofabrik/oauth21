@@ -56,7 +56,7 @@ func (l Local) Validate(ctx context.Context, token string) (Token, error) {
 	if l.Clock != nil {
 		now = l.Clock
 	}
-	p := protocol.Token{ClientID: t.Grant.ClientID, Subject: t.Grant.Subject, Scopes: t.Scopes, Audience: t.Audience, ExpiresAt: t.ExpiresAt}
+	p := protocol.Token{ClientID: t.Grant.ClientID, Subject: t.Grant.Subject, Scopes: t.Scopes, Audience: t.Audience, NotBefore: t.NotBefore, ExpiresAt: t.ExpiresAt}
 	if protocol.Introspect(&p, l.ClientID, now()) == nil {
 		return Token{}, ErrInvalidToken
 	}

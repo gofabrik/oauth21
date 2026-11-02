@@ -8,9 +8,6 @@ INV-0008
 # 63: denial-of-service countermeasures at the revocation endpoint
 RFC7009-5-01
 RFC7009-5-02
-# 64: introspect tokens whose valid period has not started
-RFC7662-4-01
-RFC7662-4-03
 # 74: no third-party resources at the authorization endpoint
 RFC9700-4.2.4-05
 # 75: keep the Grant on a replayed code with invalid parameters

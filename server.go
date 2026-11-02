@@ -1013,6 +1013,7 @@ func protocolToken(t store.Token) protocol.Token {
 		Subject:   t.Grant.Subject,
 		Scopes:    t.Scopes,
 		Audience:  t.Audience,
+		NotBefore: t.NotBefore,
 		ExpiresAt: t.ExpiresAt,
 	}
 }
