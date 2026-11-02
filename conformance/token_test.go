@@ -252,6 +252,56 @@ func TestCodeReplayRevokesAccessToken(t *testing.T) {
 	a.wantInactive(access)
 }
 
+// TestCodeReplayWithInvalidParametersKeepsGrant checks that a replayed code with a wrong code verifier, redirect URI, Client or client secret, or without the redirect URI a strict Client must repeat, is refused and leaves the access token issued from it active and its refresh token usable.
+//
+//conformance:covers OAUTH21D16-7.5.3-01
+func TestCodeReplayWithInvalidParametersKeepsGrant(t *testing.T) {
+	strict := publicClient("strict", redirectURI)
+	strict.StrictRedirectURI = true
+	for name, c := range map[string]struct {
+		clientID    string
+		credentials url.Values
+		replay      func(url.Values) url.Values
+		want        string
+	}{
+		"code_verifier": {clientID, nil, func(p url.Values) url.Values { return withVerifier(p, strings.Repeat("w", 43)) }, "invalid_grant"},
+		"redirect_uri": {clientID, nil, func(p url.Values) url.Values {
+			p.Set("redirect_uri", redirectURI+"/other")
+			return p
+		}, "invalid_grant"},
+		"client": {clientID, nil, func(p url.Values) url.Values {
+			p.Set("client_id", "other")
+			return p
+		}, "invalid_grant"},
+		"strict redirect_uri": {strict.ID, nil, func(p url.Values) url.Values {
+			p.Del("redirect_uri")
+			return p
+		}, "invalid_request"},
+		"client_secret": {confidentialID, url.Values{"client_secret": {secret}}, func(p url.Values) url.Values {
+			p.Set("client_secret", "wrong")
+			return p
+		}, "invalid_client"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newAuthorizationServer(t, append(newIntrospectionClients(t), publicClient("other", redirectURI), strict)...)
+			authorize := authorizeParams()
+			authorize.Set("client_id", c.clientID)
+			params := tokenParams(a.code(authorize))
+			params.Set("client_id", c.clientID)
+			params.Set("redirect_uri", redirectURI)
+			maps.Copy(params, c.credentials)
+			access, refresh := a.tokens(params, nil)
+			status, _, body := a.token(c.replay(maps.Clone(params)), nil)
+			a.wantOAuthError(status, body, http.StatusBadRequest, c.want)
+			a.wantActive(access)
+			refreshed := refreshParams(refresh)
+			refreshed.Set("client_id", c.clientID)
+			maps.Copy(refreshed, c.credentials)
+			a.tokens(refreshed, nil)
+		})
+	}
+}
+
 // TestAccessTokenIsStoredAsHash checks that the Stores receive only the hash of an access token, also when it is validated and revoked.
 //
 //conformance:covers OAUTH21D16-1.4-02
