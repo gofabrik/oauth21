@@ -688,10 +688,17 @@ func TestSecretHasherVerifiesSecrets(t *testing.T) {
 	}
 }
 
-// failingStores fails the Client and Authorization Request Stores when set.
+// failingStores fails the Client lookups, the Resource Server lookups and the Authorization Request Store when set.
 type failingStores struct {
 	*memstore.Store
-	clients, requests bool
+	clients, resourceServers, requests bool
+}
+
+func (f *failingStores) ResourceServer(ctx context.Context, resource string) (store.Client, error) {
+	if f.resourceServers {
+		return store.Client{}, errors.New("resource server lookup down")
+	}
+	return f.Store.ResourceServer(ctx, resource)
 }
 
 func (f *failingStores) Client(ctx context.Context, id string) (store.Client, error) {
@@ -715,10 +722,12 @@ func TestErrorsBeforeHandOffAreRendered(t *testing.T) {
 		status int
 		code   string
 	}{
-		"unknown client":        {strings.Replace(authorizeQuery, "client_id=client", "client_id=other", 1), failingStores{}, http.StatusBadRequest, "invalid_request"},
-		"repeated parameter":    {authorizeQuery + "&client_id=client", failingStores{}, http.StatusBadRequest, "invalid_request"},
-		"client Store failure":  {authorizeQuery, failingStores{clients: true}, http.StatusInternalServerError, "server_error"},
-		"request Store failure": {authorizeQuery, failingStores{requests: true}, http.StatusInternalServerError, "server_error"},
+		"unknown client":                {strings.Replace(authorizeQuery, "client_id=client", "client_id=other", 1), failingStores{}, http.StatusBadRequest, "invalid_request"},
+		"repeated parameter":            {authorizeQuery + "&client_id=client", failingStores{}, http.StatusBadRequest, "invalid_request"},
+		"client Store failure":          {authorizeQuery, failingStores{clients: true}, http.StatusInternalServerError, "server_error"},
+		"unknown client with resource":  {strings.Replace(authorizeQuery, "client_id=client", "client_id=other", 1) + "&resource=https%3A%2F%2Frs.example%2Fapi", failingStores{resourceServers: true}, http.StatusBadRequest, "invalid_request"},
+		"Resource Server Store failure": {authorizeQuery + "&resource=https%3A%2F%2Frs.example%2Fapi", failingStores{resourceServers: true}, http.StatusInternalServerError, "server_error"},
+		"request Store failure":         {authorizeQuery, failingStores{requests: true}, http.StatusInternalServerError, "server_error"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -909,6 +918,56 @@ func TestFailedAuthorizationRequestDescribesItsError(t *testing.T) {
 	}
 	if req, err := srv.AuthorizationRequest(t.Context(), requestID(t, srv, authorizeQuery)); err != nil || req.Error != nil {
 		t.Fatalf("got request %+v and error %v, want a valid request", req, err)
+	}
+}
+
+// TestRequestedResourcesBoundAudience checks that the Host Application sees the requested Resource URIs and can complete only with an audience among them.
+func TestRequestedResourcesBoundAudience(t *testing.T) {
+	m := memstore.New()
+	srv := newServer(t, m, m, m)
+	for _, uri := range []string{"https://a.example/api", "https://b.example/api"} {
+		if err := m.AddClient(store.Client{ID: uri, Type: store.Confidential, Resource: uri}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	id := requestID(t, srv, authorizeQuery+"&resource=https%3A%2F%2FA.example%2Fapi")
+	if req, err := srv.AuthorizationRequest(t.Context(), id); err != nil || !slices.Equal(req.Resources, []string{"https://a.example/api"}) {
+		t.Fatalf("got request %+v and error %v, want the requested Resource URI", req, err)
+	}
+	for _, audience := range [][]string{nil, {"https://b.example/api"}, {"https://a.example/api", "https://b.example/api"}} {
+		if _, err := srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice", Scopes: readScope, Audience: audience}); !errors.Is(err, oauth21.ErrInvalidCompletion) {
+			t.Fatalf("got error %v completing with audience %q, want ErrInvalidCompletion", err, audience)
+		}
+	}
+	if _, err := srv.Complete(t.Context(), id, oauth21.Completion{Subject: "alice", Scopes: readScope, Audience: []string{"https://a.example/api"}}); err != nil {
+		t.Fatalf("got error %v completing with the requested audience", err)
+	}
+}
+
+// countingStore counts the lookups of Resource Servers.
+type countingStore struct {
+	*memstore.Store
+	lookups int
+}
+
+func (c *countingStore) ResourceServer(ctx context.Context, resource string) (store.Client, error) {
+	c.lookups++
+	return c.Store.ResourceServer(ctx, resource)
+}
+
+// TestRepeatedResourceIsLookedUpOnce checks that a Resource URI repeated in resource, also with another case of the scheme and host, is looked up once.
+func TestRepeatedResourceIsLookedUpOnce(t *testing.T) {
+	c := &countingStore{Store: memstore.New()}
+	if err := c.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope}); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, LoginURL: "/login", Clients: c, AuthorizationRequests: c.Store, Codes: c.Store, Tokens: c.Store, Scopes: readScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestID(t, srv, authorizeQuery+strings.Repeat("&resource=https%3A%2F%2Frs.example%2Fapi&resource=HTTPS%3A%2F%2FRS.example%2Fapi", 50))
+	if c.lookups != 1 {
+		t.Fatalf("got %d lookups of a repeated Resource URI, want 1", c.lookups)
 	}
 }
 

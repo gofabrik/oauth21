@@ -37,6 +37,15 @@ func encode(fields map[string]*string) string {
 	return v.Encode()
 }
 
+// encodeRepeated returns the form encoding of the parsed repeatable fields.
+func encodeRepeated(fields map[string]*[]string) string {
+	v := url.Values{}
+	for name, field := range fields {
+		v[name] = *field
+	}
+	return v.Encode()
+}
+
 // basic returns an Authorization header carrying id and secret as client_secret_basic.
 func basic(id, secret string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(id)+":"+url.QueryEscape(secret)))
@@ -49,12 +58,12 @@ func post(body string) *http.Request {
 }
 
 func TestParseAuthorizationParams(t *testing.T) {
-	query := "response_type=code&client_id=c&redirect_uri=https%3A%2F%2Fc.example%2Fcb&state=s&scope=a+b&code_challenge=x&code_challenge_method=S256"
-	want := AuthorizationParams{"code", "c", "https://c.example/cb", "s", "a b", "x", "S256"}
+	query := "response_type=code&client_id=c&redirect_uri=https%3A%2F%2Fc.example%2Fcb&state=s&scope=a+b&code_challenge=x&code_challenge_method=S256&resource=https%3A%2F%2Frs.example%2Fa&resource=&resource=https%3A%2F%2Frs.example%2Fb"
+	want := AuthorizationParams{"code", "c", "https://c.example/cb", "s", "a b", "x", "S256", []string{"https://rs.example/a", "https://rs.example/b"}}
 	for name, r := range map[string]*http.Request{"GET": get(query), "POST": post(query)} {
 		t.Run(name, func(t *testing.T) {
 			got, err := ParseAuthorizationParams(r)
-			if err != nil || got != want {
+			if err != nil || !reflect.DeepEqual(got, want) {
 				t.Fatalf("got %+v and error %v, want %+v", got, err, want)
 			}
 		})
@@ -62,7 +71,7 @@ func TestParseAuthorizationParams(t *testing.T) {
 }
 
 func TestIsAuthorizationParam(t *testing.T) {
-	for _, name := range []string{"response_type", "client_id", "redirect_uri", "state", "scope", "code_challenge", "code_challenge_method"} {
+	for _, name := range []string{"response_type", "client_id", "redirect_uri", "state", "scope", "code_challenge", "code_challenge_method", "resource"} {
 		if !IsAuthorizationParam(name) {
 			t.Errorf("got %s not a parameter, want a parameter", name)
 		}
@@ -134,6 +143,9 @@ func TestParseTreatsEmptyAsOmitted(t *testing.T) {
 		if err != nil || got.ClientID != want {
 			t.Errorf("%s: got client_id %q and error %v, want %q", query, got.ClientID, err, want)
 		}
+	}
+	if got, err := ParseAuthorizationParams(get("resource=&resource=")); err != nil || got.Resource != nil {
+		t.Errorf("got resource %q and error %v, want none", got.Resource, err)
 	}
 }
 
@@ -490,13 +502,17 @@ func FuzzParseAuthorizationParams(f *testing.F) {
 	f.Add("response_type=code&client_id=c&code_challenge=x&code_challenge_method=S256")
 	f.Add("client_id=a&client_id=b")
 	f.Add("state=%zz")
+	f.Add("resource=https%3A%2F%2Frs.example%2Fa&resource=&resource=https%3A%2F%2Frs.example%2Fa")
 	f.Fuzz(func(t *testing.T, query string) {
 		req, err := ParseAuthorizationParams(get(query))
 		if err != nil {
 			return
 		}
-		again, err := ParseAuthorizationParams(get(encode(req.fields())))
-		if err != nil || again != req {
+		if slices.Contains(req.Resource, "") {
+			t.Fatalf("got an empty resource in %q", req.Resource)
+		}
+		again, err := ParseAuthorizationParams(get(encode(req.fields()) + "&" + encodeRepeated(req.repeated())))
+		if err != nil || !reflect.DeepEqual(again, req) {
 			t.Fatalf("got %+v and error %v after a round trip, want %+v", again, err, req)
 		}
 	})

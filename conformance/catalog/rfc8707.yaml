@@ -12,19 +12,24 @@ requirements:
     section: "2"
     keyword: MUST
     text: Its value MUST be an absolute URI, as specified by Section 4.3 of [RFC3986].
-    status: applicable
+    status: out-of-scope
+    reason: client-requirement
+    note: RFC8707-2.1-04 states what the server does.
   - id: RFC8707-2-03
     section: "2"
     keyword: MUST NOT
     text: The URI MUST NOT include a fragment component.
-    status: applicable
+    status: out-of-scope
+    reason: client-requirement
+    note: RFC8707-2.1-04 states what the server does.
   - id: RFC8707-2-04
     section: "2"
     keyword: SHOULD NOT
     text: It SHOULD NOT include a query component, but it is recognized that there are cases that make a query component a useful and necessary part of the resource parameter, such as when one or more query parameters are used to scope requests to an application.
     statement: It SHOULD NOT include a query component.
-    status: applicable
-    note: A Resource URI has no query component (ADR-0019).
+    status: out-of-scope
+    reason: client-requirement
+    note: RFC8707-2.1-04 states what the server does.
   - id: RFC8707-2-05
     section: "2"
     keyword: MAY

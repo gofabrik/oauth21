@@ -21,6 +21,7 @@ const (
 	invalidClient           = "invalid_client"
 	invalidGrant            = "invalid_grant"
 	invalidScope            = "invalid_scope"
+	invalidTarget           = "invalid_target"
 	unauthorizedClient      = "unauthorized_client"
 	unsupportedGrantType    = "unsupported_grant_type"
 	unsupportedResponseType = "unsupported_response_type"
@@ -88,6 +89,7 @@ type AuthorizationParams struct {
 	Scope               string
 	CodeChallenge       string
 	CodeChallengeMethod string
+	Resource            []string
 }
 
 // AuthorizationRequest is a validated Authorization Request.
@@ -95,9 +97,11 @@ type AuthorizationRequest struct {
 	ClientID    string
 	RedirectURI string
 	// RedirectURISent is whether the request carried redirect_uri.
-	RedirectURISent     bool
-	State               string
-	Scopes              []string
+	RedirectURISent bool
+	State           string
+	Scopes          []string
+	// Resources are the requested Resource URIs, which bound the audience.
+	Resources           []string
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ExpiresAt           time.Time
@@ -105,8 +109,8 @@ type AuthorizationRequest struct {
 	Error *Error
 }
 
-// Authorize validates r for client (nil when unknown) and the supported scopes; it fails only when the Client or its redirect URI cannot be trusted, and keeps the other errors in the request.
-func Authorize(client *Client, r AuthorizationParams, supported []string, expiresAt time.Time) (AuthorizationRequest, *Error) {
+// Authorize validates r for client (nil when unknown), the supported scopes and the registered Resource URIs; it fails only when the Client or its redirect URI cannot be trusted, and keeps the other errors in the request.
+func Authorize(client *Client, r AuthorizationParams, supported, registered []string, expiresAt time.Time) (AuthorizationRequest, *Error) {
 	if client == nil {
 		return AuthorizationRequest{}, &Error{invalidRequest, "unknown client"}
 	}
@@ -123,27 +127,50 @@ func Authorize(client *Client, r AuthorizationParams, supported []string, expire
 		CodeChallengeMethod: r.CodeChallengeMethod,
 		ExpiresAt:           expiresAt,
 	}
-	a.Scopes, a.Error = validateAuthorization(client, r, supported)
+	a.Scopes, a.Resources, a.Error = validateAuthorization(client, r, supported, registered)
 	return a, nil
 }
 
-// validateAuthorization returns the scopes of r for client, or the error r fails with.
-func validateAuthorization(client *Client, r AuthorizationParams, supported []string) ([]string, *Error) {
+// validateAuthorization returns the scopes and the Resource URIs of r for client, or the error r fails with.
+func validateAuthorization(client *Client, r AuthorizationParams, supported, registered []string) (scopes, resources []string, err *Error) {
 	switch {
 	case r.ResponseType == "":
-		return nil, &Error{invalidRequest, "response_type required"}
+		return nil, nil, &Error{invalidRequest, "response_type required"}
 	case r.ResponseType != "code":
-		return nil, &Error{unsupportedResponseType, "response_type must be code"}
+		return nil, nil, &Error{unsupportedResponseType, "response_type must be code"}
 	case !client.Allows(AuthorizationCodeGrant):
-		return nil, grantTypeNotAllowed()
+		return nil, nil, grantTypeNotAllowed()
 	case r.CodeChallenge == "":
-		return nil, &Error{invalidRequest, "code challenge required"}
+		return nil, nil, &Error{invalidRequest, "code challenge required"}
 	case r.CodeChallengeMethod != methodS256:
-		return nil, &Error{invalidRequest, "transform algorithm not supported"}
+		return nil, nil, &Error{invalidRequest, "transform algorithm not supported"}
 	case !s256Challenge(r.CodeChallenge):
-		return nil, &Error{invalidRequest, "malformed code challenge"}
+		return nil, nil, &Error{invalidRequest, "malformed code challenge"}
 	}
-	return resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes)
+	if scopes, err = resolveScopes(r.Scope, supported, client.AllowedScopes, client.DefaultScopes); err != nil {
+		return nil, nil, err
+	}
+	if resources, err = resolveResources(r.Resource, registered); err != nil {
+		return nil, nil, err
+	}
+	return scopes, resources, nil
+}
+
+// resolveResources returns the distinct Resource URIs of requested, failing unless each is a Resource URI in registered.
+func resolveResources(requested, registered []string) ([]string, *Error) {
+	var resolved []string
+	for _, r := range requested {
+		uri, ok := ResourceURI(r)
+		switch {
+		case !ok:
+			return nil, &Error{invalidTarget, "resource is not a Resource URI"}
+		case !slices.Contains(registered, uri):
+			return nil, &Error{invalidTarget, "resource names no registered Resource Server"}
+		case !slices.Contains(resolved, uri):
+			resolved = append(resolved, uri)
+		}
+	}
+	return resolved, nil
 }
 
 // resolveScopes returns the distinct scopes of the space-separated requested, or the defaults when it is empty, failing unless each is supported and allowed.
@@ -414,7 +441,7 @@ type Completion struct {
 	Audience []string
 }
 
-// IssueCode binds a code for a to c, retaining it for tokenLifetime after it expires; each Resource URI in c.Audience must be in registered.
+// IssueCode binds a code for a to c, retaining it for tokenLifetime after it expires; each Resource URI in c.Audience must be in registered, and in a.Resources when the request named any.
 func IssueCode(a AuthorizationRequest, c Completion, registered []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
 	audience, ok := resourceURIs(c.Audience)
 	switch {
@@ -424,14 +451,18 @@ func IssueCode(a AuthorizationRequest, c Completion, registered []string, expire
 		return Code{}, &Error{invalidRequest, "subject required"}
 	case len(c.Scopes) == 0:
 		return Code{}, &Error{invalidRequest, "no scopes granted; deny the request instead"}
-	case slices.ContainsFunc(c.Scopes, func(s string) bool { return !slices.Contains(a.Scopes, s) }):
+	case !subset(c.Scopes, a.Scopes):
 		return Code{}, &Error{invalidRequest, "granted scope was not requested"}
 	case !ok:
 		return Code{}, &Error{invalidRequest, "audience holds a value that is not a Resource URI"}
 	case !distinct(audience):
 		return Code{}, &Error{invalidRequest, "repeated Resource URI in audience"}
-	case slices.ContainsFunc(audience, func(uri string) bool { return !slices.Contains(registered, uri) }):
+	case !subset(audience, registered):
 		return Code{}, &Error{invalidRequest, "audience names no registered Resource Server"}
+	case len(a.Resources) > 0 && len(audience) == 0:
+		return Code{}, &Error{invalidRequest, "no audience granted; deny the request instead"}
+	case len(a.Resources) > 0 && !subset(audience, a.Resources):
+		return Code{}, &Error{invalidRequest, "audience must be among the requested Resource URIs"}
 	}
 	return Code{
 		ClientID:            a.ClientID,
@@ -457,6 +488,11 @@ func resourceURIs(uris []string) ([]string, bool) {
 		}
 	}
 	return canonical, true
+}
+
+// subset reports whether every value of s is in of.
+func subset(s, of []string) bool {
+	return !slices.ContainsFunc(s, func(v string) bool { return !slices.Contains(of, v) })
 }
 
 // distinct reports whether no value occurs twice in s.
@@ -807,7 +843,7 @@ func Access(active bool, scopes, required []string) *Error {
 	switch {
 	case !active:
 		return &Error{invalidToken, "access token not active"}
-	case slices.ContainsFunc(required, func(s string) bool { return !slices.Contains(scopes, s) }):
+	case !subset(required, scopes):
 		return &Error{insufficientScope, "access token lacks a required scope"}
 	}
 	return nil

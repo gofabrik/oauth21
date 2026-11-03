@@ -401,7 +401,7 @@ func TestAuthorize(t *testing.T) {
 			r := valid
 			tt.change(&r)
 			expiresAt := time.Unix(1_000_000, 0)
-			a, err := Authorize(tt.client, r, supportedScopes, expiresAt)
+			a, err := Authorize(tt.client, r, supportedScopes, nil, expiresAt)
 			if code := errorCode(cmp.Or(err, a.Error)); code != tt.code || a.RedirectURI != tt.redirectTo || (err == nil) != (tt.redirectTo != "") {
 				t.Fatalf("got error %v, kept error %v and redirect URI %q, want %q and %q", err, a.Error, a.RedirectURI, tt.code, tt.redirectTo)
 			}
@@ -655,6 +655,56 @@ func TestIssueCodeChecksAudience(t *testing.T) {
 	}
 }
 
+func TestAuthorizeChecksResources(t *testing.T) {
+	client := &Client{ID: "client", Public: true, RedirectURIs: []string{"https://c.example/cb"}, AllowedScopes: supportedScopes, DefaultScopes: []string{"read"}}
+	registered := []string{"https://a.example/api", "https://b.example/api"}
+	for name, tt := range map[string]struct {
+		resource, want []string
+		code           string
+	}{
+		"none":             {nil, nil, ""},
+		"one":              {[]string{"https://a.example/api"}, []string{"https://a.example/api"}, ""},
+		"two":              {[]string{"https://b.example/api", "https://a.example/api"}, []string{"https://b.example/api", "https://a.example/api"}, ""},
+		"case of the host": {[]string{"HTTPS://A.Example/api"}, []string{"https://a.example/api"}, ""},
+		"repeated":         {[]string{"https://a.example/api", "https://A.example/api"}, []string{"https://a.example/api"}, ""},
+		"unknown":          {[]string{"https://a.example/api", "https://c.example/api"}, nil, "invalid_target"},
+		"relative":         {[]string{"/api"}, nil, "invalid_target"},
+		"case of the path": {[]string{"https://a.example/API"}, nil, "invalid_target"},
+		"prefix":           {[]string{"https://a.example/api/v1"}, nil, "invalid_target"},
+		"query":            {[]string{"https://a.example/api?v=1"}, nil, "invalid_target"},
+		"fragment":         {[]string{"https://a.example/api#v1"}, nil, "invalid_target"},
+	} {
+		r := AuthorizationParams{ResponseType: "code", CodeChallenge: s256(verifierGen.Example()), CodeChallengeMethod: "S256", Resource: tt.resource}
+		a, err := Authorize(client, r, supportedScopes, registered, time.Time{})
+		if err != nil || errorCode(a.Error) != tt.code || !slices.Equal(a.Resources, tt.want) {
+			t.Errorf("%s: got resources %q, kept error %v and error %v, want %q and %q", name, a.Resources, a.Error, err, tt.want, tt.code)
+		}
+		if tt.code != "" && a.Scopes != nil {
+			t.Errorf("%s: got scopes %q for a failed request, want none", name, a.Scopes)
+		}
+	}
+}
+
+func TestIssueCodeKeepsAudienceWithinResources(t *testing.T) {
+	a := AuthorizationRequest{Scopes: []string{"read"}, Resources: []string{"https://a.example/api", "https://b.example/api"}}
+	registered := []string{"https://a.example/api", "https://b.example/api", "https://c.example/api"}
+	for name, tt := range map[string]struct {
+		audience, want []string
+		ok             bool
+	}{
+		"all":              {[]string{"https://b.example/api", "https://a.example/api"}, []string{"https://b.example/api", "https://a.example/api"}, true},
+		"fewer":            {[]string{"https://b.example/api"}, []string{"https://b.example/api"}, true},
+		"case of the host": {[]string{"https://B.example/api"}, []string{"https://b.example/api"}, true},
+		"none":             {nil, nil, false},
+		"not requested":    {[]string{"https://a.example/api", "https://c.example/api"}, nil, false},
+	} {
+		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: a.Scopes, Audience: tt.audience}, registered, time.Time{}, time.Hour)
+		if (err == nil) != tt.ok || !slices.Equal(code.Audience, tt.want) {
+			t.Errorf("%s: got audience %q and error %v, want audience %q and success %v", name, code.Audience, err, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestTokenCreated(t *testing.T) {
 	if err := TokenCreated(false); err != nil {
 		t.Fatalf("got error %v for a created token", err)
@@ -725,7 +775,7 @@ func TestAuthorizeResolvesScopes(t *testing.T) {
 		"read  write ":     {"read", "write"},
 	} {
 		r := AuthorizationParams{ResponseType: "code", Scope: requested, CodeChallenge: s256(verifierGen.Example()), CodeChallengeMethod: "S256"}
-		a, err := Authorize(client, r, supportedScopes, time.Time{})
+		a, err := Authorize(client, r, supportedScopes, nil, time.Time{})
 		if err := cmp.Or(err, a.Error); err != nil || !slices.Equal(a.Scopes, want) {
 			t.Errorf("got scopes %q and error %v for scope %q, want %q", a.Scopes, err, requested, want)
 		}
@@ -757,7 +807,7 @@ func TestScopesStayWithinLimits(t *testing.T) {
 		valid := len(asked) > 0 && !slices.ContainsFunc(asked, func(s string) bool {
 			return slices.Contains(malformedScopes, s) || !slices.Contains(supported, s) || !slices.Contains(client.AllowedScopes, s)
 		})
-		a, err := Authorize(client, r, supported, time.Time{})
+		a, err := Authorize(client, r, supported, nil, time.Time{})
 		err = cmp.Or(err, a.Error)
 		if (err == nil) != valid || err != nil && err.Code != "invalid_scope" {
 			t.Fatalf("got scopes %q and error %v, want valid %v", a.Scopes, err, valid)
@@ -828,6 +878,27 @@ func FuzzResolveScopes(f *testing.F) {
 		for _, s := range scopes {
 			if !slices.Contains(allowed, s) || !wellFormed(s) {
 				t.Fatalf("got scope %q for %q", s, requested)
+			}
+		}
+	})
+}
+
+func FuzzResolveResources(f *testing.F) {
+	f.Add("https://a.example/api", "HTTPS://A.example/api")
+	f.Add("https://a.example/api#x", "/api")
+	f.Add("https://a.example/api?v=1", "https://b.example/api")
+	f.Fuzz(func(t *testing.T, first, second string) {
+		registered := []string{"https://a.example/api", "https://b.example/api"}
+		resources, err := resolveResources([]string{first, second}, registered)
+		if err != nil && err.Code != "invalid_target" || err == nil && len(resources) == 0 {
+			t.Fatalf("got resources %q and error %v", resources, err)
+		}
+		if !distinct(resources) {
+			t.Fatalf("got repeated resources %q", resources)
+		}
+		for _, r := range resources {
+			if !slices.Contains(registered, r) {
+				t.Fatalf("got resource %q for %q and %q", r, first, second)
 			}
 		}
 	})

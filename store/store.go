@@ -66,9 +66,11 @@ type AuthorizationRequest struct {
 	ClientID    string
 	RedirectURI string
 	// RedirectURISent is whether the request carried redirect_uri.
-	RedirectURISent     bool
-	State               string
-	Scopes              []string
+	RedirectURISent bool
+	State           string
+	Scopes          []string
+	// Resources are the requested Resource URIs.
+	Resources           []string
 	CodeChallenge       string
 	CodeChallengeMethod string
 	// ExpiresAt must be stored; a zero value counts as expired.

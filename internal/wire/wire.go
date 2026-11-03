@@ -74,6 +74,8 @@ type AuthorizationParams struct {
 	Scope               string
 	CodeChallenge       string
 	CodeChallengeMethod string
+	// Resource holds the values of the repeatable resource parameter.
+	Resource []string
 }
 
 // ParseAuthorizationParams reads an authorization request from a GET query or a POST form body.
@@ -95,14 +97,19 @@ func ParseAuthorizationParams(r *http.Request) (AuthorizationParams, *Error) {
 		return AuthorizationParams{}, &Error{invalidRequest, "method not allowed"}
 	}
 	var req AuthorizationParams
-	err := assignOnce(params, req.fields())
-	return req, err
+	if err := assignOnce(params, req.fields()); err != nil {
+		return AuthorizationParams{}, err
+	}
+	assignAll(params, req.repeated())
+	return req, nil
 }
 
 // IsAuthorizationParam reports whether name is a parameter of an authorization request.
 func IsAuthorizationParam(name string) bool {
-	_, ok := new(AuthorizationParams).fields()[name]
-	return ok
+	p := new(AuthorizationParams)
+	_, once := p.fields()[name]
+	_, repeated := p.repeated()[name]
+	return once || repeated
 }
 
 func (p *AuthorizationParams) fields() map[string]*string {
@@ -115,6 +122,10 @@ func (p *AuthorizationParams) fields() map[string]*string {
 		"code_challenge":        &p.CodeChallenge,
 		"code_challenge_method": &p.CodeChallengeMethod,
 	}
+}
+
+func (p *AuthorizationParams) repeated() map[string]*[]string {
+	return map[string]*[]string{"resource": &p.Resource}
 }
 
 // TokenRequest is the parameters of a token request.
@@ -251,6 +262,17 @@ func assignOnce(params url.Values, fields map[string]*string) *Error {
 		}
 	}
 	return nil
+}
+
+// assignAll sets each field to the non-empty values of its parameter.
+func assignAll(params url.Values, fields map[string]*[]string) {
+	for name, field := range fields {
+		for _, v := range params[name] {
+			if v != "" {
+				*field = append(*field, v)
+			}
+		}
+	}
 }
 
 // TokenResponse is a successful token response.

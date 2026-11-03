@@ -254,6 +254,7 @@ func cloneClient(c store.Client) store.Client {
 
 func cloneRequest(r store.AuthorizationRequest) store.AuthorizationRequest {
 	r.Scopes = slices.Clone(r.Scopes)
+	r.Resources = slices.Clone(r.Resources)
 	return r
 }
 

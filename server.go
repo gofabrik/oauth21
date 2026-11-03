@@ -231,6 +231,8 @@ type AuthorizationRequest struct {
 	ID     string
 	Client store.Client
 	Scopes []string
+	// Resources are the requested Resource URIs, which bound Completion.Audience when there are any.
+	Resources []string
 	// Lifetime is how long the Client can use the Grant once completed.
 	Lifetime time.Duration
 	// Error is the error the request failed with, which Deny sends to the Client; nil for a valid request.
@@ -242,7 +244,7 @@ type Completion struct {
 	// Subject identifies the Resource Owner.
 	Subject string
 	Scopes  []string
-	// Audience are the Resource URIs of the Resource Servers the Resource Owner consented to; none leaves the Grant unrestricted.
+	// Audience are the Resource URIs of the Resource Servers the Resource Owner consented to, among the requested ones when there are any; none leaves the Grant unrestricted when no resources were requested.
 	Audience []string
 }
 
@@ -257,7 +259,7 @@ func (s *Server) AuthorizationRequest(ctx context.Context, id string) (Authoriza
 		return AuthorizationRequest{}, err
 	}
 	lifetime := protocol.GrantLifetime(protocolClient(client), s.config.AccessTokenLifetime, s.config.RefreshTokenLifetime)
-	req := AuthorizationRequest{ID: r.ID, Client: client, Scopes: r.Scopes, Lifetime: lifetime}
+	req := AuthorizationRequest{ID: r.ID, Client: client, Scopes: r.Scopes, Resources: r.Resources, Lifetime: lifetime}
 	if r.Error != "" {
 		e := authorizationError(&wire.Error{Code: r.Error, Description: r.ErrorDescription})
 		req.Error = &e
@@ -368,7 +370,13 @@ func (s *Server) authorizationRedirect(r *http.Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	a, perr := protocol.Authorize(client, protocol.AuthorizationParams(params), s.config.Scopes, s.config.Clock().Add(s.config.AuthorizationRequestLifetime))
+	var registered []string
+	if client != nil {
+		if registered, err = s.registered(r.Context(), params.Resource); err != nil {
+			return "", err
+		}
+	}
+	a, perr := protocol.Authorize(client, protocol.AuthorizationParams(params), s.config.Scopes, registered, s.config.Clock().Add(s.config.AuthorizationRequestLifetime))
 	if perr != nil {
 		return "", oauthError(perr)
 	}
@@ -880,14 +888,15 @@ func (s *Server) typedClient(ctx context.Context, id string) (store.Client, erro
 	return c, err
 }
 
-// registered returns the Resource URIs in audience, with a lowercase scheme and host, that belong to a registered Resource Server.
-func (s *Server) registered(ctx context.Context, audience []string) ([]string, error) {
-	var registered []string
-	for _, a := range audience {
-		uri, ok := protocol.ResourceURI(a)
-		if !ok {
+// registered returns the distinct Resource URIs in uris, with a lowercase scheme and host, that belong to a registered Resource Server, looking each up once.
+func (s *Server) registered(ctx context.Context, uris []string) ([]string, error) {
+	var registered, seen []string
+	for _, u := range uris {
+		uri, ok := protocol.ResourceURI(u)
+		if !ok || slices.Contains(seen, uri) {
 			continue
 		}
+		seen = append(seen, uri)
 		c, err := s.config.Clients.ResourceServer(ctx, uri)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -998,6 +1007,7 @@ func protocolRequest(r store.AuthorizationRequest) protocol.AuthorizationRequest
 		RedirectURISent:     r.RedirectURISent,
 		State:               r.State,
 		Scopes:              r.Scopes,
+		Resources:           r.Resources,
 		CodeChallenge:       r.CodeChallenge,
 		CodeChallengeMethod: r.CodeChallengeMethod,
 		ExpiresAt:           r.ExpiresAt,
@@ -1016,6 +1026,7 @@ func storeRequest(id string, a protocol.AuthorizationRequest) store.Authorizatio
 		RedirectURISent:     a.RedirectURISent,
 		State:               a.State,
 		Scopes:              a.Scopes,
+		Resources:           a.Resources,
 		CodeChallenge:       a.CodeChallenge,
 		CodeChallengeMethod: a.CodeChallengeMethod,
 		ExpiresAt:           a.ExpiresAt,

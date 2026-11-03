@@ -84,12 +84,14 @@ func TestAccessTokenIsRestrictedToConsentedResourceServers(t *testing.T) {
 	}
 }
 
-// TestClientCannotWidenConsentedAudience checks that audience parameters in the authorization and token requests do not change the consented audience.
+// TestClientCannotWidenConsentedAudience checks that audience parameters in the authorization and token requests do not widen the consented audience.
 //
 //conformance:covers RFC9700-4.10-02
 func TestClientCannotWidenConsentedAudience(t *testing.T) {
 	a := newIntrospectionServer(t)
-	code := a.consentedCode(withAudienceParams(authorizeParams()), resourceServerURI)
+	params := withAudienceParams(authorizeParams())
+	params.Add("resource", resourceServerURI)
+	code := a.consentedCode(params, resourceServerURI)
 	access, _ := a.tokens(withAudienceParams(tokenParams(code)), nil)
 	a.wantAudience(access, resourceServerURI)
 }
@@ -179,4 +181,28 @@ func TestIntrospectionRestrictsAccessTokenToResourceServer(t *testing.T) {
 		t.Fatalf("got status %d and body %v, want an active token with audience %q", status, body, otherResourceServerURI)
 	}
 	a.wantAccess(access, http.StatusUnauthorized)
+}
+
+// TestUnacceptableResourceFailsWithInvalidTarget checks that a resource that is not an absolute URI without a fragment or a query, or names no registered Resource Server, fails with invalid_target.
+//
+//conformance:covers RFC8707-2.1-04
+func TestUnacceptableResourceFailsWithInvalidTarget(t *testing.T) {
+	a := newIntrospectionServer(t)
+	for resource, description := range map[string]string{
+		"/api":                        "not a Resource URI",
+		"//rs.example/api":            "not a Resource URI",
+		"rs.example/api":              "not a Resource URI",
+		resourceServerURI + "#":       "not a Resource URI",
+		resourceServerURI + "#v1":     "not a Resource URI",
+		resourceServerURI + "?":       "not a Resource URI",
+		resourceServerURI + "?v=1":    "not a Resource URI",
+		"https://rs.example/a b":      "not a Resource URI",
+		"https://rs.example/%zz":      "not a Resource URI",
+		"https://unknown.example/api": "names no registered Resource Server",
+		resourceServerURI + "/v1":     "names no registered Resource Server",
+	} {
+		params := authorizeParams()
+		params.Set("resource", resource)
+		a.wantAuthorizationError(a.errorRedirect(params), "invalid_target", description)
+	}
 }

@@ -443,13 +443,13 @@ func advance(t *testing.T, s Store, d time.Duration) {
 
 func testEntitiesAreCopied(t *testing.T, s Store) {
 	ctx := t.Context()
-	r := store.AuthorizationRequest{ID: "request", Scopes: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute)}
+	r := store.AuthorizationRequest{ID: "request", Scopes: []string{"read"}, Resources: []string{"https://rs.example/api"}, ExpiresAt: time.Now().Add(time.Minute)}
 	if err := s.CreateAuthorizationRequest(ctx, r); err != nil {
 		t.Fatal(err)
 	}
-	r.Scopes[0] = "admin"
-	if got, err := s.AuthorizationRequest(ctx, r.ID); err != nil || got.Scopes[0] != "read" {
-		t.Fatalf("AuthorizationRequest returned %+v and error %v after the created request changed, want scope read", got, err)
+	r.Scopes[0], r.Resources[0] = "admin", "https://other.example/api"
+	if got, err := s.AuthorizationRequest(ctx, r.ID); err != nil || got.Scopes[0] != "read" || got.Resources[0] != "https://rs.example/api" {
+		t.Fatalf("AuthorizationRequest returned %+v and error %v after the created request changed, want the stored one", got, err)
 	}
 
 	c := newCode("code", time.Now().Add(time.Minute))
@@ -507,6 +507,7 @@ func testAuthorizationRequestIsStored(t *testing.T, s Store) {
 		RedirectURISent:     true,
 		State:               "state",
 		Scopes:              []string{"read"},
+		Resources:           []string{"https://rs.example/api", "https://other.example/api"},
 		CodeChallenge:       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
 		CodeChallengeMethod: "S256",
 		ExpiresAt:           time.Now().Add(time.Minute),

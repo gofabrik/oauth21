@@ -3,11 +3,6 @@
 RFC7662-2.1-08
 # 80: decide the status of RFC 9700's upgrade recommendation
 RFC9700-1-01
-# 04: resource at the authorization endpoint
-RFC8707-2-02
-RFC8707-2-03
-RFC8707-2-04
-RFC8707-2.1-04
 # 05: resource in code redemption and refresh
 RFC8707-2-09
 # 07: Scopes per Resource Server
