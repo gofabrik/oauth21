@@ -1639,10 +1639,7 @@ requirements:
     section: 7.1.3.6
     keyword: SHOULD
     text: Authorization servers SHOULD issue bearer tokens that contain an audience restriction, scoping their use to the intended resource server or set of resource servers.
-    status: out-of-scope
-    reason: excluded
-    feature: resource-indicators
-    note: Audience restriction comes with Resource Indicators.
+    status: applicable
   - id: OAUTH21D16-7.1.3.7-01
     section: 7.1.3.7
     keyword: MUST NOT
@@ -1664,10 +1661,7 @@ requirements:
     section: 7.1.4
     keyword: SHOULD
     text: In particular, access tokens SHOULD be restricted to certain resource servers (audience restriction), preferably to a single resource server.
-    status: out-of-scope
-    reason: excluded
-    feature: resource-indicators
-    note: Audience restriction comes with Resource Indicators.
+    status: applicable
   - id: OAUTH21D16-7.1.4-03
     section: 7.1.4
     keyword: MUST
@@ -1769,10 +1763,7 @@ requirements:
     section: 7.3.2
     keyword: SHOULD
     text: In particular, access tokens SHOULD be restricted to certain resource servers (audience restriction), preferably to a single resource server.
-    status: out-of-scope
-    reason: excluded
-    feature: resource-indicators
-    note: Audience restriction comes with Resource Indicators.
+    status: applicable
   - id: OAUTH21D16-7.3.2-06
     section: 7.3.2
     keyword: MUST

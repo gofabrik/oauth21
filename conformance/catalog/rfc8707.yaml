@@ -1,0 +1,86 @@
+document: RFC8707
+title: Resource Indicators for OAuth 2.0
+source: ../specs/rfc8707.txt
+requirements:
+  - id: RFC8707-2-01
+    section: "2"
+    keyword: MAY
+    text: In requests to the authorization server, a client MAY indicate the protected resource (a.k.a. resource server, application, API, etc.)
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8707-2-02
+    section: "2"
+    keyword: MUST
+    text: Its value MUST be an absolute URI, as specified by Section 4.3 of [RFC3986].
+    status: applicable
+  - id: RFC8707-2-03
+    section: "2"
+    keyword: MUST NOT
+    text: The URI MUST NOT include a fragment component.
+    status: applicable
+  - id: RFC8707-2-04
+    section: "2"
+    keyword: SHOULD NOT
+    text: It SHOULD NOT include a query component, but it is recognized that there are cases that make a query component a useful and necessary part of the resource parameter, such as when one or more query parameters are used to scope requests to an application.
+    statement: It SHOULD NOT include a query component.
+    status: applicable
+    note: A Resource URI has no query component (ADR-0019).
+  - id: RFC8707-2-05
+    section: "2"
+    keyword: MAY
+    text: The "resource" parameter URI value is an identifier representing the identity of the resource, which MAY be a locator that corresponds to a network-addressable location where the target resource is hosted.
+    status: informative
+  - id: RFC8707-2-06
+    section: "2"
+    keyword: MAY
+    text: Multiple "resource" parameters MAY be used to indicate that the requested token is intended to be used at multiple resources.
+    status: applicable
+  - id: RFC8707-2-07
+    section: "2"
+    keyword: SHOULD
+    text: The client SHOULD provide the most specific URI that it can for the complete API or set of resources it intends to access.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8707-2-08
+    section: "2"
+    keyword: SHOULD
+    text: The client SHOULD use the base URI of the API as the "resource" parameter value unless specific knowledge of the resource dictates otherwise.
+    status: out-of-scope
+    reason: client-requirement
+  - id: RFC8707-2-09
+    section: "2"
+    keyword: SHOULD
+    text: The authorization server SHOULD audience-restrict issued access tokens to the resource(s) indicated by the "resource" parameter.
+    status: applicable
+  - id: RFC8707-2.1-01
+    section: "2.1"
+    keyword: MAY
+    text: If the client omits the "resource" parameter when requesting authorization, the authorization server MAY process the request with no specific resource or by using a predefined default resource value.
+    status: applicable
+    note: The Host Application sets the audience, and an empty one leaves the Grant unrestricted (ADR-0019).
+  - id: RFC8707-2.1-02
+    section: "2.1"
+    keyword: MAY
+    text: Alternatively, the authorization server MAY require clients to specify the resource(s) they intend to access and MAY fail requests that omit the parameter with an "invalid_target" error.
+    statement: Alternatively, the authorization server MAY require clients to specify the resource(s) they intend to access.
+    status: applicable
+    note: The library does not require resource (ADR-0019).
+  - id: RFC8707-2.1-03
+    section: "2.1"
+    keyword: MAY
+    text: Alternatively, the authorization server MAY require clients to specify the resource(s) they intend to access and MAY fail requests that omit the parameter with an "invalid_target" error.
+    statement: The authorization server MAY fail requests that omit the parameter with an "invalid_target" error.
+    status: applicable
+    note: The library does not require resource (ADR-0019).
+  - id: RFC8707-2.1-04
+    section: "2.1"
+    keyword: SHOULD
+    text: If the authorization server fails to parse the provided value(s) or does not consider the resource(s) acceptable, it should reject the request with an error response using the error code "invalid_target" as the value of the "error" parameter and can provide additional information regarding the reasons for the error using the "error_description".
+    status: applicable
+    note: The keyword is lowercase in the text.
+  - id: RFC8707-2.2-01
+    section: "2.2"
+    keyword: SHOULD
+    text: To the extent possible, when issuing access tokens, the authorization server should downscope the scope value associated with an access token to the value the respective resource is able to process and needs to know.
+    status: applicable
+    note: The keyword is lowercase in the text. Scopes are global (ADR-0019).

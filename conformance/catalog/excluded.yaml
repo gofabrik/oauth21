@@ -1,6 +1,5 @@
 # Features spec.md's Out of Scope section excludes, except the superseded ones catalogued as superseded.
 features:
-  - resource-indicators
   - protected-resource-metadata
   - client-id-metadata-documents
   - mcp-interop

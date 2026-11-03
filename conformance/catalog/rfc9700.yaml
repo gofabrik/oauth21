@@ -196,9 +196,7 @@ requirements:
     keyword: MAY
     text: Clients and authorization servers MAY utilize the parameters scope or resource as specified in [RFC6749] and [RFC8707], respectively, to determine the resource server they want to access.
     statement: Authorization servers MAY utilize the parameter resource to determine the resource server they want to access.
-    status: out-of-scope
-    reason: excluded
-    feature: resource-indicators
+    status: applicable
   - id: RFC9700-2.3-08
     section: "2.3"
     keyword: MAY
