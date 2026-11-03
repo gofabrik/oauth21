@@ -47,16 +47,17 @@ const (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9000", "address to listen on")
 	certOut := flag.String("cert-out", "demo-ca.pem", "file to write the self-signed certificate to")
+	resource := flag.String("resource", "http://127.0.0.1:9002", "Resource URI of the demo Resource Server")
 	oauchRedirectURI := flag.String("oauch-redirect-uri", "", "redirect URI of the confidential Clients oauch and oauch-alternative to register for the OAuch harness")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *addr, *certOut, *oauchRedirectURI); err != nil {
+	if err := run(ctx, *addr, *certOut, *resource, *oauchRedirectURI); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(ctx context.Context, addr, certOut, oauchRedirectURI string) error {
+func run(ctx context.Context, addr, certOut, resource, oauchRedirectURI string) error {
 	cert, err := selfSigned()
 	if err != nil {
 		return err
@@ -67,7 +68,7 @@ func run(ctx context.Context, addr, certOut, oauchRedirectURI string) error {
 	}
 	clients := []store.Client{
 		{ID: clientID, Type: store.Public, RedirectURIs: redirectURIs, AllowedScopes: []string{scope}, DefaultScopes: []string{scope}},
-		{ID: resourceServerID, Type: store.Confidential, SecretHash: hash, Introspect: true},
+		{ID: resourceServerID, Type: store.Confidential, SecretHash: hash, Introspect: true, Resource: resource},
 	}
 	if oauchRedirectURI != "" {
 		oauchHash, err := oauth21.PBKDF2{}.Hash(oauchSecret)
@@ -88,7 +89,7 @@ func run(ctx context.Context, addr, certOut, oauchRedirectURI string) error {
 		return err
 	}
 	issuer := loopbackURL("https", ln.Addr())
-	as, err := newAuthorizationServer(issuer, []string{scope}, clients...)
+	as, err := newAuthorizationServer(issuer, []string{scope}, resource, clients...)
 	if err != nil {
 		return errors.Join(err, ln.Close())
 	}

@@ -50,7 +50,9 @@ func TestClientGetsOnlyAllowedScopes(t *testing.T) {
 	params.Set("scope", "read write")
 	_, refresh := a.tokens(tokenParams(a.code(params)), nil)
 	readOnly := publicClient(clientID, redirectURI)
-	a.recorder.AddClient(readOnly)
+	if err := a.recorder.AddClient(readOnly); err != nil {
+		t.Fatal(err)
+	}
 	access, _ := a.tokens(refreshParams(refresh), nil)
 	a.wantScope(access, "read")
 }
@@ -124,7 +126,9 @@ func TestTokenIsRestrictedToActions(t *testing.T) {
 //conformance:covers RFC9700-2.3-06
 func TestClientCredentialsTokenIsRestrictedToActions(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
-		a.recorder.AddClient(serviceClient(t))
+		if err := a.recorder.AddClient(serviceClient(t)); err != nil {
+			t.Fatal(err)
+		}
 		a.actions(v)
 		access, _ := a.tokens(clientCredentialsParams("write"), basic(serviceID, secret))
 		a.wantRoute(access, "/write", http.StatusOK)

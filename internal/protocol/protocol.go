@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -66,6 +67,8 @@ type Client struct {
 	Introspect bool
 	// StrictRedirectURI makes the Client repeat in the token request the redirect_uri its authorization request sent.
 	StrictRedirectURI bool
+	// Resource is the Resource URI of a Resource Server.
+	Resource string
 }
 
 // Allows reports whether c may use grantType.
@@ -222,6 +225,47 @@ func validRedirectURI(uri string) bool {
 	return reverseDomainName(u.Scheme)
 }
 
+// ResourceURI returns uri with a lowercase scheme and host, and whether it is a Resource URI: an absolute URI without a fragment or a query, with a host when its scheme is http or https.
+func ResourceURI(uri string) (string, bool) {
+	if m := withAuthority.FindStringSubmatch(uri); m != nil {
+		scheme, userinfo, host, port, path := strings.ToLower(m[1]), m[2], m[3], m[4], m[5]
+		if strings.HasPrefix(host, "[") && !ipAddress(host[1:len(host)-1]) || host == "" && httpScheme(scheme) {
+			return "", false
+		}
+		return scheme + "://" + userinfo + strings.ToLower(host+port) + path, true
+	}
+	if m := withoutAuthority.FindStringSubmatch(uri); m != nil && !strings.HasPrefix(m[2], "//") && !httpScheme(strings.ToLower(m[1])) {
+		return strings.ToLower(m[1]) + ":" + m[2], true
+	}
+	return "", false
+}
+
+// httpScheme reports whether the lowercase scheme is http or https, whose URIs must have a host (RFC 9110, Section 4.2).
+func httpScheme(scheme string) bool {
+	return scheme == "http" || scheme == "https"
+}
+
+// Characters and escapes of the RFC 3986 grammar (Appendix A): unreserved and sub-delims, and pct-encoded.
+const (
+	unreservedOrSubDelims = `A-Za-z0-9\-._~!$&'()*+,;=`
+	pctEncoded            = `%[0-9A-Fa-f]{2}`
+)
+
+// withAuthority matches an absolute URI with an authority and without a query or fragment, capturing its scheme, userinfo with "@", host, port with ":" and path.
+var withAuthority = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*)://((?:[` + unreservedOrSubDelims + `:]|` + pctEncoded + `)*@)?(\[[^\]]*\]|(?:[` + unreservedOrSubDelims + `]|` + pctEncoded + `)*)(:[0-9]*)?((?:/(?:[` + unreservedOrSubDelims + `:@]|` + pctEncoded + `)*)*)$`)
+
+// withoutAuthority matches an absolute URI without an authority, a query or a fragment, capturing its scheme and path.
+var withoutAuthority = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*):((?:[` + unreservedOrSubDelims + `:@/]|` + pctEncoded + `)*)$`)
+
+// ipFuture matches an IPvFuture address (RFC 3986, Section 3.2.2).
+var ipFuture = regexp.MustCompile(`^[Vv][0-9A-Fa-f]+\.[` + unreservedOrSubDelims + `:]+$`)
+
+// ipAddress reports whether s, the inside of an IP-literal, is an IPv6 address without a zone or an IPvFuture address.
+func ipAddress(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Is6() && a.Zone() == "" || ipFuture.MatchString(s)
+}
+
 // notURIChar reports whether c may not appear in a URI (RFC 3986, Appendix A).
 func notURIChar(c rune) bool {
 	return c <= ' ' || c > '~' || strings.ContainsRune("\"<>\\^`{|}", c)
@@ -366,12 +410,13 @@ type Completion struct {
 	Subject string
 	// Scopes are the granted scopes, a subset of the requested ones.
 	Scopes []string
-	// Audience are the Resource Servers the Resource Owner consented to, by Client identifier.
+	// Audience are the Resource URIs of the Resource Servers the Resource Owner consented to.
 	Audience []string
 }
 
-// IssueCode binds a code for a to c, retaining it for tokenLifetime after it expires; each Resource Server in c.Audience must be in registered.
+// IssueCode binds a code for a to c, retaining it for tokenLifetime after it expires; each Resource URI in c.Audience must be in registered.
 func IssueCode(a AuthorizationRequest, c Completion, registered []string, expiresAt time.Time, tokenLifetime time.Duration) (Code, *Error) {
+	audience, ok := resourceURIs(c.Audience)
 	switch {
 	case a.Error != nil:
 		return Code{}, &Error{invalidRequest, "the request failed; deny it instead"}
@@ -381,16 +426,18 @@ func IssueCode(a AuthorizationRequest, c Completion, registered []string, expire
 		return Code{}, &Error{invalidRequest, "no scopes granted; deny the request instead"}
 	case slices.ContainsFunc(c.Scopes, func(s string) bool { return !slices.Contains(a.Scopes, s) }):
 		return Code{}, &Error{invalidRequest, "granted scope was not requested"}
-	case !distinct(c.Audience):
-		return Code{}, &Error{invalidRequest, "repeated Resource Server in audience"}
-	case slices.ContainsFunc(c.Audience, func(id string) bool { return !slices.Contains(registered, id) }):
-		return Code{}, &Error{invalidRequest, "audience names an unknown Resource Server"}
+	case !ok:
+		return Code{}, &Error{invalidRequest, "audience holds a value that is not a Resource URI"}
+	case !distinct(audience):
+		return Code{}, &Error{invalidRequest, "repeated Resource URI in audience"}
+	case slices.ContainsFunc(audience, func(uri string) bool { return !slices.Contains(registered, uri) }):
+		return Code{}, &Error{invalidRequest, "audience names no registered Resource Server"}
 	}
 	return Code{
 		ClientID:            a.ClientID,
 		Subject:             c.Subject,
 		Scopes:              slices.DeleteFunc(slices.Clone(a.Scopes), func(s string) bool { return !slices.Contains(c.Scopes, s) }),
-		Audience:            slices.Clone(c.Audience),
+		Audience:            audience,
 		RedirectURI:         a.RedirectURI,
 		RedirectURISent:     a.RedirectURISent,
 		CodeChallenge:       a.CodeChallenge,
@@ -398,6 +445,18 @@ func IssueCode(a AuthorizationRequest, c Completion, registered []string, expire
 		ExpiresAt:           expiresAt,
 		RetainUntil:         expiresAt.Add(tokenLifetime),
 	}, nil
+}
+
+// resourceURIs returns uris with a lowercase scheme and host, and whether each is a Resource URI.
+func resourceURIs(uris []string) ([]string, bool) {
+	canonical := slices.Clone(uris)
+	for i, uri := range uris {
+		var ok bool
+		if canonical[i], ok = ResourceURI(uri); !ok {
+			return nil, false
+		}
+	}
+	return canonical, true
 }
 
 // distinct reports whether no value occurs twice in s.
@@ -731,12 +790,13 @@ func ValidateIntrospectionRequest(client *Client, token string, c Credentials, v
 	return nil
 }
 
-// Introspect returns token (nil when unknown) when it is active at now for the Client clientID, and nil otherwise; a token with an audience is active only for a Client in it.
-func Introspect(token *Token, clientID string, now time.Time) *Token {
+// Introspect returns token (nil when unknown) when it is active at now for the Resource Server with Resource URI resource, and nil otherwise; a token with an audience is active only for a Resource Server in it.
+func Introspect(token *Token, resource string, now time.Time) *Token {
+	resource, ok := ResourceURI(resource)
 	switch {
 	case token == nil, now.Before(token.NotBefore), !now.Before(token.ExpiresAt):
 		return nil
-	case len(token.Audience) > 0 && !slices.Contains(token.Audience, clientID):
+	case len(token.Audience) > 0 && (!ok || !slices.Contains(token.Audience, resource)):
 		return nil
 	}
 	return token

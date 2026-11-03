@@ -57,7 +57,7 @@ func run(t *testing.T, bin, ca string) (string, bool) {
 	t.Helper()
 	_ = os.Remove(ca)
 	asAddr, clientAddr, rsAddr := freeAddr(t), freeAddr(t), freeAddr(t)
-	server := launch(t, filepath.Join(bin, "server"), "-addr", asAddr, "-cert-out", ca)
+	server := launch(t, filepath.Join(bin, "server"), "-addr", asAddr, "-cert-out", ca, "-resource", "http://"+rsAddr)
 	if !waitFor(func() bool { return exists(ca) }, server) {
 		_ = server.stop()
 		return "", false

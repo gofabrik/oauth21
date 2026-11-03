@@ -242,7 +242,7 @@ type Completion struct {
 	// Subject identifies the Resource Owner.
 	Subject string
 	Scopes  []string
-	// Audience are the Resource Servers the Resource Owner consented to, by Client identifier; none leaves the Grant unrestricted.
+	// Audience are the Resource URIs of the Resource Servers the Resource Owner consented to; none leaves the Grant unrestricted.
 	Audience []string
 }
 
@@ -601,7 +601,7 @@ func (s *Server) introspection(r *http.Request) (wire.IntrospectionResponse, err
 	if err != nil {
 		return wire.IntrospectionResponse{}, err
 	}
-	active := protocol.Introspect(access, client.ID, s.config.Clock())
+	active := protocol.Introspect(access, client.Resource, s.config.Clock())
 	if active == nil {
 		return wire.IntrospectionResponse{}, nil
 	}
@@ -880,16 +880,21 @@ func (s *Server) typedClient(ctx context.Context, id string) (store.Client, erro
 	return c, err
 }
 
-// registered returns the Client identifiers in ids that name a registered Client.
-func (s *Server) registered(ctx context.Context, ids []string) ([]string, error) {
+// registered returns the Resource URIs in audience, with a lowercase scheme and host, that belong to a registered Resource Server.
+func (s *Server) registered(ctx context.Context, audience []string) ([]string, error) {
 	var registered []string
-	for _, id := range ids {
-		c, err := s.client(ctx, id)
-		if err != nil {
-			return nil, err
+	for _, a := range audience {
+		uri, ok := protocol.ResourceURI(a)
+		if !ok {
+			continue
 		}
-		if c != nil {
-			registered = append(registered, id)
+		c, err := s.config.Clients.ResourceServer(ctx, uri)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+		case err != nil:
+			return nil, err
+		case c.Type.Known():
+			registered = append(registered, uri)
 		}
 	}
 	return registered, nil
@@ -982,6 +987,7 @@ func protocolClient(c store.Client) protocol.Client {
 		GrantTypes:        c.GrantTypes,
 		Introspect:        c.Introspect,
 		StrictRedirectURI: c.StrictRedirectURI,
+		Resource:          c.Resource,
 	}
 }
 

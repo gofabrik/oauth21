@@ -107,15 +107,18 @@ func TestCompletionCannotGrantUnrequestedScope(t *testing.T) {
 // TestRejectedCompletionKeepsRequest checks that a rejected Completion leaves the request pending.
 func TestRejectedCompletionKeepsRequest(t *testing.T) {
 	for name, c := range map[string]oauth21.Completion{
-		"no subject":        {Scopes: []string{"read"}},
-		"no scopes":         {Subject: "alice"},
-		"unrequested scope": {Subject: "alice", Scopes: []string{"read", "write"}},
-		"repeated audience": {Subject: "alice", Scopes: []string{"read"}, Audience: []string{clientID, clientID}},
-		"unknown audience":  {Subject: "alice", Scopes: []string{"read"}, Audience: []string{"unknown"}},
-		"empty audience":    {Subject: "alice", Scopes: []string{"read"}, Audience: []string{""}},
+		"no subject":                 {Scopes: []string{"read"}},
+		"no scopes":                  {Subject: "alice"},
+		"unrequested scope":          {Subject: "alice", Scopes: []string{"read", "write"}},
+		"repeated audience":          {Subject: "alice", Scopes: []string{"read"}, Audience: []string{resourceServerURI, resourceServerURI}},
+		"audience repeated in case":  {Subject: "alice", Scopes: []string{"read"}, Audience: []string{resourceServerURI, "HTTPS://RS.example/api"}},
+		"unknown audience":           {Subject: "alice", Scopes: []string{"read"}, Audience: []string{"https://unknown.example/api"}},
+		"Client identifier audience": {Subject: "alice", Scopes: []string{"read"}, Audience: []string{resourceServerID}},
+		"audience with a query":      {Subject: "alice", Scopes: []string{"read"}, Audience: []string{resourceServerURI + "?v=1"}},
+		"empty audience":             {Subject: "alice", Scopes: []string{"read"}, Audience: []string{""}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			a := newAuthorizationServer(t)
+			a := newIntrospectionServer(t)
 			params := authorizeParams()
 			params.Set("scope", "read")
 			req := a.pending(a.authorize(params))

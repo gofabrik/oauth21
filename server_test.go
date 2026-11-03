@@ -46,7 +46,9 @@ func sum(v string) []byte {
 
 func newServer(t testing.TB, m *memstore.Store, codes store.Codes, tokens store.Tokens) *oauth21.Server {
 	t.Helper()
-	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+	if err := m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope}); err != nil {
+		t.Fatal(err)
+	}
 	srv, err := oauth21.New(oauth21.Config{
 		Issuer:                issuer,
 		LoginURL:              "/login",
@@ -176,7 +178,9 @@ func TestCodeReplayRevokesGrant(t *testing.T) {
 func TestCodeReplayRevokesTokenWithoutRefreshToken(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, GrantTypes: []string{"authorization_code"}})
+	if err := m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, GrantTypes: []string{"authorization_code"}}); err != nil {
+		t.Fatal(err)
+	}
 	code := issueCode(t, srv)
 
 	w := do(srv.TokenHandler(), tokenRequest(tokenBody(code)))
@@ -199,7 +203,9 @@ func TestClientCredentialsCreatesGrantPerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.AddClient(store.Client{ID: "service", Type: store.Confidential, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash, GrantTypes: []string{"client_credentials"}})
+	if err := m.AddClient(store.Client{ID: "service", Type: store.Confidential, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash, GrantTypes: []string{"client_credentials"}}); err != nil {
+		t.Fatal(err)
+	}
 	body := "grant_type=client_credentials&client_id=service&client_secret=secret"
 	var grants []store.Grant
 	for range 2 {
@@ -346,7 +352,9 @@ func TestTokenNeverOutlivesCodeRetention(t *testing.T) {
 func testTokenNeverOutlivesCodeRetention(t *testing.T, grantTypes []string) {
 	synctest.Test(t, func(t *testing.T) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, GrantTypes: grantTypes})
+		if err := m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, GrantTypes: grantTypes}); err != nil {
+			t.Fatal(err)
+		}
 		withLifetime := func(lifetime time.Duration) *oauth21.Server {
 			srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: readScope, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m, AccessTokenLifetime: lifetime, RefreshTokenLifetime: lifetime})
 			if err != nil {
@@ -371,7 +379,9 @@ func testTokenNeverOutlivesCodeRetention(t *testing.T, grantTypes []string) {
 
 func TestNewCopiesScopes(t *testing.T) {
 	m := memstore.New()
-	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+	if err := m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope}); err != nil {
+		t.Fatal(err)
+	}
 	scopes := []string{"read"}
 	srv, err := oauth21.New(oauth21.Config{Issuer: issuer, Scopes: scopes, LoginURL: "/login", Clients: m, AuthorizationRequests: m, Codes: m, Tokens: m})
 	if err != nil {
@@ -618,7 +628,9 @@ func FuzzTokenHandler(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, body, authorization string) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash, GrantTypes: []string{"authorization_code", "refresh_token", "client_credentials"}})
+		if err := m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: hash, GrantTypes: []string{"authorization_code", "refresh_token", "client_credentials"}}); err != nil {
+			t.Fatal(err)
+		}
 		srv := newServer(t, m, m, m)
 		body = strings.ReplaceAll(body, "CODE", issueCode(t, srv))
 		if strings.Contains(body, "REFRESH") {
@@ -652,7 +664,9 @@ func (acceptSecret) Verify(hash, secret string) bool { return hash == "hash" && 
 
 func TestSecretHasherVerifiesSecrets(t *testing.T) {
 	m := memstore.New()
-	m.AddClient(store.Client{ID: "client", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: "hash"})
+	if err := m.AddClient(store.Client{ID: "client", Type: store.Confidential, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: "hash"}); err != nil {
+		t.Fatal(err)
+	}
 	srv, err := oauth21.New(oauth21.Config{
 		Issuer:                issuer,
 		LoginURL:              "/login",
@@ -710,7 +724,9 @@ func TestErrorsBeforeHandOffAreRendered(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := tt.stores
 			f.Store = memstore.New()
-			f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+			if err := f.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope}); err != nil {
+				t.Fatal(err)
+			}
 			var got oauth21.AuthorizationError
 			srv, err := oauth21.New(oauth21.Config{
 				Issuer:                issuer,
@@ -792,7 +808,9 @@ func TestAuthorizationRequestLifecycle(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		now := time.Unix(1_000_000, 0)
 		m := memstore.NewWithClock(func() time.Time { return now })
-		m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope})
+		if err := m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{"https://client.example/cb"}, AllowedScopes: readScope, DefaultScopes: readScope}); err != nil {
+			t.Fatal(err)
+		}
 		srv, err := oauth21.New(oauth21.Config{
 			Issuer:                       issuer,
 			LoginURL:                     "/login",
@@ -903,7 +921,9 @@ func TestAuthorizationRequestOfUntypedClientFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	untyped.Type = 0
-	m.AddClient(untyped)
+	if err := m.AddClient(untyped); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := srv.AuthorizationRequest(t.Context(), id); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("got error %v for an Authorization Request of a Client without a type, want store.ErrNotFound", err)
 	}
@@ -912,7 +932,9 @@ func TestAuthorizationRequestOfUntypedClientFails(t *testing.T) {
 func TestEmptyRegisteredRedirectURIIsRendered(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{""}, AllowedScopes: readScope, DefaultScopes: readScope})
+	if err := m.AddClient(store.Client{ID: "client", Type: store.Public, RedirectURIs: []string{""}, AllowedScopes: readScope, DefaultScopes: readScope}); err != nil {
+		t.Fatal(err)
+	}
 	w := do(srv.AuthorizationHandler(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://as.example/authorize?"+authorizeQuery, nil))
 	if w.Code != http.StatusBadRequest || w.Header().Get("Location") != "" {
 		t.Fatalf("got status %d and Location %q, want 400 without redirect", w.Code, w.Header().Get("Location"))
@@ -949,8 +971,12 @@ func TestRefreshTokenFamily(t *testing.T) {
 		if !public {
 			client.Type, client.SecretHash, credentials = store.Confidential, "hash", "&client_secret=secret"
 		}
-		m.AddClient(client)
-		m.AddClient(store.Client{ID: "rs", Type: store.Confidential, SecretHash: "hash", Introspect: true})
+		if err := m.AddClient(client); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.AddClient(store.Client{ID: "rs", Type: store.Confidential, SecretHash: "hash", Introspect: true}); err != nil {
+			t.Fatal(err)
+		}
 		w := do(srv.TokenHandler(), tokenRequest(tokenBody(issueCode(t, srv))+credentials))
 		var body tokenPair
 		if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.RefreshToken == "" {
@@ -1025,7 +1051,7 @@ func TestRefreshTokenFamily(t *testing.T) {
 	})
 }
 
-// TestIntrospectionChecksAudience checks that an access token with an audience introspects as active only for a Client in it.
+// TestIntrospectionChecksAudience checks that an access token with an audience introspects as active only for a Client whose Resource URI is in it.
 func TestIntrospectionChecksAudience(t *testing.T) {
 	hash, err := oauth21.PBKDF2{Iterations: 1}.Hash("secret")
 	if err != nil {
@@ -1033,9 +1059,13 @@ func TestIntrospectionChecksAudience(t *testing.T) {
 	}
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	m.AddClient(store.Client{ID: "rs-a", Type: store.Confidential, SecretHash: hash, Introspect: true})
-	m.AddClient(store.Client{ID: "rs-b", Type: store.Confidential, SecretHash: hash, Introspect: true})
-	grant := store.Grant{ID: "grant", ClientID: "client", Subject: "alice", Scopes: readScope, Audience: []string{"rs-a"}}
+	if err := m.AddClient(store.Client{ID: "rs-a", Type: store.Confidential, SecretHash: hash, Introspect: true, Resource: "https://a.example/api"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddClient(store.Client{ID: "rs-b", Type: store.Confidential, SecretHash: hash, Introspect: true, Resource: "https://b.example/api"}); err != nil {
+		t.Fatal(err)
+	}
+	grant := store.Grant{ID: "grant", ClientID: "client", Subject: "alice", Scopes: readScope, Audience: []string{"https://a.example/api"}}
 	if err := m.CreateToken(t.Context(), store.Token{Hash: sum("token"), Grant: grant, Scopes: readScope, Audience: grant.Audience, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
@@ -1054,7 +1084,9 @@ func TestIntrospectionChecksAudience(t *testing.T) {
 func TestRevocationOfAnotherClientsTokenIsRefused(t *testing.T) {
 	m := memstore.New()
 	srv := newServer(t, m, m, m)
-	m.AddClient(store.Client{ID: "other", Type: store.Public})
+	if err := m.AddClient(store.Client{ID: "other", Type: store.Public}); err != nil {
+		t.Fatal(err)
+	}
 	body := tokens(t, srv)
 	for _, token := range []string{body.AccessToken, body.RefreshToken} {
 		w := do(srv.RevocationHandler(), formRequest("/revoke", "client_id=other&token="+token))
@@ -1087,7 +1119,9 @@ func FuzzRevocationHandler(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, body, authorization string) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, SecretHash: hash})
+		if err := m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, SecretHash: hash}); err != nil {
+			t.Fatal(err)
+		}
 		srv := newServer(t, m, m, m)
 		var issued tokenPair
 		if strings.Contains(body, "ACCESS") || strings.Contains(body, "REFRESH") {
@@ -1127,8 +1161,12 @@ func FuzzIntrospectionHandler(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, body, authorization string) {
 		m := memstore.New()
-		m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, SecretHash: hash})
-		m.AddClient(store.Client{ID: "rs", Type: store.Confidential, SecretHash: hash, Introspect: true})
+		if err := m.AddClient(store.Client{ID: "confidential", Type: store.Confidential, SecretHash: hash}); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.AddClient(store.Client{ID: "rs", Type: store.Confidential, SecretHash: hash, Introspect: true}); err != nil {
+			t.Fatal(err)
+		}
 		srv := newServer(t, m, m, m)
 		var issued tokenPair
 		if strings.Contains(body, "ACCESS") || strings.Contains(body, "REFRESH") {
@@ -1282,7 +1320,9 @@ func (c *countingSecret) Verify(hash, secret string) bool {
 func newLockoutServer(t rapid.TB, hasher oauth21.SecretHasher, lockout oauth21.Lockout, clock func() time.Time) *oauth21.Server {
 	t.Helper()
 	m := memstore.New()
-	m.AddClient(store.Client{ID: "client", Type: store.Confidential, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: "hash", GrantTypes: []string{"client_credentials"}})
+	if err := m.AddClient(store.Client{ID: "client", Type: store.Confidential, AllowedScopes: readScope, DefaultScopes: readScope, SecretHash: "hash", GrantTypes: []string{"client_credentials"}}); err != nil {
+		t.Fatal(err)
+	}
 	srv, err := oauth21.New(oauth21.Config{
 		Issuer:                issuer,
 		LoginURL:              "/login",

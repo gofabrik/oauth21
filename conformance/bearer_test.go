@@ -21,7 +21,7 @@ var validators = map[string]func(a *authorizationServer) bearer.Validator{
 
 // local returns the local validator of the Resource Server Client.
 func (a *authorizationServer) local() bearer.Local {
-	return bearer.Local{Tokens: a.recorder, ClientID: resourceServerID, Clock: a.now}
+	return bearer.Local{Tokens: a.recorder, Resource: resourceServerURI, Clock: a.now}
 }
 
 // remote returns the remote validator authenticating as id with clientSecret.
@@ -578,8 +578,8 @@ func (a *authorizationServer) storedToken(scopes []string, audience ...string) s
 	return value
 }
 
-// otherAudiences are audiences that name only Resource Servers other than the Resource Server Client, some close to its Client identifier.
-var otherAudiences = [][]string{{"other"}, {"other", "another"}, {strings.ToLower(resourceServerID)}, {resourceServerID + " 2"}, {"The " + resourceServerID}, {" " + resourceServerID}, {resourceServerID + " "}}
+// otherAudiences are audiences that name only Resource Servers other than the Resource Server Client, some close to its Resource URI or naming its Client identifier.
+var otherAudiences = [][]string{{otherResourceServerURI}, {otherResourceServerURI, "https://another.example/api"}, {strings.ToUpper(resourceServerURI)}, {"https://rs.example/API"}, {resourceServerURI + "/"}, {resourceServerURI + "2"}, {"https://rs.example"}, {"http://rs.example/api"}, {" " + resourceServerURI}, {resourceServerURI + " "}, {resourceServerID}}
 
 // otherScopes are scopes close to read and write that a resource requiring both refuses.
 var otherScopes = [][]string{{"read", "writer"}, {"READ", "WRITE"}, {"read", "Write"}}
@@ -590,9 +590,9 @@ var otherScopes = [][]string{{"read", "writer"}, {"READ", "WRITE"}, {"read", "Wr
 func TestBearerChecksAudience(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
-		a.wantAccess(a.audienceToken(resourceServerID), http.StatusOK)
-		a.wantAccess(a.audienceToken("other", resourceServerID), http.StatusOK)
-		a.wantAccess(a.audienceToken("other"), http.StatusUnauthorized)
+		a.wantAccess(a.audienceToken(resourceServerURI), http.StatusOK)
+		a.wantAccess(a.audienceToken(otherResourceServerURI, resourceServerURI), http.StatusOK)
+		a.wantAccess(a.audienceToken(otherResourceServerURI), http.StatusUnauthorized)
 	})
 }
 
@@ -645,9 +645,9 @@ func TestBearerChecksScope(t *testing.T) {
 func TestBearerHandlerGetsTokenDetails(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
-		status, _, body := a.access(bearerHeader(a.audienceToken(resourceServerID)))
+		status, _, body := a.access(bearerHeader(a.audienceToken(resourceServerURI)))
 		var got bearer.Token
-		if err := json.Unmarshal(body, &got); err != nil || status != http.StatusOK || got.Subject != "alice" || got.ClientID != clientID || !slices.Equal(got.Scopes, readScope) || !slices.Equal(got.Audience, []string{resourceServerID}) {
+		if err := json.Unmarshal(body, &got); err != nil || status != http.StatusOK || got.Subject != "alice" || got.ClientID != clientID || !slices.Equal(got.Scopes, readScope) || !slices.Equal(got.Audience, []string{resourceServerURI}) {
 			a.t.Fatalf("got status %d, body %s and error %v, want the details of the token", status, body, err)
 		}
 	})
@@ -827,7 +827,7 @@ func TestAccessTokenLifetimeIsLimited(t *testing.T) {
 func TestResourceServerRefusesTokenMeantForAnother(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
-		a.wantAccess(a.audienceToken(resourceServerID), http.StatusOK)
+		a.wantAccess(a.audienceToken(resourceServerURI), http.StatusOK)
 		for _, audience := range otherAudiences {
 			a.wantAccess(a.audienceToken(audience...), http.StatusUnauthorized)
 		}
@@ -840,7 +840,7 @@ func TestResourceServerRefusesTokenMeantForAnother(t *testing.T) {
 func TestLocalValidationStoresNoPlaintextToken(t *testing.T) {
 	a := newIntrospectionServer(t)
 	a.resource(a.local())
-	access := a.audienceToken(resourceServerID)
+	access := a.audienceToken(resourceServerURI)
 	a.wantAccess(access, http.StatusOK)
 	a.wantAccess(access+"x", http.StatusUnauthorized)
 	a.wantStoredOnlyAsHashes(access, access+"x")

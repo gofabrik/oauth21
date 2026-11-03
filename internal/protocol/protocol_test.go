@@ -574,7 +574,7 @@ func TestIssueCodeBindsRequest(t *testing.T) {
 		}
 		a.Scopes = rapid.SliceOfNDistinct(rapid.String(), 1, -1, rapid.ID).Draw(t, "scopes")
 		subject := rapid.StringN(1, -1, -1).Draw(t, "subject")
-		audience := rapid.SliceOfDistinct(rapid.String(), rapid.ID).Draw(t, "audience")
+		audience := rapid.SliceOfDistinct(rapid.StringMatching(`https://[a-z0-9]{1,10}\.example/[A-Za-z0-9/]*`), rapid.ID).Draw(t, "audience")
 		expiresAt := time.Unix(rapid.Int64Range(0, 1<<40).Draw(t, "expires_at"), 0)
 		code, err := IssueCode(a, Completion{subject, a.Scopes, audience}, audience, expiresAt, time.Hour)
 		if err != nil {
@@ -630,22 +630,27 @@ func TestIssueCodeGrantsRequestedScopes(t *testing.T) {
 
 func TestIssueCodeChecksAudience(t *testing.T) {
 	a := AuthorizationRequest{Scopes: []string{"read"}}
-	registered := []string{"rs-a", "rs-b"}
+	registered := []string{"https://a.example/api", "https://b.example/api"}
 	for name, tt := range map[string]struct {
-		audience []string
-		want     bool
+		audience, want []string
+		ok             bool
 	}{
-		"none":       {nil, true},
-		"one":        {[]string{"rs-a"}, true},
-		"two":        {[]string{"rs-b", "rs-a"}, true},
-		"repeated":   {[]string{"rs-a", "rs-b", "rs-a"}, false},
-		"unknown":    {[]string{"rs-a", "rs-c"}, false},
-		"empty":      {[]string{""}, false},
-		"close name": {[]string{"rs-A"}, false},
+		"none":             {nil, nil, true},
+		"one":              {[]string{"https://a.example/api"}, []string{"https://a.example/api"}, true},
+		"two":              {[]string{"https://b.example/api", "https://a.example/api"}, []string{"https://b.example/api", "https://a.example/api"}, true},
+		"case of the host": {[]string{"HTTPS://A.Example/api"}, []string{"https://a.example/api"}, true},
+		"repeated":         {[]string{"https://a.example/api", "https://b.example/api", "https://a.example/api"}, nil, false},
+		"repeated in case": {[]string{"https://a.example/api", "https://A.example/api"}, nil, false},
+		"unknown":          {[]string{"https://a.example/api", "https://c.example/api"}, nil, false},
+		"empty":            {[]string{""}, nil, false},
+		"case of the path": {[]string{"https://a.example/API"}, nil, false},
+		"prefix":           {[]string{"https://a.example/api/v1"}, nil, false},
+		"query":            {[]string{"https://a.example/api?v=1"}, nil, false},
+		"fragment":         {[]string{"https://a.example/api#v1"}, nil, false},
 	} {
 		code, err := IssueCode(a, Completion{Subject: "alice", Scopes: a.Scopes, Audience: tt.audience}, registered, time.Time{}, time.Hour)
-		if (err == nil) != tt.want || tt.want && !slices.Equal(code.Audience, tt.audience) {
-			t.Errorf("%s: got audience %q and error %v, want a code %v", name, code.Audience, err, tt.want)
+		if (err == nil) != tt.ok || !slices.Equal(code.Audience, tt.want) {
+			t.Errorf("%s: got audience %q and error %v, want audience %q and success %v", name, code.Audience, err, tt.want, tt.ok)
 		}
 	}
 }
@@ -1139,18 +1144,20 @@ func TestIntrospect(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		expiresAt := time.Unix(1_000_000, 0)
 		now := expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), int64(time.Hour)).Draw(t, "now")))
-		audience := rapid.SampledFrom([][]string{nil, {"rs"}, {"other"}, {"other", "rs"}}).Draw(t, "audience")
+		audience := rapid.SampledFrom([][]string{nil, {"https://rs.example/api"}, {"https://other.example/api"}, {"https://other.example/api", "https://rs.example/api"}}).Draw(t, "audience")
+		resource := rapid.SampledFrom([]string{"https://rs.example/api", "HTTPS://RS.Example/api", "https://rs.example/API", "https://rs.example/api/", ""}).Draw(t, "resource")
 		var notBefore time.Time
 		if rapid.Bool().Draw(t, "delayed") {
 			notBefore = expiresAt.Add(time.Duration(rapid.Int64Range(-int64(time.Hour), 0).Draw(t, "notBefore")))
 		}
 		token := Token{ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: audience, NotBefore: notBefore, ExpiresAt: expiresAt}
-		got := Introspect(&token, "rs", now)
-		active := !now.Before(notBefore) && now.Before(expiresAt) && (len(audience) == 0 || slices.Contains(audience, "rs"))
+		got := Introspect(&token, resource, now)
+		sameResource := resource == "https://rs.example/api" || resource == "HTTPS://RS.Example/api"
+		active := !now.Before(notBefore) && now.Before(expiresAt) && (len(audience) == 0 || sameResource && slices.Contains(audience, "https://rs.example/api"))
 		if active != (got != nil) || active && !reflect.DeepEqual(*got, token) {
-			t.Fatalf("got %+v at %v for a token valid from %v until %v with audience %q, want the token only while it is valid and the caller is in its audience", got, now, notBefore, expiresAt, audience)
+			t.Fatalf("got %+v at %v for a token valid from %v until %v with audience %q, want the token only while it is valid and %q is in its audience", got, now, notBefore, expiresAt, audience, resource)
 		}
-		if got := Introspect(nil, "rs", now); got != nil {
+		if got := Introspect(nil, resource, now); got != nil {
 			t.Fatalf("got %+v for an unknown token, want nil", got)
 		}
 	})
@@ -1236,4 +1243,96 @@ func TestSecureEndpoint(t *testing.T) {
 			t.Errorf("%q: got %v, want %v", endpoint, got, want)
 		}
 	}
+}
+
+func TestResourceURI(t *testing.T) {
+	for uri, want := range map[string]string{
+		"https://api.example/mcp":         "https://api.example/mcp",
+		"HTTPS://API.Example:8443/MCP":    "https://api.example:8443/MCP",
+		"https://User@API.example/a%2Fb":  "https://User@api.example/a%2Fb",
+		"https://[::1]/mcp":               "https://[::1]/mcp",
+		"URN:Example:API":                 "urn:Example:API",
+		"https://api.example":             "https://api.example",
+		"https://api.example/mcp?":        "",
+		"https://api.example/mcp?v=1":     "",
+		"https://api.example/mcp#x":       "",
+		"https://api.example/mcp#":        "",
+		"/mcp":                            "",
+		"api.example/mcp":                 "",
+		"":                                "",
+		"https://api.example/a b":         "",
+		"https://api.example/%zz":         "",
+		"https://a@b@api.example/mcp":     "",
+		"https://api.example:x:443/mcp":   "",
+		"https://api.example/é":           "",
+		"https://api.example/mcp\n":       "",
+		"https://api.example/[mcp]":       "",
+		"https://API.example/mcp/../MCP/": "https://api.example/mcp/../MCP/",
+		"https://%65xample.com/a":         "https://%65xample.com/a",
+		"https://EX%4Ample.com/a":         "https://ex%4ample.com/a",
+		"https://a.example:/a":            "https://a.example:/a",
+		"https://[::1]:8443/a":            "https://[::1]:8443/a",
+		"https://[V1.Future]/a":           "https://[v1.future]/a",
+		"https:///a":                      "",
+		"HTTP://:80/a":                    "",
+		"https:":                          "",
+		"https:mcp":                       "",
+		"https:/mcp":                      "",
+		"http://a.example/a":              "http://a.example/a",
+		"urn:example:api":                 "urn:example:api",
+		"Foo:///a":                        "foo:///a",
+		"https://%zz.example/a":           "",
+		"https://a.example:44x/a":         "",
+		"https://[fe80::1%25en0]/a":       "",
+		"https://[zz]/a":                  "",
+		"https://[::1/a":                  "",
+		"https://exa\"mple/a":             "",
+		"ht_tps://a.example/a":            "",
+	} {
+		got, ok := ResourceURI(uri)
+		if ok != (want != "") || got != want {
+			t.Errorf("ResourceURI(%q) = %q, %v, want %q", uri, got, ok, want)
+		}
+	}
+}
+
+// schemeSyntax matches a URI scheme (RFC 3986, Section 3.1).
+var schemeSyntax = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*$`)
+
+func FuzzResourceURI(f *testing.F) {
+	f.Add("https://api.example/mcp")
+	f.Add("HTTPS://User@API.Example:8443/MCP")
+	f.Add("https://[FE80::1]/mcp")
+	f.Add("urn:Example:API")
+	f.Add("https://api.example/mcp?v=1#x")
+	f.Add("https://a@b@c.example/[x]")
+	f.Fuzz(func(t *testing.T, uri string) {
+		got, ok := ResourceURI(uri)
+		if !ok {
+			if got != "" {
+				t.Fatalf("ResourceURI(%q) = %q for an invalid URI", uri, got)
+			}
+			return
+		}
+		scheme, _, hasScheme := strings.Cut(uri, ":")
+		if !hasScheme || !schemeSyntax.MatchString(scheme) || strings.ContainsAny(uri, "?#") || !uriChars.MatchString(uri) || strings.Contains(escape.ReplaceAllString(uri, ""), "%") || strings.Count(authorityPrefix.FindString(uri), "@") > 1 {
+			t.Fatalf("%q is a Resource URI but has a query or a fragment, or is not an absolute URI", uri)
+		}
+		if m := hostPort.FindStringSubmatch(uri); (strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "https")) && (m == nil || portSuffix.ReplaceAllString(m[1], "") == "") {
+			t.Fatalf("%q is a Resource URI but has an http or https scheme and no host", uri)
+		}
+		if again, ok := ResourceURI(got); !ok || again != got {
+			t.Fatalf("ResourceURI(%q) = %q, %v, want it unchanged", got, again, ok)
+		}
+		hostStart, hostEnd := len(scheme), len(scheme)
+		if authority := authorityPrefix.FindString(uri); authority != "" {
+			hostStart, hostEnd = max(strings.LastIndex(authority, "@")+1, len(scheme)+3), len(authority)
+		}
+		if len(got) != len(uri) || got[:len(scheme)] != strings.ToLower(scheme) || got[len(scheme):hostStart] != uri[len(scheme):hostStart] || got[hostStart:hostEnd] != strings.ToLower(uri[hostStart:hostEnd]) || got[hostEnd:] != uri[hostEnd:] {
+			t.Fatalf("ResourceURI(%q) = %q, want only the scheme and host in lowercase", uri, got)
+		}
+		if upper, ok := ResourceURI(strings.ToUpper(scheme) + uri[len(scheme):]); !ok || upper != got {
+			t.Fatalf("ResourceURI of %q with an uppercase scheme = %q, %v, want %q", uri, upper, ok, got)
+		}
+	})
 }

@@ -3,10 +3,6 @@
 RFC7662-2.1-08
 # 80: decide the status of RFC 9700's upgrade recommendation
 RFC9700-1-01
-# 02: Audiences hold Resource URIs
-OAUTH21D16-7.1.3.6-01
-OAUTH21D16-7.1.4-02
-OAUTH21D16-7.3.2-05
 # 04: resource at the authorization endpoint
 RFC8707-2-02
 RFC8707-2-03

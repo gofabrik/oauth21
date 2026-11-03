@@ -387,9 +387,9 @@ func TestUnknownRefreshTokenIsRejected(t *testing.T) {
 //conformance:covers OAUTH21D16-3.2.3-14
 func TestRefreshKeepsAudience(t *testing.T) {
 	a := newIntrospectionServer(t)
-	_, refresh := a.consentedTokens(confidentialID, resourceServerID)
+	_, refresh := a.consentedTokens(confidentialID, resourceServerURI)
 	for _, access := range a.successiveAccessTokens(refresh, confidentialRefreshParams, basic(confidentialID, secret)) {
-		a.wantAudience(access, resourceServerID)
+		a.wantAudience(access, resourceServerURI)
 	}
 }
 

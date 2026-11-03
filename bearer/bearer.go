@@ -36,8 +36,8 @@ type Validator interface {
 // Local validates access tokens against the token Store of an Authorization Server in the same process.
 type Local struct {
 	Tokens store.Tokens
-	// ClientID is the Client identifier of the Resource Server, which an access token with an audience must contain.
-	ClientID string
+	// Resource is the Resource URI of the Resource Server, which an access token with an audience must contain.
+	Resource string
 	// Clock defaults to time.Now.
 	Clock func() time.Time
 }
@@ -57,7 +57,7 @@ func (l Local) Validate(ctx context.Context, token string) (Token, error) {
 		now = l.Clock
 	}
 	p := protocol.Token{ClientID: t.Grant.ClientID, Subject: t.Grant.Subject, Scopes: t.Scopes, Audience: t.Audience, NotBefore: t.NotBefore, ExpiresAt: t.ExpiresAt}
-	if protocol.Introspect(&p, l.ClientID, now()) == nil {
+	if protocol.Introspect(&p, l.Resource, now()) == nil {
 		return Token{}, ErrInvalidToken
 	}
 	return Token{Subject: p.Subject, ClientID: p.ClientID, Scopes: p.Scopes, Audience: p.Audience}, nil

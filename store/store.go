@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/gofabrik/oauth21/internal/protocol"
 )
 
 // ErrNotFound is returned when a Store has no entity with the given key.
@@ -12,6 +14,11 @@ var ErrNotFound = errors.New("store: not found")
 
 // ErrRevoked is returned when a token is created for a revoked Grant.
 var ErrRevoked = errors.New("store: grant revoked")
+
+// ResourceURI returns uri with a lowercase scheme and host, and whether it is a Resource URI, for a Store to keep and compare Client.Resource.
+func ResourceURI(uri string) (string, bool) {
+	return protocol.ResourceURI(uri)
+}
 
 // ClientType is whether a Client can keep a secret.
 type ClientType int
@@ -47,6 +54,8 @@ type Client struct {
 	Introspect bool
 	// StrictRedirectURI makes the Client repeat in the token request the redirect_uri its authorization request sent.
 	StrictRedirectURI bool
+	// Resource is the Resource URI of a Resource Server, which the Store keeps as ResourceURI returns it; empty for any other Client.
+	Resource string
 	// FrameAncestors are the Client's framing origins, unchecked; the Host Application passes them to ProtectFraming instead of writing them into a header.
 	FrameAncestors []string
 }
@@ -117,6 +126,8 @@ type RefreshToken struct {
 // Clients holds the registered Clients.
 type Clients interface {
 	Client(ctx context.Context, id string) (Client, error)
+	// ResourceServer returns the one Client whose Resource is resource, comparing them as ResourceURI returns them.
+	ResourceServer(ctx context.Context, resource string) (Client, error)
 }
 
 // AuthorizationRequests holds the Authorization Requests until they are consumed; it may remove expired ones.

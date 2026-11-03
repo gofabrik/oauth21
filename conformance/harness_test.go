@@ -248,9 +248,13 @@ func tryConfiguredServer(t *testing.T, configure func(*oauth21.Config), clients 
 	t.Helper()
 	a := &authorizationServer{t: t}
 	m := memstore.NewWithClock(a.now)
-	m.AddClient(store.Client{ID: clientID, Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: []string{"read", "write"}, DefaultScopes: readScope})
+	if err := m.AddClient(store.Client{ID: clientID, Type: store.Public, RedirectURIs: []string{redirectURI}, AllowedScopes: []string{"read", "write"}, DefaultScopes: readScope}); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range clients {
-		m.AddClient(c)
+		if err := m.AddClient(c); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mux := http.NewServeMux()
 	ts := httptest.NewTLSServer(mux)

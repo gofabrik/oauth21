@@ -35,7 +35,7 @@ func (a *authorizationServer) consentedTokens(id string, audience ...string) (ac
 func withAudienceParams(params url.Values) url.Values {
 	p := maps.Clone(params)
 	for _, name := range []string{"resource", "audience", "aud"} {
-		p.Set(name, otherResourceServerID)
+		p.Set(name, otherResourceServerURI)
 	}
 	return p
 }
@@ -43,7 +43,13 @@ func withAudienceParams(params url.Values) url.Values {
 // wantAudience checks that token introspects as active with audience want.
 func (a *authorizationServer) wantAudience(token string, want ...string) {
 	a.t.Helper()
-	body := a.introspect(token)
+	if body := a.introspect(token); body["active"] != true || !slices.Equal(audienceOf(body), slices.Sorted(slices.Values(want))) {
+		a.t.Fatalf("got %v, want an active token with audience %q", body, want)
+	}
+}
+
+// audienceOf returns the sorted aud values of the introspection response body.
+func audienceOf(body map[string]any) []string {
 	var got []string
 	switch aud := body["aud"].(type) {
 	case string:
@@ -54,15 +60,13 @@ func (a *authorizationServer) wantAudience(token string, want ...string) {
 			got = append(got, s)
 		}
 	}
-	if body["active"] != true || !slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want))) {
-		a.t.Fatalf("got %v, want an active token with audience %q", body, want)
-	}
+	return slices.Sorted(slices.Values(got))
 }
 
-// resources serves /documents with scope read and /admin with scope admin on the Resource Server Client, and the same under /other on the other Resource Server.
+// resources serves /documents with scope read and /admin with scope admin on the Resource Server Client, and the same under /other on the other Resource Server, each guarded by the local validator of its Resource URI.
 func (a *authorizationServer) resources() {
-	for prefix, id := range map[string]string{"": resourceServerID, "/other": otherResourceServerID} {
-		v := bearer.Local{Tokens: a.recorder, ClientID: id, Clock: a.now}
+	for prefix, uri := range map[string]string{"": resourceServerURI, "/other": otherResourceServerURI} {
+		v := bearer.Local{Tokens: a.recorder, Resource: uri, Clock: a.now}
 		for path, scope := range map[string]string{"/documents": "read", "/admin": "admin"} {
 			a.mux.Handle(prefix+path, bearer.Middleware(v, scope)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})))
 		}
@@ -74,7 +78,7 @@ func (a *authorizationServer) resources() {
 //conformance:covers RFC9700-2.3-02
 func TestAccessTokenIsRestrictedToConsentedResourceServers(t *testing.T) {
 	a := newIntrospectionServer(t)
-	for _, audience := range [][]string{{resourceServerID}, {resourceServerID, otherResourceServerID}} {
+	for _, audience := range [][]string{{resourceServerURI}, {resourceServerURI, otherResourceServerURI}} {
 		access, _ := a.consentedTokens(clientID, audience...)
 		a.wantAudience(access, audience...)
 	}
@@ -85,9 +89,9 @@ func TestAccessTokenIsRestrictedToConsentedResourceServers(t *testing.T) {
 //conformance:covers RFC9700-4.10-02
 func TestClientCannotWidenConsentedAudience(t *testing.T) {
 	a := newIntrospectionServer(t)
-	code := a.consentedCode(withAudienceParams(authorizeParams()), resourceServerID)
+	code := a.consentedCode(withAudienceParams(authorizeParams()), resourceServerURI)
 	access, _ := a.tokens(withAudienceParams(tokenParams(code)), nil)
-	a.wantAudience(access, resourceServerID)
+	a.wantAudience(access, resourceServerURI)
 }
 
 // TestConsentedAudiencePreventsReplay checks that a Resource Server refuses an access token of a Grant consented only to another Resource Server.
@@ -96,9 +100,9 @@ func TestClientCannotWidenConsentedAudience(t *testing.T) {
 func TestConsentedAudiencePreventsReplay(t *testing.T) {
 	forEachValidator(t, func(a *authorizationServer, v bearer.Validator) {
 		a.resource(v)
-		access, _ := a.consentedTokens(clientID, resourceServerID)
+		access, _ := a.consentedTokens(clientID, resourceServerURI)
 		a.wantAccess(access, http.StatusOK)
-		captured, _ := a.consentedTokens(clientID, otherResourceServerID)
+		captured, _ := a.consentedTokens(clientID, otherResourceServerURI)
 		a.wantAccess(captured, http.StatusUnauthorized)
 	})
 }
@@ -109,7 +113,7 @@ func TestConsentedAudiencePreventsReplay(t *testing.T) {
 func TestTokenIsRestrictedToResources(t *testing.T) {
 	a := newIntrospectionServer(t)
 	a.resources()
-	access, _ := a.consentedTokens(clientID, resourceServerID)
+	access, _ := a.consentedTokens(clientID, resourceServerURI)
 	a.wantRoute(access, "/documents", http.StatusOK)
 	a.wantRoute(access, "/admin", http.StatusForbidden)
 	a.wantRoute(access, "/other/documents", http.StatusUnauthorized)
@@ -121,7 +125,7 @@ func TestTokenIsRestrictedToResources(t *testing.T) {
 func TestConfidentialClientTokenIsRestrictedToResources(t *testing.T) {
 	a := newIntrospectionServer(t)
 	a.resources()
-	access, _ := a.consentedTokens(confidentialID, otherResourceServerID)
+	access, _ := a.consentedTokens(confidentialID, otherResourceServerURI)
 	a.wantRoute(access, "/other/documents", http.StatusOK)
 	a.wantRoute(access, "/other/admin", http.StatusForbidden)
 	a.wantRoute(access, "/documents", http.StatusUnauthorized)
@@ -132,9 +136,47 @@ func TestConfidentialClientTokenIsRestrictedToResources(t *testing.T) {
 //conformance:covers RFC9700-4.14.2-08
 func TestRefreshedAccessTokenHasConsentedAudience(t *testing.T) {
 	a := newIntrospectionServer(t)
-	_, refresh := a.consentedTokens(clientID, resourceServerID)
+	_, refresh := a.consentedTokens(clientID, resourceServerURI)
 	params := func(refresh string) url.Values { return withAudienceParams(refreshParams(refresh)) }
 	for _, access := range a.successiveAccessTokens(refresh, params, nil) {
-		a.wantAudience(access, resourceServerID)
+		a.wantAudience(access, resourceServerURI)
 	}
+}
+
+// TestBearerTokenIsScopedToConsentedSetOfResourceServers checks that an access token of the confidential Client, whose Completion.Audience names both Resource Servers, has their Resource URIs as its audience and is served by both.
+//
+//conformance:covers OAUTH21D16-7.1.3.6-01
+func TestBearerTokenIsScopedToConsentedSetOfResourceServers(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resources()
+	access, _ := a.consentedTokens(confidentialID, resourceServerURI, otherResourceServerURI)
+	a.wantAudience(access, resourceServerURI, otherResourceServerURI)
+	a.wantRoute(access, "/documents", http.StatusOK)
+	a.wantRoute(access, "/other/documents", http.StatusOK)
+}
+
+// TestAccessTokenIsRestrictedToSingleResourceServer checks that an access token whose Completion.Audience names one of two Resource Servers has that Resource URI as its only audience and is refused by the other Resource Server.
+//
+//conformance:covers OAUTH21D16-7.1.4-02
+func TestAccessTokenIsRestrictedToSingleResourceServer(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resources()
+	access, _ := a.consentedTokens(clientID, resourceServerURI)
+	a.wantAudience(access, resourceServerURI)
+	a.wantRoute(access, "/documents", http.StatusOK)
+	a.wantRoute(access, "/other/documents", http.StatusUnauthorized)
+}
+
+// TestIntrospectionRestrictsAccessTokenToResourceServer checks that an access token of the public Client, whose Completion.Audience names only the other Resource Server, introspects as active with that single Resource URI for it and as inactive for the Resource Server Client, whose remote validator therefore refuses it.
+//
+//conformance:covers OAUTH21D16-7.3.2-05
+func TestIntrospectionRestrictsAccessTokenToResourceServer(t *testing.T) {
+	a := newIntrospectionServer(t)
+	a.resource(a.remote(resourceServerID, secret))
+	access, _ := a.consentedTokens(clientID, otherResourceServerURI)
+	status, body := a.introspectWith(access, nil, basic(otherResourceServerID, secret))
+	if status != http.StatusOK || body["active"] != true || !slices.Equal(audienceOf(body), []string{otherResourceServerURI}) {
+		t.Fatalf("got status %d and body %v, want an active token with audience %q", status, body, otherResourceServerURI)
+	}
+	a.wantAccess(access, http.StatusUnauthorized)
 }

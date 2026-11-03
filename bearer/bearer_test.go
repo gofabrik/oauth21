@@ -55,11 +55,11 @@ func request(header string) *http.Request {
 
 func TestLocalChecksAudience(t *testing.T) {
 	m := memstore.New()
-	seed(t, m, []string{"rs-a"})
-	for clientID, want := range map[string]bool{"rs-a": true, "rs-b": false, "": false} {
-		token, err := bearer.Local{Tokens: m, ClientID: clientID}.Validate(t.Context(), "token")
-		if want && (err != nil || !slices.Equal(token.Audience, []string{"rs-a"})) || !want && !errors.Is(err, bearer.ErrInvalidToken) {
-			t.Errorf("%q: got %+v and error %v, want the token only for a Resource Server in its audience", clientID, token, err)
+	seed(t, m, []string{"https://a.example/api"})
+	for resource, want := range map[string]bool{"https://a.example/api": true, "HTTPS://A.example/api": true, "https://a.example/API": false, "https://b.example/api": false, "": false} {
+		token, err := bearer.Local{Tokens: m, Resource: resource}.Validate(t.Context(), "token")
+		if want && (err != nil || !slices.Equal(token.Audience, []string{"https://a.example/api"})) || !want && !errors.Is(err, bearer.ErrInvalidToken) {
+			t.Errorf("%q: got %+v and error %v, want the token only for a Resource Server in its audience", resource, token, err)
 		}
 	}
 }
@@ -80,15 +80,15 @@ func TestLocalTokenExpires(t *testing.T) {
 
 func TestHandlerGetsAudience(t *testing.T) {
 	m := memstore.New()
-	seed(t, m, []string{"rs-a"})
+	seed(t, m, []string{"https://a.example/api"})
 	var got bearer.Token
-	h := bearer.Middleware(bearer.Local{Tokens: m, ClientID: "rs-a"})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := bearer.Middleware(bearer.Local{Tokens: m, Resource: "https://a.example/api"})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got, _ = bearer.FromContext(r.Context())
 	}))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, request("Bearer token"))
-	if w.Code != http.StatusOK || got.Subject != "alice" || !slices.Equal(got.Audience, []string{"rs-a"}) {
-		t.Fatalf("got status %d and token %+v, want 200 and the token of alice with audience rs-a", w.Code, got)
+	if w.Code != http.StatusOK || got.Subject != "alice" || !slices.Equal(got.Audience, []string{"https://a.example/api"}) {
+		t.Fatalf("got status %d and token %+v, want 200 and the token of alice with its audience", w.Code, got)
 	}
 }
 
@@ -104,9 +104,9 @@ func remote(t *testing.T, status int, body string) bearer.Remote {
 }
 
 func TestRemoteReturnsToken(t *testing.T) {
-	r := remote(t, http.StatusOK, `{"active":true,"scope":"read write","client_id":"client","sub":"alice","exp":1419356238,"aud":["rs-a"]}`)
+	r := remote(t, http.StatusOK, `{"active":true,"scope":"read write","client_id":"client","sub":"alice","exp":1419356238,"aud":["https://a.example/api"]}`)
 	got, err := r.Validate(t.Context(), "token")
-	want := bearer.Token{Subject: "alice", ClientID: "client", Scopes: []string{"read", "write"}, Audience: []string{"rs-a"}}
+	want := bearer.Token{Subject: "alice", ClientID: "client", Scopes: []string{"read", "write"}, Audience: []string{"https://a.example/api"}}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v and error %v, want %+v", got, err, want)
 	}

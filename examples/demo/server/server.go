@@ -38,17 +38,21 @@ type consentPage struct {
 type authorizationServer struct {
 	*http.ServeMux
 	oauth *oauth21.Server
+	// resource is the Resource URI of the demo Resource Server, the audience of every Grant.
+	resource string
 
 	mu sync.Mutex
 	// logins maps the values of login cookies to the subject logged in.
 	logins map[string]string
 }
 
-// newAuthorizationServer returns an Authorization Server with the identifier issuer, the supported scopes and the registered clients.
-func newAuthorizationServer(issuer string, scopes []string, clients ...store.Client) (*authorizationServer, error) {
+// newAuthorizationServer returns an Authorization Server with the identifier issuer, the supported scopes and the registered clients, which completes requests with the audience resource.
+func newAuthorizationServer(issuer string, scopes []string, resource string, clients ...store.Client) (*authorizationServer, error) {
 	st := memstore.New()
 	for _, c := range clients {
-		st.AddClient(c)
+		if err := st.AddClient(c); err != nil {
+			return nil, err
+		}
 	}
 	oauth, err := oauth21.New(oauth21.Config{
 		Issuer:                issuer,
@@ -62,7 +66,7 @@ func newAuthorizationServer(issuer string, scopes []string, clients ...store.Cli
 	if err != nil {
 		return nil, err
 	}
-	srv := &authorizationServer{ServeMux: http.NewServeMux(), oauth: oauth, logins: map[string]string{}}
+	srv := &authorizationServer{ServeMux: http.NewServeMux(), oauth: oauth, resource: resource, logins: map[string]string{}}
 	p := oauth.Paths()
 	srv.Handle(oauth.MetadataPath(), oauth.MetadataHandler())
 	srv.Handle(p.Authorization, oauth.AuthorizationHandler())
@@ -110,7 +114,7 @@ func (s *authorizationServer) consent(w http.ResponseWriter, r *http.Request) {
 	var loc string
 	var err error
 	if req.Error == nil && r.PostFormValue("decision") == "allow" {
-		loc, err = s.oauth.Complete(r.Context(), req.ID, oauth21.Completion{Subject: subject, Scopes: req.Scopes})
+		loc, err = s.oauth.Complete(r.Context(), req.ID, oauth21.Completion{Subject: subject, Scopes: req.Scopes, Audience: []string{s.resource}})
 	} else {
 		loc, err = s.oauth.Deny(r.Context(), req.ID)
 	}

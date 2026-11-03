@@ -3,6 +3,7 @@ package memstore
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -41,11 +42,22 @@ func NewWithClock(clock func() time.Time) *Store {
 	}
 }
 
-// AddClient registers c, replacing any Client with the same identifier.
-func (s *Store) AddClient(c store.Client) {
+// AddClient registers c with its Resource URI in lowercase scheme and host, replacing any Client with the same identifier, and fails when Resource is not a Resource URI or another Client has it.
+func (s *Store) AddClient(c store.Client) error {
+	if c.Resource != "" {
+		resource, ok := store.ResourceURI(c.Resource)
+		if !ok {
+			return fmt.Errorf("memstore: Resource %q of Client %q is not a Resource URI", c.Resource, c.ID)
+		}
+		c.Resource = resource
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if other, ok := s.resourceServer(c.Resource); ok && other.ID != c.ID {
+		return fmt.Errorf("memstore: Resource URI %q belongs to Client %q", c.Resource, other.ID)
+	}
 	s.clients[c.ID] = cloneClient(c)
+	return nil
 }
 
 // Client returns the Client with identifier id.
@@ -54,6 +66,33 @@ func (s *Store) Client(_ context.Context, id string) (store.Client, error) {
 	defer s.mu.Unlock()
 	c, err := get(s.clients, id)
 	return cloneClient(c), err
+}
+
+// ResourceServer returns the Client whose Resource URI is resource, comparing the scheme and host in any case.
+func (s *Store) ResourceServer(_ context.Context, resource string) (store.Client, error) {
+	resource, ok := store.ResourceURI(resource)
+	if !ok {
+		return store.Client{}, store.ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.resourceServer(resource); ok {
+		return cloneClient(c), nil
+	}
+	return store.Client{}, store.ErrNotFound
+}
+
+// resourceServer returns the Client whose Resource URI is resource; the caller holds s.mu.
+func (s *Store) resourceServer(resource string) (store.Client, bool) {
+	if resource == "" {
+		return store.Client{}, false
+	}
+	for _, c := range s.clients {
+		if c.Resource == resource {
+			return c, true
+		}
+	}
+	return store.Client{}, false
 }
 
 // CreateAuthorizationRequest stores r.

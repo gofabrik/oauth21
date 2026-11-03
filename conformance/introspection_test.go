@@ -17,6 +17,12 @@ const resourceServerID = "Resource Server"
 // otherResourceServerID identifies a Resource Server other than the Resource Server Client.
 const otherResourceServerID = "Other Resource Server"
 
+// resourceServerURI is the Resource URI of the Resource Server Client.
+const resourceServerURI = "https://rs.example/api"
+
+// otherResourceServerURI is the Resource URI of the other Resource Server.
+const otherResourceServerURI = "https://other.example/api"
+
 // newIntrospectionServer starts an Authorization Server with the confidential Client, the Resource Server Client and the other Resource Server, which may introspect.
 func newIntrospectionServer(t *testing.T) *authorizationServer {
 	t.Helper()
@@ -27,9 +33,9 @@ func newIntrospectionServer(t *testing.T) *authorizationServer {
 func newIntrospectionClients(t *testing.T) []store.Client {
 	t.Helper()
 	clients := []store.Client{confidentialClient(t)}
-	for _, id := range []string{resourceServerID, otherResourceServerID} {
+	for id, uri := range map[string]string{resourceServerID: resourceServerURI, otherResourceServerID: otherResourceServerURI} {
 		resourceServer := confidentialClient(t)
-		resourceServer.ID = id
+		resourceServer.ID, resourceServer.Resource = id, uri
 		resourceServer.RedirectURIs = nil
 		resourceServer.Introspect = true
 		clients = append(clients, resourceServer)
@@ -256,7 +262,7 @@ var introspectionNames = []string{"active", "username", "client_id", "scope", "t
 func TestIntrospectionResponseNamesAreRegistered(t *testing.T) {
 	a := newIntrospectionServer(t)
 	access, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
-	for _, token := range []string{access, a.audienceToken(resourceServerID)} {
+	for _, token := range []string{access, a.audienceToken(resourceServerURI)} {
 		body := a.introspect(token)
 		for name := range body {
 			if !slices.Contains(introspectionNames, name) {
@@ -321,7 +327,7 @@ func TestInactiveTokenIsNoError(t *testing.T) {
 	}
 	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 	a.revoke(revocationParams(revoked), nil)
-	for _, token := range []string{"unknown", revoked, a.audienceToken("other"), a.publicRefreshToken()} {
+	for _, token := range []string{"unknown", revoked, a.audienceToken(otherResourceServerURI), a.publicRefreshToken()} {
 		wantNoError(token)
 	}
 	expired, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
@@ -340,8 +346,8 @@ func TestIntrospectionChecksTokenState(t *testing.T) {
 	ofRevokedGrant, refresh := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 	a.revoke(revocationParams(refresh), nil)
 	a.wantActive(live)
-	a.wantActive(a.audienceToken(resourceServerID))
-	for _, token := range []string{revoked, ofRevokedGrant, a.audienceToken("other"), a.notYetValidToken(time.Minute)} {
+	a.wantActive(a.audienceToken(resourceServerURI))
+	for _, token := range []string{revoked, ofRevokedGrant, a.audienceToken(otherResourceServerURI), a.notYetValidToken(time.Minute)} {
 		a.wantInactive(token)
 	}
 	a.advance(time.Hour)
@@ -393,9 +399,9 @@ func TestIntrospectionChecksRevocation(t *testing.T) {
 //conformance:covers RFC7662-4-06
 func TestIntrospectionChecksAudience(t *testing.T) {
 	a := newIntrospectionServer(t)
-	a.wantActive(a.audienceToken(resourceServerID))
-	a.wantActive(a.audienceToken("other", resourceServerID))
-	a.wantInactive(a.audienceToken("other"))
+	a.wantActive(a.audienceToken(resourceServerURI))
+	a.wantActive(a.audienceToken(otherResourceServerURI, resourceServerURI))
+	a.wantInactive(a.audienceToken(otherResourceServerURI))
 }
 
 // TestIntrospectionRequiresAuthentication checks that a Resource Server allowed to introspect must authenticate: no credentials, its client_id alone or a wrong secret get 401.
@@ -452,7 +458,7 @@ func TestInactiveTokenHasOnlyActive(t *testing.T) {
 	a := newIntrospectionServer(t)
 	revoked, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)
 	a.revoke(revocationParams(revoked), nil)
-	for _, token := range []string{"unknown", revoked, a.audienceToken("other")} {
+	for _, token := range []string{"unknown", revoked, a.audienceToken(otherResourceServerURI)} {
 		a.wantInactive(token)
 	}
 	expired, _ := a.tokens(tokenParams(a.code(authorizeParams())), nil)

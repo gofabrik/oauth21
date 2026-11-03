@@ -44,7 +44,7 @@ func Run(t *testing.T, newStore func(t *testing.T) Store) {
 func newCode(hash string, expiresAt time.Time) store.Code {
 	return store.Code{
 		Hash:                []byte(hash),
-		Grant:               store.Grant{ID: "grant-" + hash, ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: []string{"api"}},
+		Grant:               store.Grant{ID: "grant-" + hash, ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: []string{"https://rs.example/api"}},
 		RedirectURI:         "https://client.example/cb",
 		RedirectURISent:     true,
 		CodeChallenge:       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
@@ -155,11 +155,11 @@ func race(t *testing.T, n int, op func(i int) (won bool, err error)) int {
 }
 
 func newToken(hash, grantID string) store.Token {
-	return store.Token{Hash: []byte(hash), Grant: store.Grant{ID: grantID, ClientID: "client"}, Scopes: []string{"read"}, Audience: []string{"api"}, ExpiresAt: time.Now().Add(time.Hour)}
+	return store.Token{Hash: []byte(hash), Grant: store.Grant{ID: grantID, ClientID: "client"}, Scopes: []string{"read"}, Audience: []string{"https://rs.example/api"}, ExpiresAt: time.Now().Add(time.Hour)}
 }
 
 func newRefreshToken(hash, grantID string) store.RefreshToken {
-	return store.RefreshToken{Hash: []byte(hash), Grant: store.Grant{ID: grantID, ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: []string{"api"}}, ExpiresAt: time.Now().Add(time.Hour)}
+	return store.RefreshToken{Hash: []byte(hash), Grant: store.Grant{ID: grantID, ClientID: "client", Subject: "alice", Scopes: []string{"read"}, Audience: []string{"https://rs.example/api"}}, ExpiresAt: time.Now().Add(time.Hour)}
 }
 
 // sameRefreshToken reports whether a and b are equal, comparing times to the second.
@@ -456,15 +456,15 @@ func testEntitiesAreCopied(t *testing.T, s Store) {
 	if err := s.CreateCode(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	c.Hash[0], c.Grant.Scopes[0], c.Grant.Audience[0] = 'x', "admin", "other"
+	c.Hash[0], c.Grant.Scopes[0], c.Grant.Audience[0] = 'x', "admin", "https://other.example/api"
 	for name, op := range map[string]func(context.Context, []byte) (store.Code, error){"ConsumeCode": s.ConsumeCode, "Code": s.Code} {
 		got, err := op(ctx, []byte("code"))
-		if err != nil || got.Grant.Scopes[0] != "read" || got.Grant.Audience[0] != "api" {
+		if err != nil || got.Grant.Scopes[0] != "read" || got.Grant.Audience[0] != "https://rs.example/api" {
 			t.Fatalf("%s returned %+v and error %v after a code changed, want the stored one", name, got, err)
 		}
-		got.Grant.Scopes[0], got.Grant.Audience[0] = "admin", "other"
+		got.Grant.Scopes[0], got.Grant.Audience[0] = "admin", "https://other.example/api"
 	}
-	if got, err := s.Code(ctx, []byte("code")); err != nil || got.Grant.Scopes[0] != "read" || got.Grant.Audience[0] != "api" {
+	if got, err := s.Code(ctx, []byte("code")); err != nil || got.Grant.Scopes[0] != "read" || got.Grant.Audience[0] != "https://rs.example/api" {
 		t.Fatalf("Code returned %+v and error %v after returned codes changed, want the stored one", got, err)
 	}
 
